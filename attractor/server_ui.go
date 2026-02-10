@@ -350,7 +350,8 @@ func (s *PipelineServer) handleEventsStream(w http.ResponseWriter, r *http.Reque
 
 	for {
 		run.mu.RLock()
-		currentEvents := run.Events
+		currentEvents := make([]EngineEvent, len(run.Events))
+		copy(currentEvents, run.Events)
 		status := run.Status
 		run.mu.RUnlock()
 

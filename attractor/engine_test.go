@@ -1063,3 +1063,314 @@ func (b *stubCodergenBackend) RunAgent(ctx context.Context, config AgentRunConfi
 	}
 	return &AgentRunResult{Success: true}, nil
 }
+
+// --- Handler panic recovery tests ---
+
+func TestEngineHandlerPanicRecoveryString(t *testing.T) {
+	// A handler that panics with a string should not crash the engine.
+	// The panic is caught by safeExecute, converted to an error, which
+	// executeWithRetry then wraps into a StatusFail outcome. The engine
+	// sees the fail and routes accordingly (error if no fail edge exists).
+	g := buildLinearGraph()
+
+	startH := newSuccessHandler("start")
+	codergenH := &testHandler{
+		typeName: "codergen",
+		executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+			panic("something went terribly wrong")
+		},
+	}
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, codergenH, exitH)
+
+	engine := NewEngine(EngineConfig{
+		Handlers:     reg,
+		DefaultRetry: RetryPolicyNone(),
+	})
+
+	result, err := engine.RunGraph(context.Background(), g)
+	// The panic becomes a StatusFail outcome with the panic message in FailureReason.
+	// Since node "a" has no fail edge, the engine errors out.
+	if err == nil {
+		// If there's no routing error, verify the outcome captures the panic
+		if result != nil && result.NodeOutcomes["a"] != nil {
+			outcome := result.NodeOutcomes["a"]
+			if outcome.Status != StatusFail {
+				t.Errorf("expected StatusFail, got %v", outcome.Status)
+			}
+			if !strings.Contains(outcome.FailureReason, "panic") {
+				t.Errorf("expected failure reason to mention 'panic', got: %v", outcome.FailureReason)
+			}
+			return
+		}
+		t.Fatal("expected error or fail outcome from panicking handler, got nil")
+	}
+	// The error should mention the node failure
+	if !strings.Contains(err.Error(), "fail") {
+		t.Errorf("expected error to mention 'fail', got: %v", err)
+	}
+}
+
+func TestEngineHandlerPanicRecoveryError(t *testing.T) {
+	// A handler that panics with an error value should not crash the engine.
+	// The panic is caught by safeExecute, converted to an error, which
+	// executeWithRetry wraps into a StatusFail outcome. With unconditional
+	// edges, the pipeline routes past the failed node without crashing.
+	g := buildLinearGraph()
+
+	startH := newSuccessHandler("start")
+	codergenH := &testHandler{
+		typeName: "codergen",
+		executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+			panic(fmt.Errorf("error-typed panic"))
+		},
+	}
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, codergenH, exitH)
+
+	engine := NewEngine(EngineConfig{
+		Handlers:     reg,
+		DefaultRetry: RetryPolicyNone(),
+	})
+
+	result, err := engine.RunGraph(context.Background(), g)
+	// The pipeline should not crash. With unconditional edges, the fail
+	// outcome is routed onward. Verify the engine handled it gracefully.
+	if err != nil {
+		// An error is also acceptable (e.g. "no outgoing fail edge")
+		if !strings.Contains(err.Error(), "fail") {
+			t.Errorf("expected error to mention 'fail', got: %v", err)
+		}
+		return
+	}
+	// If no error, verify the panicking nodes recorded fail outcomes
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	outcomeA := result.NodeOutcomes["a"]
+	if outcomeA == nil {
+		t.Fatal("expected outcome for node 'a'")
+	}
+	if outcomeA.Status != StatusFail {
+		t.Errorf("expected StatusFail for panicking node 'a', got %v", outcomeA.Status)
+	}
+	if !strings.Contains(outcomeA.FailureReason, "panic") {
+		t.Errorf("expected failure reason to contain 'panic', got: %v", outcomeA.FailureReason)
+	}
+}
+
+func TestEngineHandlerPanicRecoveryNil(t *testing.T) {
+	// A handler that panics with nil should still be caught and not crash.
+	// In Go 1.21+, panic(nil) produces a *runtime.PanicNilError so
+	// recover() returns a non-nil value, which safeExecute converts to an error.
+	g := buildLinearGraph()
+
+	startH := newSuccessHandler("start")
+	codergenH := &testHandler{
+		typeName: "codergen",
+		executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+			panic(nil)
+		},
+	}
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, codergenH, exitH)
+
+	engine := NewEngine(EngineConfig{
+		Handlers:     reg,
+		DefaultRetry: RetryPolicyNone(),
+	})
+
+	result, err := engine.RunGraph(context.Background(), g)
+	// The pipeline should not crash. Verify the engine handled it gracefully.
+	if err != nil {
+		// An error is acceptable (e.g. "no outgoing fail edge")
+		if !strings.Contains(err.Error(), "fail") {
+			t.Errorf("expected error to mention 'fail', got: %v", err)
+		}
+		return
+	}
+	// If no error, verify the panicking nodes recorded fail outcomes
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	outcomeA := result.NodeOutcomes["a"]
+	if outcomeA == nil {
+		t.Fatal("expected outcome for node 'a'")
+	}
+	if outcomeA.Status != StatusFail {
+		t.Errorf("expected StatusFail for panicking node 'a', got %v", outcomeA.Status)
+	}
+	if !strings.Contains(outcomeA.FailureReason, "panic") {
+		t.Errorf("expected failure reason to contain 'panic', got: %v", outcomeA.FailureReason)
+	}
+}
+
+func TestEngineHandlerPanicRecoveryTerminalNode(t *testing.T) {
+	// A terminal node handler that panics should also be caught.
+	g := &Graph{
+		Name:         "terminal_panic",
+		Nodes:        make(map[string]*Node),
+		Edges:        make([]*Edge, 0),
+		Attrs:        make(map[string]string),
+		NodeDefaults: make(map[string]string),
+		EdgeDefaults: make(map[string]string),
+	}
+	g.Nodes["start"] = &Node{ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}}
+	g.Nodes["exit"] = &Node{ID: "exit", Attrs: map[string]string{"shape": "Msquare"}}
+	g.Edges = append(g.Edges,
+		&Edge{From: "start", To: "exit", Attrs: map[string]string{}},
+	)
+
+	startH := newSuccessHandler("start")
+	exitH := &testHandler{
+		typeName: "exit",
+		executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+			panic("terminal node explosion")
+		},
+	}
+	reg := buildTestRegistry(startH, exitH)
+
+	engine := NewEngine(EngineConfig{
+		Handlers:     reg,
+		DefaultRetry: RetryPolicyNone(),
+	})
+
+	_, err := engine.RunGraph(context.Background(), g)
+	if err == nil {
+		t.Fatal("expected error from panicking terminal handler, got nil")
+	}
+	if !strings.Contains(err.Error(), "panic") {
+		t.Errorf("expected error to mention 'panic', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "terminal node explosion") {
+		t.Errorf("expected error to contain panic message, got: %v", err)
+	}
+}
+
+func TestSafeExecuteDirectPanicString(t *testing.T) {
+	// Directly test safeExecute to verify panic message content is preserved.
+	node := &Node{ID: "panicker", Attrs: map[string]string{}}
+	handler := &testHandler{
+		typeName: "codergen",
+		executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+			panic("something went terribly wrong")
+		},
+	}
+	pctx := NewContext()
+
+	outcome, err := safeExecute(context.Background(), handler, node, pctx, nil)
+	if outcome != nil {
+		t.Errorf("expected nil outcome from panic, got %v", outcome)
+	}
+	if err == nil {
+		t.Fatal("expected error from panic, got nil")
+	}
+	if !strings.Contains(err.Error(), "panic") {
+		t.Errorf("expected error to mention 'panic', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "something went terribly wrong") {
+		t.Errorf("expected error to contain panic message, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "panicker") {
+		t.Errorf("expected error to contain node ID, got: %v", err)
+	}
+}
+
+func TestSafeExecuteDirectPanicError(t *testing.T) {
+	// Directly test safeExecute with an error-typed panic value.
+	node := &Node{ID: "err_panicker", Attrs: map[string]string{}}
+	handler := &testHandler{
+		typeName: "codergen",
+		executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+			panic(fmt.Errorf("error-typed panic"))
+		},
+	}
+	pctx := NewContext()
+
+	outcome, err := safeExecute(context.Background(), handler, node, pctx, nil)
+	if outcome != nil {
+		t.Errorf("expected nil outcome from panic, got %v", outcome)
+	}
+	if err == nil {
+		t.Fatal("expected error from error-typed panic, got nil")
+	}
+	if !strings.Contains(err.Error(), "panic") {
+		t.Errorf("expected error to mention 'panic', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "error-typed panic") {
+		t.Errorf("expected error to contain panic value, got: %v", err)
+	}
+}
+
+func TestSafeExecuteDirectPanicNil(t *testing.T) {
+	// Directly test safeExecute with a nil panic value.
+	node := &Node{ID: "nil_panicker", Attrs: map[string]string{}}
+	handler := &testHandler{
+		typeName: "codergen",
+		executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+			panic(nil)
+		},
+	}
+	pctx := NewContext()
+
+	outcome, err := safeExecute(context.Background(), handler, node, pctx, nil)
+	if outcome != nil {
+		t.Errorf("expected nil outcome from nil panic, got %v", outcome)
+	}
+	if err == nil {
+		t.Fatal("expected error from nil panic, got nil")
+	}
+	if !strings.Contains(err.Error(), "panic") {
+		t.Errorf("expected error to mention 'panic', got: %v", err)
+	}
+}
+
+func TestSafeExecuteDirectNoPanic(t *testing.T) {
+	// Directly test safeExecute with a normal (non-panicking) handler.
+	node := &Node{ID: "normal", Attrs: map[string]string{}}
+	handler := &testHandler{
+		typeName: "codergen",
+		executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+			return &Outcome{Status: StatusSuccess}, nil
+		},
+	}
+	pctx := NewContext()
+
+	outcome, err := safeExecute(context.Background(), handler, node, pctx, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if outcome == nil {
+		t.Fatal("expected non-nil outcome")
+	}
+	if outcome.Status != StatusSuccess {
+		t.Errorf("expected StatusSuccess, got %v", outcome.Status)
+	}
+}
+
+func TestEngineHandlerNoPanicStillWorks(t *testing.T) {
+	// Regression: normal (non-panicking) handlers still work correctly
+	// after adding panic recovery.
+	g := buildLinearGraph()
+
+	startH := newSuccessHandler("start")
+	codergenH := newSuccessHandler("codergen")
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, codergenH, exitH)
+
+	engine := NewEngine(EngineConfig{
+		Handlers:     reg,
+		DefaultRetry: RetryPolicyNone(),
+	})
+
+	result, err := engine.RunGraph(context.Background(), g)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if len(result.CompletedNodes) != 4 {
+		t.Errorf("expected 4 completed nodes, got %d: %v", len(result.CompletedNodes), result.CompletedNodes)
+	}
+}

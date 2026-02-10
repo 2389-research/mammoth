@@ -238,7 +238,7 @@ func buildPipelineServer(cfg config) *attractor.PipelineServer {
 func runServer(cfg config) int {
 	server := buildPipelineServer(cfg)
 
-	addr := fmt.Sprintf("0.0.0.0:%d", cfg.port)
+	addr := fmt.Sprintf("127.0.0.1:%d", cfg.port)
 
 	// Set up context with signal handling for graceful shutdown.
 	ctx, cancel := context.WithCancel(context.Background())

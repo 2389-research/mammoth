@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"sync"
@@ -125,16 +126,15 @@ func (h *httpInterviewer) Ask(ctx context.Context, question string, options []st
 		Options:  options,
 	}
 
-	h.run.mu.Lock()
-	h.run.Questions = append(h.run.Questions, pq)
-	h.run.mu.Unlock()
-
-	// Store the answer channel so the HTTP handler can send the answer
+	// Register the answer channel and question atomically in a single critical section.
+	// The channel must be set before the question becomes visible to prevent a race
+	// where handleAnswerQuestion finds the question but no channel to deliver the answer.
 	h.run.mu.Lock()
 	if h.run.answerChans == nil {
 		h.run.answerChans = make(map[string]chan string)
 	}
 	h.run.answerChans[qid] = answerCh
+	h.run.Questions = append(h.run.Questions, pq)
 	h.run.mu.Unlock()
 
 	// Block until we get an answer or context is cancelled
@@ -190,8 +190,8 @@ func (s *PipelineServer) registerRoutes() {
 func (s *PipelineServer) handleSubmitPipeline(w http.ResponseWriter, r *http.Request) {
 	var source string
 
-	contentType := r.Header.Get("Content-Type")
-	if contentType == "application/json" {
+	mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if mediaType == "application/json" {
 		var req struct {
 			Source string `json:"source"`
 		}
@@ -329,7 +329,8 @@ func (s *PipelineServer) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		run.mu.RLock()
-		currentEvents := run.Events
+		currentEvents := make([]EngineEvent, len(run.Events))
+		copy(currentEvents, run.Events)
 		status := run.Status
 		run.mu.RUnlock()
 
@@ -802,8 +803,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 // generateID creates a random hex ID suitable for pipeline identification.
+// Falls back to a timestamp-based ID if the random source fails.
 func generateID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback: use current time as a unique-enough ID
+		return fmt.Sprintf("t%d", time.Now().UnixNano())
+	}
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }

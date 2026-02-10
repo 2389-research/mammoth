@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strings"
 	"time"
 )
 
@@ -22,6 +24,7 @@ const (
 	EventStageCompleted    EngineEventType = "stage.completed"
 	EventStageFailed       EngineEventType = "stage.failed"
 	EventStageRetrying     EngineEventType = "stage.retrying"
+	EventStageStalled      EngineEventType = "stage.stalled"
 	EventCheckpointSaved   EngineEventType = "checkpoint.saved"
 )
 
@@ -230,23 +233,7 @@ func (e *Engine) ResumeFromCheckpoint(ctx context.Context, graph *Graph, checkpo
 		return nil, fmt.Errorf("checkpoint references node %q which does not exist in graph", cp.CurrentNode)
 	}
 
-	// Find the next node after the checkpoint node by looking at outgoing edges
-	outEdges := graph.OutgoingEdges(cp.CurrentNode)
-	if len(outEdges) == 0 {
-		return nil, fmt.Errorf("checkpoint node %q has no outgoing edges, cannot resume", cp.CurrentNode)
-	}
-
-	// Determine if the fidelity for the edge leaving the checkpoint node would be full.
-	// If so, we must degrade the first hop to summary:high.
-	firstEdge := outEdges[0]
-	nextNode := graph.FindNode(firstEdge.To)
-	if nextNode == nil {
-		return nil, fmt.Errorf("edge from checkpoint node %q points to nonexistent node %q", cp.CurrentNode, firstEdge.To)
-	}
-
-	fidelityMode := ResolveFidelity(firstEdge, nextNode, graph)
-
-	// Restore context from checkpoint
+	// Restore context from checkpoint so SelectEdge can use "outcome" and "preferred_label".
 	pctx := NewContext()
 	for k, v := range cp.ContextValues {
 		pctx.Set(k, v)
@@ -254,6 +241,40 @@ func (e *Engine) ResumeFromCheckpoint(ctx context.Context, graph *Graph, checkpo
 	for _, logEntry := range cp.Logs {
 		pctx.AppendLog(logEntry)
 	}
+
+	// Reconstruct the outcome from the checkpointed context so SelectEdge picks the
+	// correct edge for branched graphs (instead of always taking outEdges[0]).
+	cpOutcome := &Outcome{Status: StatusSuccess}
+	if outcomeStr, ok := cp.ContextValues["outcome"]; ok {
+		if s, ok := outcomeStr.(string); ok {
+			cpOutcome.Status = StageStatus(s)
+		}
+	}
+	if prefLabel, ok := cp.ContextValues["preferred_label"]; ok {
+		if s, ok := prefLabel.(string); ok {
+			cpOutcome.PreferredLabel = s
+		}
+	}
+
+	// Select the edge from the checkpoint node using the same logic as normal execution.
+	selectedEdge := SelectEdge(cpNode, cpOutcome, pctx, graph)
+	if selectedEdge == nil {
+		// Fallback: try first outgoing edge
+		outEdges := graph.OutgoingEdges(cp.CurrentNode)
+		if len(outEdges) == 0 {
+			return nil, fmt.Errorf("checkpoint node %q has no outgoing edges, cannot resume", cp.CurrentNode)
+		}
+		selectedEdge = outEdges[0]
+	}
+
+	nextNode := graph.FindNode(selectedEdge.To)
+	if nextNode == nil {
+		return nil, fmt.Errorf("edge from checkpoint node %q points to nonexistent node %q", cp.CurrentNode, selectedEdge.To)
+	}
+
+	// Determine if the fidelity for the selected edge would be full.
+	// If so, we must degrade the first hop to summary:high.
+	fidelityMode := ResolveFidelity(selectedEdge, nextNode, graph)
 
 	// Mirror graph attributes into context
 	for k, v := range graph.Attrs {
@@ -376,7 +397,7 @@ func (e *Engine) executeGraph(
 			handler := registry.Resolve(node)
 			if handler != nil {
 				e.emitEvent(EngineEvent{Type: EventStageStarted, NodeID: node.ID})
-				outcome, err := handler.Execute(ctx, node, pctx, store)
+				outcome, err := safeExecute(ctx, handler, node, pctx, store)
 				if err != nil {
 					e.emitEvent(EngineEvent{Type: EventStageFailed, NodeID: node.ID})
 					return nil, fmt.Errorf("terminal node %q handler error: %w", node.ID, err)
@@ -488,7 +509,7 @@ func (e *Engine) executeGraph(
 		// Step 5: Save checkpoint
 		if e.config.CheckpointDir != "" {
 			cp := NewCheckpoint(pctx, node.ID, completedNodes, nodeRetries)
-			cpPath := filepath.Join(e.config.CheckpointDir, fmt.Sprintf("checkpoint_%s_%d.json", node.ID, time.Now().UnixNano()))
+			cpPath := filepath.Join(e.config.CheckpointDir, fmt.Sprintf("checkpoint_%s_%d.json", sanitizeNodeID(node.ID), time.Now().UnixNano()))
 			if saveErr := cp.Save(cpPath); saveErr != nil {
 				pctx.AppendLog(fmt.Sprintf("warning: failed to save checkpoint: %v", saveErr))
 			} else {
@@ -547,6 +568,27 @@ func (e *Engine) executeGraph(
 	}, nil
 }
 
+// sanitizeNodeID replaces path separators and other unsafe characters in a node ID
+// to prevent path traversal attacks when used in filenames.
+func sanitizeNodeID(id string) string {
+	r := strings.NewReplacer("/", "_", "\\", "_", "..", "_", string(os.PathSeparator), "_")
+	return r.Replace(id)
+}
+
+// safeExecute wraps handler.Execute with panic recovery, converting panics into errors.
+// This prevents a single misbehaving handler from crashing the entire engine.
+// The stack trace is included in the error message to aid debugging.
+func safeExecute(ctx context.Context, handler NodeHandler, node *Node, pctx *Context, store *ArtifactStore) (outcome *Outcome, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			stack := debug.Stack()
+			err = fmt.Errorf("handler panic in node %q: %v\n%s", node.ID, r, stack)
+			outcome = nil
+		}
+	}()
+	return handler.Execute(ctx, node, pctx, store)
+}
+
 // executeWithRetry runs a handler with retry logic according to the given policy.
 // The onRetry callback (if non-nil) is called before each retry sleep.
 func executeWithRetry(
@@ -575,7 +617,7 @@ func executeWithRetry(
 		default:
 		}
 
-		outcome, err := handler.Execute(ctx, node, pctx, store)
+		outcome, err := safeExecute(ctx, handler, node, pctx, store)
 
 		if err != nil {
 			lastErr = err
