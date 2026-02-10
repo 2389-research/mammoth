@@ -23,6 +23,7 @@ func ApplyTransforms(g *Graph, transforms ...Transform) *Graph {
 // DefaultTransforms returns the standard ordered transform chain.
 func DefaultTransforms() []Transform {
 	return []Transform{
+		&SubPipelineTransform{},
 		&VariableExpansionTransform{},
 		&StylesheetApplicationTransform{},
 	}

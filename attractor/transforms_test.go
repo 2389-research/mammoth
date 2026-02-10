@@ -147,17 +147,22 @@ func TestApplyTransforms(t *testing.T) {
 func TestDefaultTransforms(t *testing.T) {
 	transforms := DefaultTransforms()
 
-	if len(transforms) != 2 {
-		t.Fatalf("got %d transforms, want 2", len(transforms))
+	if len(transforms) != 3 {
+		t.Fatalf("got %d transforms, want 3", len(transforms))
 	}
 
-	// First should be variable expansion
-	if _, ok := transforms[0].(*VariableExpansionTransform); !ok {
-		t.Errorf("transforms[0] is %T, want *VariableExpansionTransform", transforms[0])
+	// First should be sub-pipeline composition (must run before variable expansion)
+	if _, ok := transforms[0].(*SubPipelineTransform); !ok {
+		t.Errorf("transforms[0] is %T, want *SubPipelineTransform", transforms[0])
 	}
 
-	// Second should be stylesheet application
-	if _, ok := transforms[1].(*StylesheetApplicationTransform); !ok {
-		t.Errorf("transforms[1] is %T, want *StylesheetApplicationTransform", transforms[1])
+	// Second should be variable expansion
+	if _, ok := transforms[1].(*VariableExpansionTransform); !ok {
+		t.Errorf("transforms[1] is %T, want *VariableExpansionTransform", transforms[1])
+	}
+
+	// Third should be stylesheet application
+	if _, ok := transforms[2].(*StylesheetApplicationTransform); !ok {
+		t.Errorf("transforms[2] is %T, want *StylesheetApplicationTransform", transforms[2])
 	}
 }

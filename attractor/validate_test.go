@@ -107,6 +107,50 @@ func TestValidate_NoTerminalNode(t *testing.T) {
 	}
 }
 
+func TestValidate_NodeTypeStartAndExit(t *testing.T) {
+	g := &Graph{
+		Nodes: map[string]*Node{
+			"Start": {ID: "Start", Attrs: map[string]string{"node_type": "start", "shape": "circle"}},
+			"work":  {ID: "work", Attrs: map[string]string{"shape": "box"}},
+			"Exit":  {ID: "Exit", Attrs: map[string]string{"node_type": "exit", "shape": "doublecircle"}},
+		},
+		Edges: []*Edge{
+			{From: "Start", To: "work", Attrs: map[string]string{}},
+			{From: "work", To: "Exit", Attrs: map[string]string{}},
+		},
+	}
+
+	diags := Validate(g)
+	if hasDiagnostic(diags, "start_node", SeverityError) {
+		t.Errorf("node_type=start should satisfy start node rule, got: %v", diags)
+	}
+	if hasDiagnostic(diags, "terminal_node", SeverityError) {
+		t.Errorf("node_type=exit should satisfy terminal node rule, got: %v", diags)
+	}
+}
+
+func TestValidate_TypeAttrStartAndExit(t *testing.T) {
+	g := &Graph{
+		Nodes: map[string]*Node{
+			"s": {ID: "s", Attrs: map[string]string{"type": "start", "shape": "circle"}},
+			"w": {ID: "w", Attrs: map[string]string{"shape": "box"}},
+			"e": {ID: "e", Attrs: map[string]string{"type": "exit", "shape": "doublecircle"}},
+		},
+		Edges: []*Edge{
+			{From: "s", To: "w", Attrs: map[string]string{}},
+			{From: "w", To: "e", Attrs: map[string]string{}},
+		},
+	}
+
+	diags := Validate(g)
+	if hasDiagnostic(diags, "start_node", SeverityError) {
+		t.Errorf("type=start should satisfy start node rule, got: %v", diags)
+	}
+	if hasDiagnostic(diags, "terminal_node", SeverityError) {
+		t.Errorf("type=exit should satisfy terminal node rule, got: %v", diags)
+	}
+}
+
 func TestValidate_UnreachableNode(t *testing.T) {
 	g := &Graph{
 		Nodes: map[string]*Node{

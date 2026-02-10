@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pipeline {{.ID}} - Makeatron</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #101014;
+            --bg-card: #18181c;
+            --bg-input: #121216;
+            --bg-hover: #1e1e24;
+            --border: rgba(255,255,255,0.06);
+            --border-hover: rgba(255,255,255,0.12);
+            --text: #e8e8ec;
+            --text-2: #9898a4;
+            --text-3: #58586a;
+            --green: #34d399;
+            --green-bg: rgba(52,211,153,0.08);
+            --amber: #fbbf24;
+            --amber-bg: rgba(251,191,36,0.08);
+            --red: #f87171;
+            --red-bg: rgba(248,113,113,0.08);
+            --slate: #64748b;
+            --slate-bg: rgba(100,116,139,0.08);
+            --brand: #a78bfa;
+            --brand-hover: #c4b5fd;
+            --brand-bg: rgba(167,139,250,0.06);
+            --font: 'DM Sans', -apple-system, sans-serif;
+            --mono: 'DM Mono', 'SF Mono', monospace;
+            --radius: 10px;
+        }
+
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 3px; }
+
+        /* ---- NAV ---- */
+        .nav {
+            padding: 20px 32px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            animation: fadeIn 0.3s ease-out;
+        }
+        .nav-back {
+            color: var(--text-3);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            transition: color 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .nav-back:hover { color: var(--text-2); }
+        .nav-back svg { width: 14px; height: 14px; }
+        .nav-sep { color: var(--text-3); font-size: 13px; }
+        .nav-id {
+            font-family: var(--mono);
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text);
+        }
+
+        .badge {
+            font-family: var(--font);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+        .badge-running {
+            color: var(--amber);
+            background: var(--amber-bg);
+        }
+        .badge-completed {
+            color: var(--green);
+            background: var(--green-bg);
+        }
+        .badge-failed {
+            color: var(--red);
+            background: var(--red-bg);
+        }
+        .badge-cancelled {
+            color: var(--slate);
+            background: var(--slate-bg);
+        }
+
+        .nav-actions { margin-left: auto; }
+
+        .cancel-btn {
+            font-family: var(--font);
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--red);
+            background: var(--red-bg);
+            border: 1px solid rgba(248,113,113,0.15);
+            padding: 5px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .cancel-btn:hover {
+            background: rgba(248,113,113,0.15);
+            border-color: rgba(248,113,113,0.3);
+        }
+
+        /* ---- MAIN GRID ---- */
+        .main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 8px 32px 80px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ---- PANELS ---- */
+        .panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            animation: fadeIn 0.4s ease-out both;
+        }
+        .panel:nth-child(1) { animation-delay: 0.02s; }
+        .panel:nth-child(2) { animation-delay: 0.06s; }
+        .panel:nth-child(3) { animation-delay: 0.10s; }
+        .panel:nth-child(4) { animation-delay: 0.14s; }
+
+        .panel-header {
+            padding: 12px 18px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-2);
+            letter-spacing: 0.3px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .panel-header svg {
+            width: 14px;
+            height: 14px;
+            color: var(--text-3);
+        }
+
+        .panel-body {
+            padding: 16px 18px;
+            max-height: 480px;
+            overflow-y: auto;
+        }
+
+        /* ---- GRAPH PANEL ---- */
+        .graph-panel {
+            grid-column: 1 / -1;
+        }
+        .graph-panel .panel-body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 200px;
+            max-height: 420px;
+            overflow: auto;
+            background: var(--bg);
+            padding: 20px;
+        }
+        .graph-panel .panel-body svg {
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* ---- EVENT LOG ---- */
+        .event-item {
+            font-family: var(--mono);
+            font-size: 12px;
+            padding: 6px 0;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 10px;
+            line-height: 1.5;
+            animation: eventSlide 0.2s ease-out;
+        }
+        .event-item:last-child { border-bottom: none; }
+
+        @keyframes eventSlide {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .event-time {
+            color: var(--text-3);
+            min-width: 65px;
+        }
+        .event-type {
+            color: var(--brand);
+            min-width: 130px;
+            font-weight: 500;
+        }
+        .event-node {
+            color: var(--amber);
+        }
+        .event-detail {
+            color: var(--text-3);
+            margin-left: auto;
+        }
+
+        /* ---- CONTEXT TABLE ---- */
+        .ctx-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: var(--mono);
+            font-size: 12px;
+        }
+        .ctx-table tr { border-bottom: 1px solid var(--border); }
+        .ctx-table tr:last-child { border-bottom: none; }
+        .ctx-key {
+            padding: 6px 12px 6px 0;
+            color: var(--amber);
+            white-space: nowrap;
+            vertical-align: top;
+        }
+        .ctx-val {
+            padding: 6px 0;
+            color: var(--text-2);
+            word-break: break-word;
+        }
+
+        /* ---- QUESTIONS ---- */
+        .question-card {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 10px;
+        }
+        .question-card:last-child { margin-bottom: 0; }
+
+        .question-text {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 12px;
+            color: var(--text);
+            line-height: 1.5;
+        }
+        .question-options {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .answer-btn {
+            font-family: var(--font);
+            font-size: 12px;
+            font-weight: 600;
+            background: var(--brand-bg);
+            color: var(--brand);
+            border: 1px solid rgba(167,139,250,0.15);
+            padding: 7px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s, transform 0.1s;
+        }
+        .answer-btn:hover {
+            background: rgba(167,139,250,0.12);
+            border-color: rgba(167,139,250,0.3);
+        }
+        .answer-btn:active { transform: scale(0.97); }
+
+        /* ---- EMPTY / NO-DATA ---- */
+        .no-data {
+            color: var(--text-3);
+            font-size: 13px;
+            text-align: center;
+            padding: 32px 16px;
+        }
+
+        /* ---- RUNNING DOT ---- */
+        .running-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--amber);
+            margin-right: 6px;
+            animation: pulse 1.8s ease-in-out infinite;
+            vertical-align: middle;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(251,191,36,0.3); }
+            50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(251,191,36,0); }
+        }
+
+        /* ---- RESPONSIVE ---- */
+        @media (max-width: 900px) {
+            .main { grid-template-columns: 1fr; padding: 8px 16px 60px; }
+            .graph-panel { grid-column: 1; }
+            .nav { padding: 16px; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="nav">
+        <a class="nav-back" href="/">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"/>
+            </svg>
+            Dashboard
+        </a>
+        <span class="nav-sep">/</span>
+        <span class="nav-id">{{.ID}}</span>
+        <span id="status-badge"
+              hx-get="/ui/pipelines/{{.ID}}/status-fragment"
+              hx-trigger="load, every 2s"
+              hx-swap="innerHTML">
+            {{if eq .Status "running"}}<span class="running-dot"></span>{{end}}
+            <span class="badge badge-{{.Status}}">{{.Status}}</span>
+        </span>
+        {{if eq .Status "running"}}
+        <div class="nav-actions">
+            <form method="POST" action="/pipelines/{{.ID}}/cancel" style="display:inline">
+                <button type="submit" class="cancel-btn">Cancel</button>
+            </form>
+        </div>
+        {{end}}
+    </nav>
+
+    <div class="main">
+        <!-- Graph Panel -->
+        <div class="panel graph-panel">
+            <div class="panel-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                </svg>
+                Pipeline Graph
+            </div>
+            <div class="panel-body" id="graph-container"
+                 hx-get="/ui/pipelines/{{.ID}}/graph-fragment"
+                 hx-trigger="load, every 3s"
+                 hx-swap="innerHTML">
+                <div class="no-data">Loading graph...</div>
+            </div>
+        </div>
+
+        <!-- Events Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+                Event Log
+            </div>
+            <div class="panel-body" id="events-container"
+                 hx-get="/ui/pipelines/{{.ID}}/events-fragment"
+                 hx-trigger="load"
+                 hx-swap="innerHTML">
+            </div>
+            <div id="events-stream"
+                 hx-ext="sse"
+                 sse-connect="/ui/pipelines/{{.ID}}/events-stream"
+                 sse-swap="message"
+                 hx-target="#events-container"
+                 hx-swap="beforeend">
+            </div>
+        </div>
+
+        <!-- Questions Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                Human Gates
+            </div>
+            <div class="panel-body" id="questions-container"
+                 hx-get="/ui/pipelines/{{.ID}}/questions-fragment"
+                 hx-trigger="load, every 2s"
+                 hx-swap="innerHTML">
+                <div class="no-data">No pending questions</div>
+            </div>
+        </div>
+
+        <!-- Context Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+                    <line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/>
+                    <line x1="2" y1="12" x2="22" y2="12"/>
+                </svg>
+                Pipeline Context
+            </div>
+            <div class="panel-body" id="context-container"
+                 hx-get="/ui/pipelines/{{.ID}}/context-fragment"
+                 hx-trigger="load, every 3s"
+                 hx-swap="innerHTML">
+                <div class="no-data">No context available yet</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Auto-scroll events panel as new events arrive
+        const eventsContainer = document.getElementById('events-container');
+        if (eventsContainer) {
+            const observer = new MutationObserver(function() {
+                eventsContainer.scrollTop = eventsContainer.scrollHeight;
+            });
+            observer.observe(eventsContainer, { childList: true, subtree: true });
+        }
+    </script>
+</body>
+</html>

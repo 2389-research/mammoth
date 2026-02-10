@@ -1,10 +1,16 @@
 // ABOUTME: Tests for the makeatron CLI entrypoint covering flag parsing, retry policy mapping,
-// ABOUTME: pipeline validation, pipeline execution, and version display.
+// ABOUTME: pipeline validation, pipeline execution, version display, and render wiring.
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/2389-research/makeatron/attractor"
 )
@@ -65,6 +71,9 @@ func TestParseFlagsDefaults(t *testing.T) {
 	if cfg.retryPolicy != "none" {
 		t.Errorf("expected retryPolicy=none, got %q", cfg.retryPolicy)
 	}
+	if cfg.tuiMode {
+		t.Error("expected tuiMode=false by default")
+	}
 	if cfg.verbose {
 		t.Error("expected verbose=false by default")
 	}
@@ -112,6 +121,33 @@ func TestParseFlagsPort(t *testing.T) {
 
 	if cfg.port != 9999 {
 		t.Errorf("expected port=9999, got %d", cfg.port)
+	}
+}
+
+func TestParseFlagsTUI(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"makeatron", "--tui", "pipeline.dot"}
+	cfg := parseFlags()
+
+	if !cfg.tuiMode {
+		t.Error("expected tuiMode=true with --tui flag")
+	}
+	if cfg.pipelineFile != "pipeline.dot" {
+		t.Errorf("expected pipelineFile=pipeline.dot, got %q", cfg.pipelineFile)
+	}
+}
+
+func TestParseFlagsTUIDefaultFalse(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"makeatron", "pipeline.dot"}
+	cfg := parseFlags()
+
+	if cfg.tuiMode {
+		t.Error("expected tuiMode=false by default")
 	}
 }
 
@@ -310,5 +346,184 @@ func TestRunRequiresPipelineFile(t *testing.T) {
 	exitCode := run(cfg)
 	if exitCode != 1 {
 		t.Errorf("expected exit code 1 when no pipeline file given (non-server mode), got %d", exitCode)
+	}
+}
+
+// --- buildPipelineServer render wiring tests ---
+
+func TestBuildPipelineServerWiresRenderFunctions(t *testing.T) {
+	cfg := config{
+		retryPolicy: "none",
+	}
+	server := buildPipelineServer(cfg)
+
+	if server.ToDOT == nil {
+		t.Error("expected ToDOT to be wired on the pipeline server")
+	}
+	if server.ToDOTWithStatus == nil {
+		t.Error("expected ToDOTWithStatus to be wired on the pipeline server")
+	}
+	if server.RenderDOTSource == nil {
+		t.Error("expected RenderDOTSource to be wired on the pipeline server")
+	}
+}
+
+func TestBuildPipelineServerToDOTProducesValidOutput(t *testing.T) {
+	cfg := config{
+		retryPolicy: "none",
+	}
+	server := buildPipelineServer(cfg)
+
+	graph := &attractor.Graph{
+		Name: "wiring_test",
+		Nodes: map[string]*attractor.Node{
+			"a": {ID: "a", Attrs: map[string]string{}},
+			"b": {ID: "b", Attrs: map[string]string{}},
+		},
+		Edges: []*attractor.Edge{
+			{From: "a", To: "b", Attrs: map[string]string{}},
+		},
+		Attrs: map[string]string{},
+	}
+
+	dot := server.ToDOT(graph)
+	if !strings.Contains(dot, "digraph wiring_test") {
+		t.Errorf("expected digraph output from wired ToDOT, got: %s", dot)
+	}
+	if !strings.Contains(dot, "a -> b") {
+		t.Errorf("expected edge in wired ToDOT output, got: %s", dot)
+	}
+}
+
+func TestBuildPipelineServerToDOTWithStatusProducesColoredOutput(t *testing.T) {
+	cfg := config{
+		retryPolicy: "none",
+	}
+	server := buildPipelineServer(cfg)
+
+	graph := &attractor.Graph{
+		Name: "status_test",
+		Nodes: map[string]*attractor.Node{
+			"a": {ID: "a", Attrs: map[string]string{}},
+		},
+		Edges: []*attractor.Edge{},
+		Attrs: map[string]string{},
+	}
+	outcomes := map[string]*attractor.Outcome{
+		"a": {Status: attractor.StatusSuccess},
+	}
+
+	dot := server.ToDOTWithStatus(graph, outcomes)
+	if !strings.Contains(dot, "fillcolor") {
+		t.Errorf("expected fillcolor in status DOT output, got: %s", dot)
+	}
+}
+
+func TestRunPipelineWiresInterviewer(t *testing.T) {
+	// Verify that runPipeline wires a ConsoleInterviewer into the
+	// WaitForHumanHandler so human gate nodes work in CLI mode.
+	cfg := config{
+		retryPolicy: "none",
+	}
+
+	engineCfg := attractor.EngineConfig{
+		Handlers:     attractor.DefaultHandlerRegistry(),
+		DefaultRetry: attractor.RetryPolicyNone(),
+	}
+	engine := attractor.NewEngine(engineCfg)
+
+	// Simulate the wiring that runPipeline does
+	wireInterviewer(engine)
+
+	handler := engine.GetHandler("wait.human")
+	if handler == nil {
+		t.Fatal("expected wait.human handler in default registry")
+	}
+	hh, ok := handler.(*attractor.WaitForHumanHandler)
+	if !ok {
+		t.Fatalf("expected *WaitForHumanHandler, got %T", handler)
+	}
+	if hh.Interviewer == nil {
+		t.Error("expected Interviewer to be wired on WaitForHumanHandler")
+	}
+
+	// Verify cfg is used (suppress unused variable)
+	_ = cfg
+}
+
+func TestExampleDOTFilesParseAndValidate(t *testing.T) {
+	// Verify all example DOT files still parse and validate after
+	// converting review nodes from wait.human to codergen.
+	examples := []string{
+		"../../examples/build_pong.dot",
+		"../../examples/build_dvd_bounce.dot",
+		"../../examples/build_markdown_editor.dot",
+		"../../examples/build_htmx_blog.dot",
+		"../../examples/build_python_code_agent.dot",
+	}
+
+	for _, path := range examples {
+		t.Run(path, func(t *testing.T) {
+			source, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("failed to read %s: %v", path, err)
+			}
+			graph, err := attractor.Parse(string(source))
+			if err != nil {
+				t.Fatalf("failed to parse %s: %v", path, err)
+			}
+
+			transforms := attractor.DefaultTransforms()
+			graph = attractor.ApplyTransforms(graph, transforms...)
+
+			diags := attractor.Validate(graph)
+			for _, d := range diags {
+				if d.Severity == attractor.SeverityError {
+					t.Errorf("[%s] validation error: %s (node: %s)", path, d.Message, d.NodeID)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildPipelineServerGraphEndpointReturnsDOT(t *testing.T) {
+	cfg := config{
+		retryPolicy: "none",
+	}
+	server := buildPipelineServer(cfg)
+
+	// Submit a pipeline via POST
+	dotSource := `digraph test { start [shape=Mdiamond]; finish [shape=Msquare]; start -> finish }`
+	req := httptest.NewRequest("POST", "/pipelines", strings.NewReader(dotSource))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var submitResp map[string]string
+	json.Unmarshal(rec.Body.Bytes(), &submitResp)
+	pipelineID := submitResp["id"]
+	if pipelineID == "" {
+		t.Fatal("no pipeline ID in response")
+	}
+
+	// Give the pipeline a moment to complete
+	time.Sleep(200 * time.Millisecond)
+
+	// GET the graph in DOT format
+	graphReq := httptest.NewRequest("GET", "/pipelines/"+pipelineID+"/graph?format=dot", nil)
+	graphReq = graphReq.WithContext(context.Background())
+	graphRec := httptest.NewRecorder()
+	server.ServeHTTP(graphRec, graphReq)
+
+	if graphRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for graph endpoint, got %d: %s", graphRec.Code, graphRec.Body.String())
+	}
+
+	body := graphRec.Body.String()
+	if !strings.Contains(body, "digraph") {
+		t.Errorf("expected DOT output from graph endpoint, got: %s", body)
 	}
 }

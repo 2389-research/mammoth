@@ -1,11 +1,12 @@
 // ABOUTME: Tests for the HTTP pipeline server covering all REST endpoints.
-// ABOUTME: Validates pipeline submission, status queries, SSE streaming, cancellation, questions, and context retrieval.
+// ABOUTME: Validates pipeline submission, status queries, SSE streaming, cancellation, questions, context retrieval, and event query endpoints.
 package attractor
 
 import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -655,5 +656,774 @@ func TestCancelNonexistentPipeline(t *testing.T) {
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+// --- Event Query Endpoint Tests ---
+
+// setupServerWithEvents creates a PipelineServer with an EventQuery backed by FSRunStateStore,
+// pre-populated with known events. Returns the test server, pipeline ID, and the events.
+func setupServerWithEvents(t *testing.T) (*httptest.Server, string, []EngineEvent) {
+	t.Helper()
+
+	store := newTestStore(t)
+	state := newTestRunState(t)
+
+	if err := store.Create(state); err != nil {
+		t.Fatalf("Create run state failed: %v", err)
+	}
+
+	baseTime := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+
+	events := []EngineEvent{
+		{Type: EventPipelineStarted, NodeID: "", Data: map[string]any{"pipeline": "test"}, Timestamp: baseTime},
+		{Type: EventStageStarted, NodeID: "node_a", Data: map[string]any{"step": 1}, Timestamp: baseTime.Add(1 * time.Minute)},
+		{Type: EventStageCompleted, NodeID: "node_a", Data: map[string]any{"step": 1}, Timestamp: baseTime.Add(2 * time.Minute)},
+		{Type: EventStageStarted, NodeID: "node_b", Data: map[string]any{"step": 2}, Timestamp: baseTime.Add(3 * time.Minute)},
+		{Type: EventStageRetrying, NodeID: "node_b", Data: map[string]any{"attempt": 2}, Timestamp: baseTime.Add(4 * time.Minute)},
+		{Type: EventStageCompleted, NodeID: "node_b", Data: map[string]any{"step": 2}, Timestamp: baseTime.Add(5 * time.Minute)},
+		{Type: EventCheckpointSaved, NodeID: "node_b", Data: nil, Timestamp: baseTime.Add(6 * time.Minute)},
+		{Type: EventPipelineCompleted, NodeID: "", Data: nil, Timestamp: baseTime.Add(7 * time.Minute)},
+	}
+
+	for _, evt := range events {
+		if err := store.AddEvent(state.ID, evt); err != nil {
+			t.Fatalf("AddEvent failed: %v", err)
+		}
+	}
+
+	eventQuery := NewFSEventQuery(store)
+
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	srv.SetEventQuery(eventQuery)
+
+	// Register the pipeline in the server so it recognizes the ID
+	run := &PipelineRun{
+		ID:        state.ID,
+		Status:    "completed",
+		CreatedAt: time.Now(),
+	}
+	srv.mu.Lock()
+	srv.pipelines[state.ID] = run
+	srv.mu.Unlock()
+
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	return ts, state.ID, events
+}
+
+func TestServerEventQueryNoFilter(t *testing.T) {
+	ts, pipelineID, events := setupServerWithEvents(t)
+
+	resp, err := http.Get(ts.URL + "/pipelines/" + pipelineID + "/events/query")
+	if err != nil {
+		t.Fatalf("GET /events/query failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	var result EventQueryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(result.Events) != len(events) {
+		t.Errorf("expected %d events, got %d", len(events), len(result.Events))
+	}
+	if result.Total != len(events) {
+		t.Errorf("expected total %d, got %d", len(events), result.Total)
+	}
+}
+
+func TestServerEventQueryFilterByType(t *testing.T) {
+	ts, pipelineID, _ := setupServerWithEvents(t)
+
+	resp, err := http.Get(ts.URL + "/pipelines/" + pipelineID + "/events/query?type=stage.started")
+	if err != nil {
+		t.Fatalf("GET /events/query?type failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var result EventQueryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(result.Events) != 2 {
+		t.Errorf("expected 2 stage.started events, got %d", len(result.Events))
+	}
+	for _, evt := range result.Events {
+		if evt.Type != EventStageStarted {
+			t.Errorf("expected type %q, got %q", EventStageStarted, evt.Type)
+		}
+	}
+}
+
+func TestServerEventQueryFilterByNode(t *testing.T) {
+	ts, pipelineID, _ := setupServerWithEvents(t)
+
+	resp, err := http.Get(ts.URL + "/pipelines/" + pipelineID + "/events/query?node=node_b")
+	if err != nil {
+		t.Fatalf("GET /events/query?node failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var result EventQueryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(result.Events) != 4 {
+		t.Errorf("expected 4 events for node_b, got %d", len(result.Events))
+	}
+	for _, evt := range result.Events {
+		if evt.NodeID != "node_b" {
+			t.Errorf("expected NodeID 'node_b', got %q", evt.NodeID)
+		}
+	}
+}
+
+func TestServerEventQueryFilterByTimeRange(t *testing.T) {
+	ts, pipelineID, _ := setupServerWithEvents(t)
+
+	since := "2025-06-15T10:02:00Z"
+	until := "2025-06-15T10:05:00Z"
+
+	url := fmt.Sprintf("%s/pipelines/%s/events/query?since=%s&until=%s", ts.URL, pipelineID, since, until)
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("GET /events/query?since&until failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var result EventQueryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Events at 2min, 3min, 4min, 5min = 4 events
+	if len(result.Events) != 4 {
+		t.Errorf("expected 4 events in time range, got %d", len(result.Events))
+	}
+}
+
+func TestServerEventQueryPagination(t *testing.T) {
+	ts, pipelineID, _ := setupServerWithEvents(t)
+
+	resp, err := http.Get(ts.URL + "/pipelines/" + pipelineID + "/events/query?limit=3&offset=2")
+	if err != nil {
+		t.Fatalf("GET /events/query?limit&offset failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var result EventQueryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(result.Events) != 3 {
+		t.Errorf("expected 3 events with limit=3 offset=2, got %d", len(result.Events))
+	}
+	// Total should reflect all matching events, not the paginated count
+	if result.Total != 8 {
+		t.Errorf("expected total 8, got %d", result.Total)
+	}
+}
+
+func TestServerEventQueryInvalidSince(t *testing.T) {
+	ts, pipelineID, _ := setupServerWithEvents(t)
+
+	resp, err := http.Get(ts.URL + "/pipelines/" + pipelineID + "/events/query?since=not-a-date")
+	if err != nil {
+		t.Fatalf("GET /events/query?since=invalid failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid since, got %d", resp.StatusCode)
+	}
+}
+
+func TestServerEventQueryInvalidUntil(t *testing.T) {
+	ts, pipelineID, _ := setupServerWithEvents(t)
+
+	resp, err := http.Get(ts.URL + "/pipelines/" + pipelineID + "/events/query?until=not-a-date")
+	if err != nil {
+		t.Fatalf("GET /events/query?until=invalid failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid until, got %d", resp.StatusCode)
+	}
+}
+
+func TestServerEventQuery404(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/pipelines/nonexistent/events/query")
+	if err != nil {
+		t.Fatalf("GET /events/query failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestServerEventQueryNoEventQuery(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Register a pipeline but don't set an EventQuery
+	run := &PipelineRun{
+		ID:        "test-run",
+		Status:    "completed",
+		CreatedAt: time.Now(),
+	}
+	srv.mu.Lock()
+	srv.pipelines["test-run"] = run
+	srv.mu.Unlock()
+
+	resp, err := http.Get(ts.URL + "/pipelines/test-run/events/query")
+	if err != nil {
+		t.Fatalf("GET /events/query failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 when no event query configured, got %d", resp.StatusCode)
+	}
+}
+
+// --- Event Tail Endpoint Tests ---
+
+func TestServerEventTailDefault(t *testing.T) {
+	ts, pipelineID, _ := setupServerWithEvents(t)
+
+	resp, err := http.Get(ts.URL + "/pipelines/" + pipelineID + "/events/tail")
+	if err != nil {
+		t.Fatalf("GET /events/tail failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var result EventTailResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Default n=10, but only 8 events exist
+	if len(result.Events) != 8 {
+		t.Errorf("expected 8 events (all, since fewer than default 10), got %d", len(result.Events))
+	}
+}
+
+func TestServerEventTailWithN(t *testing.T) {
+	ts, pipelineID, events := setupServerWithEvents(t)
+
+	resp, err := http.Get(ts.URL + "/pipelines/" + pipelineID + "/events/tail?n=3")
+	if err != nil {
+		t.Fatalf("GET /events/tail?n=3 failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var result EventTailResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(result.Events) != 3 {
+		t.Fatalf("expected 3 tail events, got %d", len(result.Events))
+	}
+
+	// Should be the last 3 events
+	if result.Events[0].Type != events[5].Type {
+		t.Errorf("expected tail[0] type %q, got %q", events[5].Type, result.Events[0].Type)
+	}
+	if result.Events[2].Type != events[7].Type {
+		t.Errorf("expected tail[2] type %q, got %q", events[7].Type, result.Events[2].Type)
+	}
+}
+
+func TestServerEventTailInvalidN(t *testing.T) {
+	ts, pipelineID, _ := setupServerWithEvents(t)
+
+	resp, err := http.Get(ts.URL + "/pipelines/" + pipelineID + "/events/tail?n=abc")
+	if err != nil {
+		t.Fatalf("GET /events/tail?n=abc failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid n, got %d", resp.StatusCode)
+	}
+}
+
+func TestServerEventTail404(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/pipelines/nonexistent/events/tail")
+	if err != nil {
+		t.Fatalf("GET /events/tail failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestServerEventTailNoEventQuery(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	run := &PipelineRun{
+		ID:        "test-run",
+		Status:    "completed",
+		CreatedAt: time.Now(),
+	}
+	srv.mu.Lock()
+	srv.pipelines["test-run"] = run
+	srv.mu.Unlock()
+
+	resp, err := http.Get(ts.URL + "/pipelines/test-run/events/tail")
+	if err != nil {
+		t.Fatalf("GET /events/tail failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 when no event query configured, got %d", resp.StatusCode)
+	}
+}
+
+// --- Event Summary Endpoint Tests ---
+
+func TestServerEventSummary(t *testing.T) {
+	ts, pipelineID, _ := setupServerWithEvents(t)
+
+	resp, err := http.Get(ts.URL + "/pipelines/" + pipelineID + "/events/summary")
+	if err != nil {
+		t.Fatalf("GET /events/summary failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var result EventSummaryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if result.TotalEvents != 8 {
+		t.Errorf("expected TotalEvents=8, got %d", result.TotalEvents)
+	}
+
+	// Check ByType
+	if result.ByType["stage.started"] != 2 {
+		t.Errorf("expected ByType[stage.started]=2, got %d", result.ByType["stage.started"])
+	}
+	if result.ByType["stage.completed"] != 2 {
+		t.Errorf("expected ByType[stage.completed]=2, got %d", result.ByType["stage.completed"])
+	}
+	if result.ByType["pipeline.started"] != 1 {
+		t.Errorf("expected ByType[pipeline.started]=1, got %d", result.ByType["pipeline.started"])
+	}
+
+	// Check ByNode
+	if result.ByNode["node_a"] != 2 {
+		t.Errorf("expected ByNode[node_a]=2, got %d", result.ByNode["node_a"])
+	}
+	if result.ByNode["node_b"] != 4 {
+		t.Errorf("expected ByNode[node_b]=4, got %d", result.ByNode["node_b"])
+	}
+
+	// Check timestamps
+	if result.FirstEvent == "" {
+		t.Error("expected non-empty FirstEvent timestamp")
+	}
+	if result.LastEvent == "" {
+		t.Error("expected non-empty LastEvent timestamp")
+	}
+}
+
+func TestServerEventSummary404(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/pipelines/nonexistent/events/summary")
+	if err != nil {
+		t.Fatalf("GET /events/summary failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestServerEventSummaryNoEventQuery(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	run := &PipelineRun{
+		ID:        "test-run",
+		Status:    "completed",
+		CreatedAt: time.Now(),
+	}
+	srv.mu.Lock()
+	srv.pipelines["test-run"] = run
+	srv.mu.Unlock()
+
+	resp, err := http.Get(ts.URL + "/pipelines/test-run/events/summary")
+	if err != nil {
+		t.Fatalf("GET /events/summary failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 when no event query configured, got %d", resp.StatusCode)
+	}
+}
+
+// --- Graph Rendering Endpoint Tests ---
+
+// stubToDOT is a minimal DOT serializer for testing that produces a simple digraph string.
+func stubToDOT(g *Graph) string {
+	return fmt.Sprintf("digraph %s { /* stub */ }", g.Name)
+}
+
+// stubToDOTWithStatus adds a status comment to the DOT output for testing.
+func stubToDOTWithStatus(g *Graph, outcomes map[string]*Outcome) string {
+	return fmt.Sprintf("digraph %s { /* status */ }", g.Name)
+}
+
+// stubRenderDOTSource returns fake SVG or PNG output for testing the HTTP endpoint.
+func stubRenderDOTSource(_ context.Context, dotText string, format string) ([]byte, error) {
+	switch format {
+	case "svg":
+		return []byte("<svg><text>test</text></svg>"), nil
+	case "png":
+		// PNG signature + minimal data
+		return []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00}, nil
+	default:
+		return nil, fmt.Errorf("unsupported format: %s", format)
+	}
+}
+
+func newGraphTestServer() *PipelineServer {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	srv.ToDOT = stubToDOT
+	srv.ToDOTWithStatus = stubToDOTWithStatus
+	srv.RenderDOTSource = stubRenderDOTSource
+	return srv
+}
+
+func TestGetPipelineGraphDOTFormat(t *testing.T) {
+	srv := newGraphTestServer()
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	run := &PipelineRun{
+		ID:        "graph-test",
+		Status:    "running",
+		Source:    simpleDOTSource(),
+		CreatedAt: time.Now(),
+	}
+	srv.mu.Lock()
+	srv.pipelines["graph-test"] = run
+	srv.mu.Unlock()
+
+	resp, err := http.Get(ts.URL + "/pipelines/graph-test/graph?format=dot")
+	if err != nil {
+		t.Fatalf("GET /pipelines/{id}/graph?format=dot failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	if resp.Header.Get("Content-Type") != "text/vnd.graphviz" {
+		t.Errorf("expected Content-Type 'text/vnd.graphviz', got %q", resp.Header.Get("Content-Type"))
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	dot := string(body)
+	if !strings.Contains(dot, "digraph") {
+		t.Errorf("expected DOT output containing 'digraph', got:\n%s", dot)
+	}
+}
+
+func TestGetPipelineGraph404(t *testing.T) {
+	srv := newGraphTestServer()
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/pipelines/nonexistent/graph")
+	if err != nil {
+		t.Fatalf("GET /pipelines/{id}/graph failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestGetPipelineGraphInvalidFormat(t *testing.T) {
+	srv := newGraphTestServer()
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	run := &PipelineRun{
+		ID:        "graph-test",
+		Status:    "running",
+		Source:    simpleDOTSource(),
+		CreatedAt: time.Now(),
+	}
+	srv.mu.Lock()
+	srv.pipelines["graph-test"] = run
+	srv.mu.Unlock()
+
+	resp, err := http.Get(ts.URL + "/pipelines/graph-test/graph?format=gif")
+	if err != nil {
+		t.Fatalf("GET /pipelines/{id}/graph?format=gif failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for unsupported format, got %d", resp.StatusCode)
+	}
+}
+
+func TestGetPipelineGraphWithCompletedStatus(t *testing.T) {
+	srv := newGraphTestServer()
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	run := &PipelineRun{
+		ID:     "graph-status-test",
+		Status: "completed",
+		Source: simpleDOTSource(),
+		Result: &RunResult{
+			NodeOutcomes: map[string]*Outcome{
+				"start": {Status: StatusSuccess},
+				"step":  {Status: StatusSuccess},
+				"done":  {Status: StatusSuccess},
+			},
+			CompletedNodes: []string{"start", "step", "done"},
+		},
+		CreatedAt: time.Now(),
+	}
+	srv.mu.Lock()
+	srv.pipelines["graph-status-test"] = run
+	srv.mu.Unlock()
+
+	resp, err := http.Get(ts.URL + "/pipelines/graph-status-test/graph?format=dot")
+	if err != nil {
+		t.Fatalf("GET /pipelines/{id}/graph?format=dot failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	dot := string(body)
+
+	// Should use the status overlay function since pipeline has outcomes
+	if !strings.Contains(dot, "status") {
+		t.Errorf("expected status-overlaid DOT output, got:\n%s", dot)
+	}
+}
+
+func TestGetPipelineGraphDefaultFormatIsSVG(t *testing.T) {
+	srv := newGraphTestServer()
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	run := &PipelineRun{
+		ID:        "graph-default-test",
+		Status:    "running",
+		Source:    simpleDOTSource(),
+		CreatedAt: time.Now(),
+	}
+	srv.mu.Lock()
+	srv.pipelines["graph-default-test"] = run
+	srv.mu.Unlock()
+
+	resp, err := http.Get(ts.URL + "/pipelines/graph-default-test/graph")
+	if err != nil {
+		t.Fatalf("GET /pipelines/{id}/graph failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	ct := resp.Header.Get("Content-Type")
+	if ct != "image/svg+xml" {
+		t.Errorf("expected Content-Type 'image/svg+xml', got %q", ct)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "<svg") {
+		t.Errorf("expected SVG content, got:\n%s", string(body))
+	}
+}
+
+func TestGetPipelineGraphPNGFormat(t *testing.T) {
+	srv := newGraphTestServer()
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	run := &PipelineRun{
+		ID:        "graph-png-test",
+		Status:    "running",
+		Source:    simpleDOTSource(),
+		CreatedAt: time.Now(),
+	}
+	srv.mu.Lock()
+	srv.pipelines["graph-png-test"] = run
+	srv.mu.Unlock()
+
+	resp, err := http.Get(ts.URL + "/pipelines/graph-png-test/graph?format=png")
+	if err != nil {
+		t.Fatalf("GET /pipelines/{id}/graph?format=png failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	if resp.Header.Get("Content-Type") != "image/png" {
+		t.Errorf("expected Content-Type 'image/png', got %q", resp.Header.Get("Content-Type"))
+	}
+}
+
+func TestGetPipelineGraphNoRendererFallback(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	// Set ToDOT but not RenderDOTSource - SVG should fallback to DOT text
+	srv.ToDOT = stubToDOT
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	run := &PipelineRun{
+		ID:        "graph-fallback-test",
+		Status:    "running",
+		Source:    simpleDOTSource(),
+		CreatedAt: time.Now(),
+	}
+	srv.mu.Lock()
+	srv.pipelines["graph-fallback-test"] = run
+	srv.mu.Unlock()
+
+	// Request SVG with no renderer configured - should fallback to DOT
+	resp, err := http.Get(ts.URL + "/pipelines/graph-fallback-test/graph?format=svg")
+	if err != nil {
+		t.Fatalf("GET /pipelines/{id}/graph?format=svg failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	// Should fallback to DOT content type
+	if resp.Header.Get("Content-Type") != "text/vnd.graphviz" {
+		t.Errorf("expected Content-Type 'text/vnd.graphviz', got %q", resp.Header.Get("Content-Type"))
+	}
+}
+
+func TestGetPipelineGraphNoFuncsConfigured(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	// No render functions configured
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	run := &PipelineRun{
+		ID:        "graph-nofunc-test",
+		Status:    "running",
+		Source:    simpleDOTSource(),
+		CreatedAt: time.Now(),
+	}
+	srv.mu.Lock()
+	srv.pipelines["graph-nofunc-test"] = run
+	srv.mu.Unlock()
+
+	resp, err := http.Get(ts.URL + "/pipelines/graph-nofunc-test/graph?format=dot")
+	if err != nil {
+		t.Fatalf("GET /pipelines/{id}/graph?format=dot failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// With no render functions, the server falls back to the original source
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "digraph") {
+		t.Errorf("expected DOT content with digraph, got:\n%s", string(body))
 	}
 }

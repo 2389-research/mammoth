@@ -256,6 +256,20 @@ func TestIsTerminalNoShape(t *testing.T) {
 	}
 }
 
+func TestIsTerminalNodeTypeExit(t *testing.T) {
+	node := &Node{ID: "exit", Attrs: map[string]string{"node_type": "exit", "shape": "doublecircle"}}
+	if !isTerminal(node) {
+		t.Error("expected node with node_type=exit to be terminal")
+	}
+}
+
+func TestIsTerminalTypeExit(t *testing.T) {
+	node := &Node{ID: "exit", Attrs: map[string]string{"type": "exit", "shape": "doublecircle"}}
+	if !isTerminal(node) {
+		t.Error("expected node with type=exit to be terminal")
+	}
+}
+
 // --- checkGoalGates tests ---
 
 func TestCheckGoalGatesAllPassed(t *testing.T) {

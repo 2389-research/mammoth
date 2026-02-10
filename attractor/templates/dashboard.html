@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Makeatron Dashboard</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #101014;
+            --bg-card: #18181c;
+            --bg-input: #121216;
+            --bg-hover: #1e1e24;
+            --border: rgba(255,255,255,0.06);
+            --border-hover: rgba(255,255,255,0.12);
+            --text: #e8e8ec;
+            --text-2: #9898a4;
+            --text-3: #58586a;
+            --green: #34d399;
+            --green-bg: rgba(52,211,153,0.08);
+            --amber: #fbbf24;
+            --amber-bg: rgba(251,191,36,0.08);
+            --red: #f87171;
+            --red-bg: rgba(248,113,113,0.08);
+            --slate: #64748b;
+            --slate-bg: rgba(100,116,139,0.08);
+            --brand: #a78bfa;
+            --brand-hover: #c4b5fd;
+            --brand-bg: rgba(167,139,250,0.06);
+            --font: 'DM Sans', -apple-system, sans-serif;
+            --mono: 'DM Mono', 'SF Mono', monospace;
+            --radius: 10px;
+        }
+
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 3px; }
+
+        /* ---- NAV ---- */
+        .nav {
+            padding: 20px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .nav-logo {
+            width: 28px;
+            height: 28px;
+            background: var(--brand);
+            border-radius: 7px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .nav-logo svg { width: 15px; height: 15px; }
+        .nav-title {
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: -0.2px;
+        }
+        .nav-title span { color: var(--text-3); font-weight: 400; }
+        .nav-right {
+            font-size: 12px;
+            color: var(--text-3);
+            font-family: var(--mono);
+        }
+
+        /* ---- MAIN ---- */
+        .main {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 20px 32px 80px;
+        }
+
+        /* ---- HERO ---- */
+        .hero {
+            margin-bottom: 48px;
+            animation: fadeIn 0.4s ease-out;
+        }
+        .hero h1 {
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+        }
+        .hero p {
+            color: var(--text-2);
+            font-size: 15px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ---- SUBMIT ---- */
+        .submit-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 48px;
+            animation: fadeIn 0.4s ease-out 0.05s both;
+        }
+        .submit-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-2);
+            margin-bottom: 10px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 130px;
+            background: var(--bg-input);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 16px;
+            font-family: var(--mono);
+            font-size: 13px;
+            line-height: 1.6;
+            resize: vertical;
+            margin-bottom: 14px;
+            transition: border-color 0.15s;
+        }
+        textarea:focus {
+            outline: none;
+            border-color: var(--brand);
+        }
+        textarea::placeholder { color: var(--text-3); }
+
+        .submit-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .btn {
+            font-family: var(--font);
+            font-size: 13px;
+            font-weight: 600;
+            background: var(--brand);
+            color: #fff;
+            border: none;
+            padding: 9px 22px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.1s;
+        }
+        .btn:hover { background: var(--brand-hover); }
+        .btn:active { transform: scale(0.97); }
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .submit-hint {
+            font-size: 12px;
+            color: var(--text-3);
+        }
+
+        /* ---- PIPELINE LIST ---- */
+        .list-section {
+            animation: fadeIn 0.4s ease-out 0.1s both;
+        }
+        .list-header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .list-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-2);
+        }
+        .list-count {
+            font-size: 12px;
+            color: var(--text-3);
+            font-family: var(--mono);
+        }
+
+        #pipeline-entries {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            background: var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+
+        .pipeline-card {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            align-items: center;
+            gap: 16px;
+            padding: 14px 18px;
+            background: var(--bg-card);
+            text-decoration: none;
+            color: inherit;
+            transition: background 0.12s;
+        }
+        .pipeline-card:hover { background: var(--bg-hover); }
+
+        .card-main {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .card-id {
+            font-family: var(--mono);
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .card-time {
+            font-size: 12px;
+            color: var(--text-3);
+        }
+
+        .badge {
+            font-family: var(--font);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+        .badge-running {
+            color: var(--amber);
+            background: var(--amber-bg);
+        }
+        .badge-completed {
+            color: var(--green);
+            background: var(--green-bg);
+        }
+        .badge-failed {
+            color: var(--red);
+            background: var(--red-bg);
+        }
+        .badge-cancelled {
+            color: var(--slate);
+            background: var(--slate-bg);
+        }
+
+        .card-arrow {
+            color: var(--text-3);
+            font-size: 18px;
+            transition: transform 0.15s, color 0.15s;
+            line-height: 1;
+        }
+        .pipeline-card:hover .card-arrow {
+            color: var(--text-2);
+            transform: translateX(2px);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 56px 20px;
+            color: var(--text-3);
+            font-size: 14px;
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            border: 1px dashed var(--border);
+        }
+
+        .running-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--amber);
+            margin-right: 6px;
+            animation: pulse 1.8s ease-in-out infinite;
+            vertical-align: middle;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(251,191,36,0.3); }
+            50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(251,191,36,0); }
+        }
+
+        @media (max-width: 640px) {
+            .nav { padding: 16px; }
+            .main { padding: 16px 16px 60px; }
+            .hero h1 { font-size: 24px; }
+            .submit-card { padding: 18px; }
+            .nav-right { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-brand">
+            <div class="nav-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                </svg>
+            </div>
+            <div class="nav-title">Makeatron <span>/ dashboard</span></div>
+        </div>
+        <div class="nav-right">v1.0</div>
+    </nav>
+
+    <div class="main">
+        <div class="hero">
+            <h1>Pipelines</h1>
+            <p>Submit DOT definitions and watch them execute</p>
+        </div>
+
+        <div class="submit-card">
+            <div class="submit-label">New pipeline</div>
+            <form id="submit-form" onsubmit="submitPipeline(event)">
+                <textarea id="dot-source" placeholder="digraph pipeline {&#10;    start [shape=Mdiamond]&#10;    done  [shape=Msquare]&#10;    start -> step -> done&#10;}" spellcheck="false"></textarea>
+                <div class="submit-row">
+                    <button type="submit" class="btn" id="submit-btn">Run Pipeline</button>
+                    <span class="submit-hint">Paste DOT source to begin execution</span>
+                </div>
+            </form>
+        </div>
+
+        <div class="list-section" id="pipeline-list"
+             hx-get="/"
+             hx-trigger="every 5s"
+             hx-select="#pipeline-entries"
+             hx-target="#pipeline-entries"
+             hx-swap="outerHTML">
+            <div class="list-header">
+                <span class="list-title">All pipelines</span>
+                {{if .Pipelines}}
+                <span class="list-count">{{len .Pipelines}}</span>
+                {{end}}
+            </div>
+            <div id="pipeline-entries">
+                {{if .Pipelines}}
+                {{range .Pipelines}}
+                <a class="pipeline-card" href="/ui/pipelines/{{.ID}}">
+                    <div class="card-main">
+                        <span class="card-id">{{if eq .Status "running"}}<span class="running-dot"></span>{{end}}{{.ID}}</span>
+                        <span class="card-time">{{.CreatedAt}}</span>
+                    </div>
+                    <span class="badge badge-{{.Status}}">{{.Status}}</span>
+                    <span class="card-arrow">&rsaquo;</span>
+                </a>
+                {{end}}
+                {{else}}
+                <div class="empty-state">No pipelines yet</div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function submitPipeline(e) {
+            e.preventDefault();
+            const source = document.getElementById('dot-source').value;
+            if (!source.trim()) return;
+            const btn = document.getElementById('submit-btn');
+            btn.disabled = true;
+            btn.textContent = 'Starting\u2026';
+            try {
+                const resp = await fetch('/pipelines', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'text/plain'},
+                    body: source
+                });
+                const data = await resp.json();
+                if (data.id) {
+                    window.location.href = '/ui/pipelines/' + data.id;
+                }
+            } catch (err) {
+                btn.disabled = false;
+                btn.textContent = 'Run Pipeline';
+            }
+        }
+    </script>
+</body>
+</html>

@@ -15,3 +15,6 @@ coverage.html
 
 # Workgraph internal state
 .workgraph/
+
+# Scratch scenario tests
+.scratch/

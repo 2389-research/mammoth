@@ -108,16 +108,11 @@ func TestAnthropicProfileTools(t *testing.T) {
 	profile := NewAnthropicProfile("")
 	registry := profile.ToolRegistry()
 
-	expectedTools := []string{"read_file", "write_file", "edit_file", "shell", "grep", "glob"}
+	expectedTools := []string{"read_file", "write_file", "edit_file", "shell", "grep", "glob", "apply_patch"}
 	for _, name := range expectedTools {
 		if !registry.Has(name) {
 			t.Errorf("expected Anthropic profile to have tool %q", name)
 		}
-	}
-
-	// Anthropic profile should NOT have apply_patch
-	if registry.Has("apply_patch") {
-		t.Error("Anthropic profile should not have apply_patch tool")
 	}
 }
 
@@ -170,16 +165,11 @@ func TestGeminiProfileTools(t *testing.T) {
 	profile := NewGeminiProfile("")
 	registry := profile.ToolRegistry()
 
-	expectedTools := []string{"read_file", "write_file", "edit_file", "shell", "grep", "glob"}
+	expectedTools := []string{"read_file", "write_file", "edit_file", "shell", "grep", "glob", "apply_patch"}
 	for _, name := range expectedTools {
 		if !registry.Has(name) {
 			t.Errorf("expected Gemini profile to have tool %q", name)
 		}
-	}
-
-	// Gemini profile should NOT have apply_patch
-	if registry.Has("apply_patch") {
-		t.Error("Gemini profile should not have apply_patch tool")
 	}
 }
 

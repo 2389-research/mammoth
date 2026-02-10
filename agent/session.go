@@ -34,6 +34,11 @@ type SessionConfig struct {
 	EnableLoopDetection     bool           `json:"enable_loop_detection"`
 	LoopDetectionWindow     int            `json:"loop_detection_window"`
 	MaxSubagentDepth        int            `json:"max_subagent_depth"`
+	// FidelityMode controls how much conversation history is carried forward.
+	// Valid values map to attractor fidelity modes: "full", "truncate", "compact",
+	// "summary:low", "summary:medium", "summary:high". Empty string means no
+	// fidelity filtering (equivalent to "full").
+	FidelityMode string `json:"fidelity_mode,omitempty"`
 }
 
 // DefaultSessionConfig returns a SessionConfig with spec-defined defaults.

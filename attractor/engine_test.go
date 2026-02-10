@@ -872,3 +872,194 @@ func TestEngineRunGraphRetryWithErrorFromHandler(t *testing.T) {
 		t.Errorf("expected success after retries, got %v", result.NodeOutcomes["errnode"].Status)
 	}
 }
+
+func TestUnwrapHandler(t *testing.T) {
+	// Layer 0: bare handler (no wrappers)
+	bare := &CodergenHandler{}
+	unwrapped := unwrapHandler(bare)
+	if unwrapped != bare {
+		t.Errorf("unwrapping a bare handler should return the same handler")
+	}
+
+	// Layer 1: one wrapper
+	wrapped1 := &interviewerInjectingHandler{inner: bare}
+	unwrapped = unwrapHandler(wrapped1)
+	if unwrapped != bare {
+		t.Errorf("unwrapping 1 layer should return the bare handler, got %T", unwrapped)
+	}
+
+	// Layer 2: two wrappers
+	wrapped2 := &interviewerInjectingHandler{inner: wrapped1}
+	unwrapped = unwrapHandler(wrapped2)
+	if unwrapped != bare {
+		t.Errorf("unwrapping 2 layers should return the bare handler, got %T", unwrapped)
+	}
+}
+
+func TestBackendWiringThroughWrappedHandler(t *testing.T) {
+	// Create a CodergenHandler without a backend
+	codergenH := &CodergenHandler{}
+
+	// Create a registry and register it
+	reg := NewHandlerRegistry()
+	reg.Register(codergenH)
+	reg.Register(newSuccessHandler("start"))
+	reg.Register(newSuccessHandler("exit"))
+
+	// Wrap the registry with an interviewer (this is what server mode does)
+	interviewer := &httpInterviewer{}
+	wrappedReg := wrapRegistryWithInterviewer(reg, interviewer)
+
+	// Create a backend that records whether RunAgent was called
+	backendCalled := false
+	backend := &stubCodergenBackend{
+		runFn: func(ctx context.Context, config AgentRunConfig) (*AgentRunResult, error) {
+			backendCalled = true
+			return &AgentRunResult{
+				Output:     "generated code",
+				ToolCalls:  3,
+				TokensUsed: 500,
+				Success:    true,
+			}, nil
+		},
+	}
+
+	// Create an engine with the wrapped registry and the backend
+	engine := NewEngine(EngineConfig{
+		Handlers:     wrappedReg,
+		Backend:      backend,
+		DefaultRetry: RetryPolicyNone(),
+	})
+
+	// Build a simple pipeline: start -> code_task -> exit
+	g := &Graph{
+		Name:         "backend_wiring",
+		Nodes:        make(map[string]*Node),
+		Edges:        make([]*Edge, 0),
+		Attrs:        make(map[string]string),
+		NodeDefaults: make(map[string]string),
+		EdgeDefaults: make(map[string]string),
+	}
+	g.Nodes["start"] = &Node{ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}}
+	g.Nodes["code_task"] = &Node{ID: "code_task", Attrs: map[string]string{
+		"shape": "box",
+		"label": "Generate Code",
+	}}
+	g.Nodes["exit"] = &Node{ID: "exit", Attrs: map[string]string{"shape": "Msquare"}}
+	g.Edges = append(g.Edges,
+		&Edge{From: "start", To: "code_task", Attrs: map[string]string{}},
+		&Edge{From: "code_task", To: "exit", Attrs: map[string]string{}},
+	)
+
+	result, err := engine.RunGraph(context.Background(), g)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The backend should have been called (not stub mode)
+	if !backendCalled {
+		t.Error("expected backend RunAgent to be called, but it was not (handler stuck in stub mode)")
+	}
+
+	// Verify node completed successfully
+	if outcome, ok := result.NodeOutcomes["code_task"]; ok {
+		if outcome.Status != StatusSuccess {
+			t.Errorf("expected code_task to succeed, got %v", outcome.Status)
+		}
+	} else {
+		t.Error("expected code_task in node outcomes")
+	}
+}
+
+func TestRunGraphCreatesSharedWorkDir(t *testing.T) {
+	g := buildLinearGraph()
+
+	// Track what _workdir was set to in context during execution
+	var observedWorkDir string
+	startH := newSuccessHandler("start")
+	codergenH := &testHandler{
+		typeName: "codergen",
+		executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+			if val := pctx.Get("_workdir"); val != nil {
+				observedWorkDir = val.(string)
+			}
+			return &Outcome{Status: StatusSuccess}, nil
+		},
+	}
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, codergenH, exitH)
+
+	// Engine with NO ArtifactDir set — should create a shared temp dir
+	engine := NewEngine(EngineConfig{
+		Handlers:     reg,
+		DefaultRetry: RetryPolicyNone(),
+	})
+
+	result, err := engine.RunGraph(context.Background(), g)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// _workdir should be set in the result context
+	workDir := result.Context.GetString("_workdir", "")
+	if workDir == "" {
+		t.Fatal("expected _workdir to be set in result context, but it was empty")
+	}
+
+	// The directory should exist on disk
+	info, err := os.Stat(workDir)
+	if err != nil {
+		t.Fatalf("expected _workdir %q to exist on disk, got error: %v", workDir, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("expected _workdir %q to be a directory", workDir)
+	}
+
+	// The handler should have seen the same value
+	if observedWorkDir != workDir {
+		t.Errorf("handler saw _workdir=%q, but result context has %q", observedWorkDir, workDir)
+	}
+
+	// Clean up the temp dir
+	os.RemoveAll(workDir)
+}
+
+func TestRunGraphUsesExplicitArtifactDir(t *testing.T) {
+	g := buildLinearGraph()
+
+	explicitDir := t.TempDir()
+
+	startH := newSuccessHandler("start")
+	codergenH := newSuccessHandler("codergen")
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, codergenH, exitH)
+
+	engine := NewEngine(EngineConfig{
+		Handlers:     reg,
+		ArtifactDir:  explicitDir,
+		DefaultRetry: RetryPolicyNone(),
+	})
+
+	result, err := engine.RunGraph(context.Background(), g)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// _workdir should be set to the explicit dir
+	workDir := result.Context.GetString("_workdir", "")
+	if workDir != explicitDir {
+		t.Errorf("expected _workdir=%q, got %q", explicitDir, workDir)
+	}
+}
+
+// stubCodergenBackend is a test double for CodergenBackend used in engine tests.
+type stubCodergenBackend struct {
+	runFn func(ctx context.Context, config AgentRunConfig) (*AgentRunResult, error)
+}
+
+func (b *stubCodergenBackend) RunAgent(ctx context.Context, config AgentRunConfig) (*AgentRunResult, error) {
+	if b.runFn != nil {
+		return b.runFn(ctx, config)
+	}
+	return &AgentRunResult{Success: true}, nil
+}

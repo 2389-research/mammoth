@@ -68,20 +68,28 @@ func (g *Graph) IncomingEdges(nodeID string) []*Edge {
 	return result
 }
 
-// FindStartNode returns the node with shape=Mdiamond, or nil if not found.
+// FindStartNode returns the start node, or nil if not found.
+// Recognized via shape=Mdiamond, node_type=start, or type=start.
 func (g *Graph) FindStartNode() *Node {
 	for _, node := range g.Nodes {
 		if node.Attrs["shape"] == "Mdiamond" {
+			return node
+		}
+		if node.Attrs["node_type"] == "start" || node.Attrs["type"] == "start" {
 			return node
 		}
 	}
 	return nil
 }
 
-// FindExitNode returns the node with shape=Msquare, or nil if not found.
+// FindExitNode returns the exit/terminal node, or nil if not found.
+// Recognized via shape=Msquare, node_type=exit, or type=exit.
 func (g *Graph) FindExitNode() *Node {
 	for _, node := range g.Nodes {
 		if node.Attrs["shape"] == "Msquare" {
+			return node
+		}
+		if node.Attrs["node_type"] == "exit" || node.Attrs["type"] == "exit" {
 			return node
 		}
 	}

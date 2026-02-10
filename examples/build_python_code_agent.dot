@@ -1,0 +1,128 @@
+// Build a standalone Python TUI code agent that reads/writes files and runs commands.
+// Exercises: complex multi-phase pipeline, multiple goal gates, parallel-capable design.
+digraph build_python_code_agent {
+    graph [
+        goal="Build a standalone Python TUI code agent with file editing, command execution, and LLM-powered conversation",
+        retry_target="implement_core",
+        default_max_retry=3,
+        model_stylesheet="
+            * { llm_model: claude-sonnet-4-5; llm_provider: anthropic; }
+            .code { llm_model: claude-opus-4-6; llm_provider: anthropic; }
+            .review { llm_model: claude-sonnet-4-5; llm_provider: anthropic; }
+            #implement_core { llm_model: claude-opus-4-6; llm_provider: anthropic; reasoning_effort: high; }
+        "
+    ]
+    rankdir=LR
+
+    start [shape=Mdiamond, label="Start"]
+    done  [shape=Msquare, label="Done"]
+
+    // Phase 1: Architecture
+    plan [
+        label="Plan Architecture",
+        prompt="Design a Python TUI code agent for: $goal.
+Architecture:
+- Single-file agent.py using only stdlib + httpx for API calls
+- Conversation loop: user types, agent responds, can use tools
+- Tools: read_file, write_file, edit_file (search/replace), run_command, list_directory
+- TUI: rich-text terminal output with ANSI colors, command history
+- LLM backend: Anthropic Claude API via httpx (tool_use flow)
+- Conversation context management with token-aware truncation
+- System prompt configurable via --system flag
+- Working directory configurable via --cwd flag
+Output: module structure, tool schemas, conversation loop design, TUI layout."
+    ]
+
+    // Phase 2: Project setup
+    setup [
+        label="Setup Project",
+        class="code",
+        prompt="Set up the Python project:
+1. Run 'uv init' if needed
+2. Run 'uv add httpx'
+3. Create agent.py with ABOUTME comments and argument parsing stub
+4. Verify with 'uv run python agent.py --help'
+The agent should accept: --model, --system, --cwd, --max-tokens flags."
+    ]
+
+    // Phase 3: Tool system
+    implement_tools [
+        label="Implement Tools",
+        class="code",
+        prompt="Implement the tool system in agent.py:
+- Tool base class with name, description, parameters (JSON schema), and execute method
+- read_file: reads file with line numbers, supports offset/limit
+- write_file: writes content, creates parent dirs
+- edit_file: search-and-replace with uniqueness check
+- run_command: subprocess with timeout, returns stdout/stderr/exit code
+- list_directory: os.listdir with file sizes and types
+- Tool registry that exports Anthropic-compatible tool schemas
+Each tool must handle errors gracefully and return structured results.",
+        goal_gate=true,
+        max_retries=2
+    ]
+
+    // Phase 4: Core agent loop (goal gate)
+    implement_core [
+        label="Implement Agent Loop",
+        class="code",
+        prompt="Implement the core agent conversation loop in agent.py:
+- Send messages to Anthropic API via httpx (Messages API with tool_use)
+- Handle tool_use responses: extract tool name and input, execute, return tool_result
+- Multi-turn conversation with full message history
+- Token-aware context truncation (keep system + last N messages)
+- Streaming response display with ANSI colors
+- User input prompt with readline-style editing
+- Ctrl+C handling: cancel current generation, not exit
+- /exit, /clear, /help slash commands
+The loop must handle the full tool_use back-and-forth cycle.",
+        goal_gate=true,
+        max_retries=3
+    ]
+
+    // Phase 5: TUI polish
+    implement_tui [
+        label="Polish TUI",
+        class="code",
+        prompt="Add TUI polish to agent.py:
+- ANSI color scheme: green for user prompt, blue for assistant, yellow for tool calls, red for errors
+- Tool call display: show tool name and key args, then result summary
+- Spinner or dots while waiting for API response
+- Welcome banner with model info and working directory
+- Token usage display after each response
+- Command history via readline module
+Keep it clean - no curses, just ANSI escape codes and print."
+    ]
+
+    // Phase 6: Integration test
+    integration_test [
+        label="Integration Test",
+        class="code",
+        prompt="Test the code agent end-to-end:
+1. Verify 'uv run python agent.py --help' shows usage
+2. Verify the tool schemas are valid JSON
+3. Verify each tool works standalone (read a file, write a temp file, list directory, run 'echo hello')
+4. Verify edit_file correctly replaces text
+5. Verify run_command respects timeout
+Report pass/fail for each test."
+    ]
+
+    // Phase 7: Test gate
+    tests_ok [shape=diamond, label="Tests pass?"]
+
+    // Phase 8: LLM code review
+    review [
+        label="Review Agent",
+        class="review",
+        prompt="Review all generated code in the working directory.\nCheck for: tool system correctness, API integration, conversation loop logic, TUI rendering, error handling, edge cases.\nEnd your response with OUTCOME:PASS if acceptable, or OUTCOME:FAIL with details if issues need fixing."
+    ]
+
+    // Edges
+    start -> plan -> setup -> implement_tools -> implement_core -> implement_tui -> integration_test -> tests_ok
+
+    tests_ok -> review           [label="Pass", condition="outcome=success"]
+    tests_ok -> implement_core   [label="Fail", condition="outcome=fail"]
+
+    review -> done               [label="Pass", condition="outcome=success"]
+    review -> implement_core     [label="Fail", condition="outcome=fail"]
+}

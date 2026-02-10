@@ -459,7 +459,47 @@ func NewGlobTool() *RegisteredTool {
 	}
 }
 
-// RegisterCoreTools registers all 6 shared core tools with the given registry.
+// NewApplyPatchTool creates a RegisteredTool for applying v4a format patches.
+// The v4a format supports creating, deleting, updating, and moving files in a single operation.
+func NewApplyPatchTool() *RegisteredTool {
+	return &RegisteredTool{
+		Definition: llm.ToolDefinition{
+			Name:        "apply_patch",
+			Description: "Apply code changes using the v4a patch format. Supports creating, deleting, updating, and moving files in a single operation.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"patch": {
+						"type": "string",
+						"description": "The patch content in v4a format"
+					}
+				},
+				"required": ["patch"]
+			}`),
+		},
+		Description: "Apply code changes using the v4a patch format.",
+		Execute: func(args map[string]any, env ExecutionEnvironment) (string, error) {
+			patchStr, err := getStringArg(args, "patch", true)
+			if err != nil {
+				return "", err
+			}
+
+			patch, err := ParsePatch(patchStr)
+			if err != nil {
+				return "", err
+			}
+
+			result, err := ApplyPatch(patch, env)
+			if err != nil {
+				return "", err
+			}
+
+			return result.Summary, nil
+		},
+	}
+}
+
+// RegisterCoreTools registers all shared core tools with the given registry.
 func RegisterCoreTools(registry *ToolRegistry) {
 	registry.Register(NewReadFileTool())
 	registry.Register(NewWriteFileTool())
@@ -467,4 +507,5 @@ func RegisterCoreTools(registry *ToolRegistry) {
 	registry.Register(NewShellTool())
 	registry.Register(NewGrepTool())
 	registry.Register(NewGlobTool())
+	registry.Register(NewApplyPatchTool())
 }

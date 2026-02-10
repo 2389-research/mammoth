@@ -5,6 +5,7 @@ package attractor
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -481,8 +482,8 @@ func TestToolHandlerRecordsCommand(t *testing.T) {
 	h := &ToolHandler{}
 	g := newTestGraph()
 	node := addNode(g, "run_tool", map[string]string{
-		"shape":        "parallelogram",
-		"tool_command": "echo hello",
+		"shape":   "parallelogram",
+		"command": "echo hello",
 	})
 	pctx := NewContext()
 	store := NewArtifactStore(t.TempDir())
@@ -494,8 +495,12 @@ func TestToolHandlerRecordsCommand(t *testing.T) {
 	if outcome.Status != StatusSuccess {
 		t.Errorf("expected status success, got %v", outcome.Status)
 	}
-	if outcome.ContextUpdates["tool.command"] != "echo hello" {
-		t.Errorf("expected tool.command = 'echo hello', got %v", outcome.ContextUpdates["tool.command"])
+	stdout, ok := outcome.ContextUpdates["tool.stdout"].(string)
+	if !ok {
+		t.Fatalf("expected tool.stdout to be a string, got %T", outcome.ContextUpdates["tool.stdout"])
+	}
+	if !strings.Contains(stdout, "hello") {
+		t.Errorf("expected 'hello' in tool.stdout, got %q", stdout)
 	}
 }
 
@@ -517,12 +522,12 @@ func TestToolHandlerNoCommand(t *testing.T) {
 	}
 }
 
-func TestToolHandlerUsesToolNameFallback(t *testing.T) {
+func TestToolHandlerUsesPromptFallbackInRegistry(t *testing.T) {
 	h := &ToolHandler{}
 	g := newTestGraph()
 	node := addNode(g, "run_tool", map[string]string{
-		"shape":     "parallelogram",
-		"tool_name": "my_tool",
+		"shape":  "parallelogram",
+		"prompt": "echo from_prompt",
 	})
 	pctx := NewContext()
 	store := NewArtifactStore(t.TempDir())
@@ -534,8 +539,12 @@ func TestToolHandlerUsesToolNameFallback(t *testing.T) {
 	if outcome.Status != StatusSuccess {
 		t.Errorf("expected status success, got %v", outcome.Status)
 	}
-	if outcome.ContextUpdates["tool.name"] != "my_tool" {
-		t.Errorf("expected tool.name = 'my_tool', got %v", outcome.ContextUpdates["tool.name"])
+	stdout, ok := outcome.ContextUpdates["tool.stdout"].(string)
+	if !ok {
+		t.Fatalf("expected tool.stdout to be a string, got %T", outcome.ContextUpdates["tool.stdout"])
+	}
+	if !strings.Contains(stdout, "from_prompt") {
+		t.Errorf("expected 'from_prompt' in tool.stdout, got %q", stdout)
 	}
 }
 

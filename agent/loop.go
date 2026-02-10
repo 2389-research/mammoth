@@ -49,7 +49,11 @@ func ProcessInput(ctx context.Context, session *Session, profile ProviderProfile
 		systemPrompt := profile.BuildSystemPrompt(env, projectDocs)
 
 		session.mu.Lock()
-		messages := ConvertHistoryToMessages(session.History)
+		historyForLLM := session.History
+		if session.Config.FidelityMode != "" {
+			historyForLLM = ApplyFidelity(session.History, session.Config.FidelityMode, profile.ContextWindowSize())
+		}
+		messages := ConvertHistoryToMessages(historyForLLM)
 		session.mu.Unlock()
 
 		// Prepend system prompt as the first message

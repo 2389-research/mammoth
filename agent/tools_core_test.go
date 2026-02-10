@@ -474,7 +474,7 @@ func TestRegisterCoreTools(t *testing.T) {
 	registry := NewToolRegistry()
 	RegisterCoreTools(registry)
 
-	expectedTools := []string{"read_file", "write_file", "edit_file", "shell", "grep", "glob"}
+	expectedTools := []string{"read_file", "write_file", "edit_file", "shell", "grep", "glob", "apply_patch"}
 
 	if registry.Count() != len(expectedTools) {
 		t.Errorf("expected %d core tools, got %d", len(expectedTools), registry.Count())

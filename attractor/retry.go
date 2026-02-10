@@ -144,12 +144,19 @@ func buildRetryPolicy(node *Node, graph *Graph, defaultPolicy RetryPolicy) Retry
 	return defaultPolicy
 }
 
-// isTerminal returns true if the node is a terminal/exit node (shape=Msquare).
+// isTerminal returns true if the node is a terminal/exit node.
+// Recognized via shape=Msquare, node_type=exit, or type=exit.
 func isTerminal(node *Node) bool {
 	if node.Attrs == nil {
 		return false
 	}
-	return node.Attrs["shape"] == "Msquare"
+	if node.Attrs["shape"] == "Msquare" {
+		return true
+	}
+	if node.Attrs["node_type"] == "exit" || node.Attrs["type"] == "exit" {
+		return true
+	}
+	return false
 }
 
 // checkGoalGates checks all visited nodes with goal_gate=true and verifies they have

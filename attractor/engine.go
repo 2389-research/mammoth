@@ -4,7 +4,9 @@ package attractor
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 )
@@ -25,9 +27,10 @@ const (
 
 // EngineEvent represents a lifecycle event emitted by the engine during pipeline execution.
 type EngineEvent struct {
-	Type   EngineEventType
-	NodeID string
-	Data   map[string]any
+	Type      EngineEventType
+	NodeID    string
+	Data      map[string]any
+	Timestamp time.Time
 }
 
 // EngineConfig holds configuration for the pipeline execution engine.
@@ -39,6 +42,27 @@ type EngineConfig struct {
 	DefaultRetry   RetryPolicy      // default retry policy for nodes
 	Handlers       *HandlerRegistry // nil = DefaultHandlerRegistry
 	EventHandler   func(EngineEvent) // optional event callback
+	Backend        CodergenBackend   // backend for codergen nodes (nil = stub behavior)
+	RestartConfig  *RestartConfig    // loop restart configuration (nil = DefaultRestartConfig)
+}
+
+// NodeHandlerUnwrapper allows handler wrappers to expose their inner handler.
+// This enables backend wiring to reach through decorator layers (e.g.
+// interviewerInjectingHandler) to the underlying CodergenHandler.
+type NodeHandlerUnwrapper interface {
+	InnerHandler() NodeHandler
+}
+
+// unwrapHandler peels through wrapper layers implementing NodeHandlerUnwrapper
+// until it reaches a handler that does not wrap another handler.
+func unwrapHandler(h NodeHandler) NodeHandler {
+	for {
+		u, ok := h.(NodeHandlerUnwrapper)
+		if !ok {
+			return h
+		}
+		h = u.InnerHandler()
+	}
 }
 
 // Engine is the pipeline execution engine that runs attractor graph pipelines.
@@ -92,10 +116,172 @@ func (e *Engine) RunGraph(ctx context.Context, graph *Graph) (*RunResult, error)
 		pctx.Set(k, v)
 	}
 
+	// Store graph reference for handlers that need graph traversal (e.g. ParallelHandler)
+	pctx.Set("_graph", graph)
+
 	artifactDir := e.config.ArtifactDir
 	if artifactDir == "" {
-		artifactDir = ""
+		var mkErr error
+		artifactDir, mkErr = os.MkdirTemp("", "makeatron-pipeline-*")
+		if mkErr != nil {
+			return nil, fmt.Errorf("create pipeline work directory: %w", mkErr)
+		}
 	}
+	store := NewArtifactStore(artifactDir)
+	pctx.Set("_workdir", artifactDir)
+
+	registry := e.config.Handlers
+	if registry == nil {
+		registry = DefaultHandlerRegistry()
+	}
+
+	// Wire the backend into the codergen handler if configured.
+	// unwrapHandler peels through decorator layers (e.g. interviewerInjectingHandler)
+	// so the type assertion reaches the underlying CodergenHandler.
+	if e.config.Backend != nil {
+		if codergenHandler := registry.Get("codergen"); codergenHandler != nil {
+			if ch, ok := unwrapHandler(codergenHandler).(*CodergenHandler); ok {
+				ch.Backend = e.config.Backend
+			}
+		}
+	}
+
+	// Phase 4: EXECUTE with restart loop
+	e.emitEvent(EngineEvent{Type: EventPipelineStarted})
+
+	restartCfg := e.config.RestartConfig
+	if restartCfg == nil {
+		restartCfg = DefaultRestartConfig()
+	}
+
+	var startAtNode *Node
+	restartCount := 0
+
+	for {
+		// Check context cancellation before each execution attempt
+		select {
+		case <-ctx.Done():
+			e.emitEvent(EngineEvent{Type: EventPipelineFailed, Data: map[string]any{"error": ctx.Err().Error()}})
+			return nil, ctx.Err()
+		default:
+		}
+
+		result, err := e.executeGraph(ctx, graph, pctx, store, registry, startAtNode, nil)
+
+		var restartErr *ErrLoopRestart
+		if errors.As(err, &restartErr) {
+			restartCount++
+			if restartCount > restartCfg.MaxRestarts {
+				e.emitEvent(EngineEvent{Type: EventPipelineFailed, Data: map[string]any{"error": "max restart limit exceeded"}})
+				return nil, fmt.Errorf("loop_restart limit exceeded: %d restart(s) performed, max is %d", restartCount, restartCfg.MaxRestarts)
+			}
+
+			// Create fresh context, re-mirror graph attributes
+			pctx = NewContext()
+			for k, v := range graph.Attrs {
+				pctx.Set(k, v)
+			}
+			pctx.Set("_graph", graph)
+			pctx.Set("_workdir", artifactDir)
+
+			// Set the restart target node
+			targetNode := graph.FindNode(restartErr.TargetNode)
+			if targetNode == nil {
+				e.emitEvent(EngineEvent{Type: EventPipelineFailed, Data: map[string]any{"error": "restart target not found"}})
+				return nil, fmt.Errorf("loop_restart target node %q not found", restartErr.TargetNode)
+			}
+			startAtNode = targetNode
+			continue
+		}
+
+		if err != nil {
+			e.emitEvent(EngineEvent{Type: EventPipelineFailed, Data: map[string]any{"error": err.Error()}})
+			return result, err
+		}
+
+		// Phase 5: FINALIZE
+		e.emitEvent(EngineEvent{Type: EventPipelineCompleted})
+		return result, nil
+	}
+}
+
+// resumeState holds state for checkpoint resume, carrying forward previously
+// completed nodes and retry counters from the checkpoint.
+type resumeState struct {
+	// completedNodes pre-populates the completed list from checkpoint state.
+	completedNodes []string
+	// nodeRetries pre-populates retry counters from checkpoint state.
+	nodeRetries map[string]int
+}
+
+// ResumeFromCheckpoint loads a checkpoint from disk and resumes graph execution
+// from the node after the checkpointed node. If the previous node used full fidelity,
+// the first hop after resume is degraded to summary:high since in-memory LLM sessions
+// cannot be serialized.
+func (e *Engine) ResumeFromCheckpoint(ctx context.Context, graph *Graph, checkpointPath string) (*RunResult, error) {
+	cp, err := LoadCheckpoint(checkpointPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load checkpoint: %w", err)
+	}
+
+	// Validate that the checkpoint node exists in the graph
+	cpNode := graph.FindNode(cp.CurrentNode)
+	if cpNode == nil {
+		return nil, fmt.Errorf("checkpoint references node %q which does not exist in graph", cp.CurrentNode)
+	}
+
+	// Find the next node after the checkpoint node by looking at outgoing edges
+	outEdges := graph.OutgoingEdges(cp.CurrentNode)
+	if len(outEdges) == 0 {
+		return nil, fmt.Errorf("checkpoint node %q has no outgoing edges, cannot resume", cp.CurrentNode)
+	}
+
+	// Determine if the fidelity for the edge leaving the checkpoint node would be full.
+	// If so, we must degrade the first hop to summary:high.
+	firstEdge := outEdges[0]
+	nextNode := graph.FindNode(firstEdge.To)
+	if nextNode == nil {
+		return nil, fmt.Errorf("edge from checkpoint node %q points to nonexistent node %q", cp.CurrentNode, firstEdge.To)
+	}
+
+	fidelityMode := ResolveFidelity(firstEdge, nextNode, graph)
+
+	// Restore context from checkpoint
+	pctx := NewContext()
+	for k, v := range cp.ContextValues {
+		pctx.Set(k, v)
+	}
+	for _, logEntry := range cp.Logs {
+		pctx.AppendLog(logEntry)
+	}
+
+	// Mirror graph attributes into context
+	for k, v := range graph.Attrs {
+		pctx.Set(k, v)
+	}
+	pctx.Set("_graph", graph)
+
+	// Apply fidelity degradation on resume: if the previous node (checkpoint node)
+	// used full fidelity, degrade to summary:high for the first resumed node because
+	// in-memory LLM sessions cannot be serialized across checkpoint boundaries.
+	if fidelityMode == FidelityFull {
+		transformed, fidelityPreamble := ApplyFidelity(pctx, FidelitySummaryHigh, FidelityOptions{})
+		pctx = transformed
+		if fidelityPreamble != "" {
+			pctx.Set("_fidelity_preamble", fidelityPreamble)
+		}
+		pctx.Set("_graph", graph)
+	} else {
+		// Non-full fidelity mode: apply it normally without degradation
+		transformed, fidelityPreamble := ApplyFidelity(pctx, fidelityMode, FidelityOptions{})
+		pctx = transformed
+		if fidelityPreamble != "" {
+			pctx.Set("_fidelity_preamble", fidelityPreamble)
+		}
+		pctx.Set("_graph", graph)
+	}
+
+	artifactDir := e.config.ArtifactDir
 	store := NewArtifactStore(artifactDir)
 
 	registry := e.config.Handlers
@@ -103,39 +289,66 @@ func (e *Engine) RunGraph(ctx context.Context, graph *Graph) (*RunResult, error)
 		registry = DefaultHandlerRegistry()
 	}
 
-	// Phase 4: EXECUTE
-	e.emitEvent(EngineEvent{Type: EventPipelineStarted})
+	if e.config.Backend != nil {
+		if codergenHandler := registry.Get("codergen"); codergenHandler != nil {
+			if ch, ok := unwrapHandler(codergenHandler).(*CodergenHandler); ok {
+				ch.Backend = e.config.Backend
+			}
+		}
+	}
 
-	result, err := e.executeGraph(ctx, graph, pctx, store, registry)
+	e.emitEvent(EngineEvent{Type: EventPipelineStarted, Data: map[string]any{"resumed": true, "from_node": cp.CurrentNode}})
+
+	rs := &resumeState{
+		completedNodes: cp.CompletedNodes,
+		nodeRetries:    cp.NodeRetries,
+	}
+
+	result, err := e.executeGraph(ctx, graph, pctx, store, registry, nextNode, rs)
 	if err != nil {
 		e.emitEvent(EngineEvent{Type: EventPipelineFailed, Data: map[string]any{"error": err.Error()}})
 		return result, err
 	}
 
-	// Phase 5: FINALIZE
-	e.emitEvent(EngineEvent{Type: EventPipelineCompleted})
-
+	e.emitEvent(EngineEvent{Type: EventPipelineCompleted, Data: map[string]any{"resumed": true}})
 	return result, nil
 }
 
 // executeGraph implements the core traversal loop.
+// startAtNode overrides the start node when non-nil (used for loop_restart or resume).
+// rs provides optional resume state; pass nil for fresh runs.
 func (e *Engine) executeGraph(
 	ctx context.Context,
 	graph *Graph,
 	pctx *Context,
 	store *ArtifactStore,
 	registry *HandlerRegistry,
+	startAtNode *Node,
+	rs *resumeState,
 ) (*RunResult, error) {
-	startNode := graph.FindStartNode()
-	if startNode == nil {
-		return nil, fmt.Errorf("graph has no start node (shape=Mdiamond)")
+	var currentNode *Node
+	if startAtNode != nil {
+		currentNode = startAtNode
+	} else {
+		startNode := graph.FindStartNode()
+		if startNode == nil {
+			return nil, fmt.Errorf("graph has no start node (shape=Mdiamond)")
+		}
+		currentNode = startNode
 	}
 
 	completedNodes := make([]string, 0)
 	nodeOutcomes := make(map[string]*Outcome)
 	nodeRetries := make(map[string]int)
 
-	currentNode := startNode
+	// If resuming, pre-populate completed nodes and retry counters from checkpoint
+	if rs != nil {
+		completedNodes = append(completedNodes, rs.completedNodes...)
+		for k, v := range rs.nodeRetries {
+			nodeRetries[k] = v
+		}
+	}
+
 	var finalOutcome *Outcome
 
 	// Guard against infinite loops with a visit counter
@@ -235,6 +448,43 @@ func (e *Engine) executeGraph(
 			pctx.Set("preferred_label", outcome.PreferredLabel)
 		}
 
+		// Step 4b: Parallel branch detection and execution
+		// When a ParallelHandler runs, it sets parallel.branches in context.
+		// Detect this and dispatch parallel execution before continuing.
+		if branchesVal := pctx.Get("parallel.branches"); branchesVal != nil {
+			if branchIDs, ok := branchesVal.([]string); ok && len(branchIDs) > 0 {
+				parallelCfg := ParallelConfigFromContext(pctx)
+				branchResults, parallelErr := ExecuteParallelBranches(ctx, graph, pctx, store, registry, branchIDs, parallelCfg)
+				if parallelErr != nil {
+					return nil, fmt.Errorf("parallel execution from node %q failed: %w", node.ID, parallelErr)
+				}
+
+				mergeErr := MergeContexts(pctx, branchResults, parallelCfg.JoinPolicy)
+				if mergeErr != nil {
+					return nil, fmt.Errorf("parallel merge at node %q failed: %w", node.ID, mergeErr)
+				}
+
+				// Record branch nodes as completed
+				for _, br := range branchResults {
+					completedNodes = append(completedNodes, br.NodeID)
+					if br.Outcome != nil {
+						nodeOutcomes[br.NodeID] = br.Outcome
+					}
+				}
+
+				// Clear parallel.branches to prevent re-triggering
+				pctx.Set("parallel.branches", nil)
+
+				// Find and advance to the fan-in node
+				fanInNode := findFanInNode(graph, branchIDs)
+				if fanInNode != nil {
+					currentNode = fanInNode
+					continue
+				}
+				// No fan-in node found, fall through to normal edge selection
+			}
+		}
+
 		// Step 5: Save checkpoint
 		if e.config.CheckpointDir != "" {
 			cp := NewCheckpoint(pctx, node.ID, completedNodes, nodeRetries)
@@ -257,11 +507,35 @@ func (e *Engine) executeGraph(
 			break
 		}
 
-		// Step 7: Advance
+		// Step 7: Handle loop_restart
+		if EdgeHasLoopRestart(nextEdge) {
+			return nil, &ErrLoopRestart{TargetNode: nextEdge.To}
+		}
+
+		// Step 7.5: Apply fidelity transform for the transition
 		nextNode := graph.FindNode(nextEdge.To)
 		if nextNode == nil {
 			return nil, fmt.Errorf("edge from %q points to nonexistent node %q", node.ID, nextEdge.To)
 		}
+		fidelityMode := ResolveFidelity(nextEdge, nextNode, graph)
+		if fidelityMode != FidelityFull {
+			transformed, fidelityPreamble := ApplyFidelity(pctx, fidelityMode, FidelityOptions{})
+			pctx = transformed
+			if fidelityPreamble != "" {
+				pctx.Set("_fidelity_preamble", fidelityPreamble)
+			}
+			// Restore engine-managed references that compact mode may have removed
+			pctx.Set("_graph", graph)
+			if store != nil && store.BaseDir() != "" {
+				pctx.Set("_workdir", store.BaseDir())
+			}
+		} else {
+			// Full fidelity: clear any stale preamble from a prior non-full transition
+			// (e.g. resume degradation or a previous compact/summary edge)
+			pctx.Set("_fidelity_preamble", nil)
+		}
+
+		// Step 8: Advance
 		currentNode = nextNode
 	}
 
@@ -388,8 +662,42 @@ func sleepWithContext(ctx context.Context, d time.Duration) {
 	}
 }
 
+// SetEventHandler sets the engine's event callback after creation.
+// This allows external components (like the TUI) to wire into the event stream.
+func (e *Engine) SetEventHandler(handler func(EngineEvent)) {
+	e.config.EventHandler = handler
+}
+
+// GetEventHandler returns the engine's current event callback, or nil if none is set.
+func (e *Engine) GetEventHandler() func(EngineEvent) {
+	return e.config.EventHandler
+}
+
+// GetHandler returns the handler registered for the given type string from the engine's
+// handler registry. Returns nil if no registry is configured or the handler type is not found.
+// If no registry was configured, a default registry is initialized first.
+func (e *Engine) GetHandler(typeName string) NodeHandler {
+	if e.config.Handlers == nil {
+		e.config.Handlers = DefaultHandlerRegistry()
+	}
+	return e.config.Handlers.Get(typeName)
+}
+
+// SetHandler registers a handler in the engine's handler registry.
+// If no registry was configured, a default registry is initialized first.
+func (e *Engine) SetHandler(handler NodeHandler) {
+	if e.config.Handlers == nil {
+		e.config.Handlers = DefaultHandlerRegistry()
+	}
+	e.config.Handlers.Register(handler)
+}
+
 // emitEvent sends an event to the configured event handler, if any.
+// It stamps each event with the current time if Timestamp is not already set.
 func (e *Engine) emitEvent(evt EngineEvent) {
+	if evt.Timestamp.IsZero() {
+		evt.Timestamp = time.Now()
+	}
 	if e.config.EventHandler != nil {
 		e.config.EventHandler(evt)
 	}

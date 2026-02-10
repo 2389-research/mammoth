@@ -13,6 +13,10 @@ import (
 	"syscall"
 
 	"github.com/2389-research/makeatron/attractor"
+	"github.com/2389-research/makeatron/render"
+	"github.com/2389-research/makeatron/tui"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 var version = "dev"
@@ -22,6 +26,7 @@ type config struct {
 	serverMode    bool
 	port          int
 	validateOnly  bool
+	tuiMode       bool
 	checkpointDir string
 	artifactDir   string
 	retryPolicy   string
@@ -52,6 +57,7 @@ func parseFlags() config {
 	fs.StringVar(&cfg.checkpointDir, "checkpoint-dir", "", "Directory for checkpoint files")
 	fs.StringVar(&cfg.artifactDir, "artifact-dir", "", "Directory for artifact storage")
 	fs.StringVar(&cfg.retryPolicy, "retry", "none", "Default retry policy: none, standard, aggressive, linear, patient")
+	fs.BoolVar(&cfg.tuiMode, "tui", false, "Run with interactive terminal UI")
 	fs.BoolVar(&cfg.verbose, "verbose", false, "Verbose output")
 	fs.BoolVar(&cfg.showVersion, "version", false, "Print version and exit")
 
@@ -87,6 +93,10 @@ func run(cfg config) int {
 		return validatePipeline(cfg)
 	}
 
+	if cfg.tuiMode {
+		return runPipelineWithTUI(cfg)
+	}
+
 	return runPipeline(cfg)
 }
 
@@ -103,6 +113,7 @@ func runPipeline(cfg config) int {
 		ArtifactDir:   cfg.artifactDir,
 		DefaultRetry:  retryPolicyFromName(cfg.retryPolicy),
 		Handlers:      attractor.DefaultHandlerRegistry(),
+		Backend:       detectBackend(cfg.verbose),
 	}
 
 	if cfg.verbose {
@@ -110,6 +121,9 @@ func runPipeline(cfg config) int {
 	}
 
 	engine := attractor.NewEngine(engineCfg)
+
+	// Wire CLI interviewer for human gate nodes
+	wireInterviewer(engine)
 
 	// Set up context with signal handling for graceful cancellation.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -139,13 +153,70 @@ func runPipeline(cfg config) int {
 	return 0
 }
 
-// runServer starts the HTTP pipeline server.
-func runServer(cfg config) int {
+// runPipelineWithTUI reads a DOT file and executes the pipeline through the
+// Bubble Tea TUI, providing an interactive terminal dashboard with live DAG
+// visualization, event log, node details, and human gate input.
+func runPipelineWithTUI(cfg config) int {
+	source, err := os.ReadFile(cfg.pipelineFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+
+	// Parse the graph early so we can display the DAG structure in the TUI.
+	graph, err := attractor.Parse(string(source))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+
+	// Apply transforms for the TUI display (same as engine does internally).
+	transforms := attractor.DefaultTransforms()
+	graph = attractor.ApplyTransforms(graph, transforms...)
+
 	engineCfg := attractor.EngineConfig{
 		CheckpointDir: cfg.checkpointDir,
 		ArtifactDir:   cfg.artifactDir,
 		DefaultRetry:  retryPolicyFromName(cfg.retryPolicy),
 		Handlers:      attractor.DefaultHandlerRegistry(),
+		Backend:       detectBackend(cfg.verbose),
+	}
+
+	engine := attractor.NewEngine(engineCfg)
+
+	// Create a cancellable context so quitting the TUI stops the engine.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Create the TUI app model.
+	model := tui.NewAppModel(graph, engine, string(source), ctx)
+
+	// Create the Bubble Tea program with alt-screen mode.
+	p := tea.NewProgram(model, tea.WithAltScreen())
+
+	// Wire the event bridge so engine events reach the TUI.
+	bridge := tui.NewEventBridge(p.Send)
+	engine.SetEventHandler(bridge.HandleEvent)
+
+	// Wire the human gate interviewer for interactive human-in-the-loop nodes.
+	tui.WireHumanGate(engine, model.HumanGate())
+
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+
+	return 0
+}
+
+// buildPipelineServer creates a PipelineServer with the render functions wired in.
+func buildPipelineServer(cfg config) *attractor.PipelineServer {
+	engineCfg := attractor.EngineConfig{
+		CheckpointDir: cfg.checkpointDir,
+		ArtifactDir:   cfg.artifactDir,
+		DefaultRetry:  retryPolicyFromName(cfg.retryPolicy),
+		Handlers:      attractor.DefaultHandlerRegistry(),
+		Backend:       detectBackend(cfg.verbose),
 	}
 
 	if cfg.verbose {
@@ -155,7 +226,19 @@ func runServer(cfg config) int {
 	engine := attractor.NewEngine(engineCfg)
 	server := attractor.NewPipelineServer(engine)
 
-	addr := fmt.Sprintf(":%d", cfg.port)
+	// Wire render functions into the server for graph visualization endpoints.
+	server.ToDOT = render.ToDOT
+	server.ToDOTWithStatus = render.ToDOTWithStatus
+	server.RenderDOTSource = render.RenderDOTSource
+
+	return server
+}
+
+// runServer starts the HTTP pipeline server.
+func runServer(cfg config) int {
+	server := buildPipelineServer(cfg)
+
+	addr := fmt.Sprintf("0.0.0.0:%d", cfg.port)
 
 	// Set up context with signal handling for graceful shutdown.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -247,6 +330,36 @@ func retryPolicyFromName(name string) attractor.RetryPolicy {
 		return attractor.RetryPolicyPatient()
 	default:
 		return attractor.RetryPolicyNone()
+	}
+}
+
+// detectBackend checks for LLM API keys in the environment and returns
+// an AgentBackend if any are found, or nil for stub mode.
+func detectBackend(verbose bool) attractor.CodergenBackend {
+	keys := []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"}
+	for _, k := range keys {
+		if os.Getenv(k) != "" {
+			if verbose {
+				fmt.Fprintf(os.Stderr, "[backend] using AgentBackend (%s detected)\n", k)
+			}
+			return &attractor.AgentBackend{}
+		}
+	}
+	if verbose {
+		fmt.Fprintln(os.Stderr, "[backend] no API keys found, using stub mode")
+	}
+	return nil
+}
+
+// wireInterviewer attaches a ConsoleInterviewer to the WaitForHumanHandler
+// so human gate nodes work interactively in CLI mode.
+func wireInterviewer(engine *attractor.Engine) {
+	handler := engine.GetHandler("wait.human")
+	if handler == nil {
+		return
+	}
+	if hh, ok := handler.(*attractor.WaitForHumanHandler); ok {
+		hh.Interviewer = attractor.NewConsoleInterviewer()
 	}
 }
 

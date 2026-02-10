@@ -126,7 +126,23 @@ func ValidateOrError(g *Graph, extraRules ...LintRule) ([]Diagnostic, error) {
 
 // --- Built-in lint rules ---
 
-// startNodeRule checks that exactly one start node (shape=Mdiamond) exists.
+// isStartNode returns true if the node is a start node.
+// Recognized via shape=Mdiamond, node_type=start, or type=start.
+func isStartNode(n *Node) bool {
+	if n.Attrs == nil {
+		return false
+	}
+	if n.Attrs["shape"] == "Mdiamond" {
+		return true
+	}
+	if n.Attrs["node_type"] == "start" || n.Attrs["type"] == "start" {
+		return true
+	}
+	return false
+}
+
+// startNodeRule checks that exactly one start node exists.
+// Recognized via shape=Mdiamond, node_type=start, or type=start.
 type startNodeRule struct{}
 
 func (r *startNodeRule) Name() string { return "start_node" }
@@ -134,7 +150,7 @@ func (r *startNodeRule) Name() string { return "start_node" }
 func (r *startNodeRule) Apply(g *Graph) []Diagnostic {
 	var startNodes []string
 	for _, n := range g.Nodes {
-		if n.Attrs["shape"] == "Mdiamond" {
+		if isStartNode(n) {
 			startNodes = append(startNodes, n.ID)
 		}
 	}
@@ -159,14 +175,15 @@ func (r *startNodeRule) Apply(g *Graph) []Diagnostic {
 	}
 }
 
-// terminalNodeRule checks that at least one terminal node (shape=Msquare) exists.
+// terminalNodeRule checks that at least one terminal node exists.
+// Recognized via shape=Msquare, node_type=exit, or type=exit.
 type terminalNodeRule struct{}
 
 func (r *terminalNodeRule) Name() string { return "terminal_node" }
 
 func (r *terminalNodeRule) Apply(g *Graph) []Diagnostic {
 	for _, n := range g.Nodes {
-		if n.Attrs["shape"] == "Msquare" {
+		if isTerminal(n) {
 			return nil
 		}
 	}
@@ -286,7 +303,7 @@ func (r *exitNoOutgoingRule) Name() string { return "exit_no_outgoing" }
 func (r *exitNoOutgoingRule) Apply(g *Graph) []Diagnostic {
 	var diags []Diagnostic
 	for _, n := range g.Nodes {
-		if n.Attrs["shape"] == "Msquare" {
+		if isTerminal(n) {
 			outgoing := g.OutgoingEdges(n.ID)
 			if len(outgoing) > 0 {
 				diags = append(diags, Diagnostic{

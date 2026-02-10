@@ -85,8 +85,18 @@ func NewLocalExecutionEnvironment(workDir string, opts ...LocalExecOption) *Loca
 	return env
 }
 
+// resolvePath resolves a relative path against the work directory.
+// Absolute paths are returned unchanged.
+func (e *LocalExecutionEnvironment) resolvePath(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(e.workDir, path)
+}
+
 // ReadFile reads a file and prepends line numbers. Offset is 1-based; limit of 0 defaults to 2000.
 func (e *LocalExecutionEnvironment) ReadFile(path string, offset, limit int) (string, error) {
+	path = e.resolvePath(path)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read file %s: %w", path, err)
@@ -127,6 +137,7 @@ func (e *LocalExecutionEnvironment) ReadFile(path string, offset, limit int) (st
 
 // WriteFile writes content to a file, creating parent directories as needed.
 func (e *LocalExecutionEnvironment) WriteFile(path string, content string) error {
+	path = e.resolvePath(path)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("create directories for %s: %w", path, err)
@@ -139,6 +150,7 @@ func (e *LocalExecutionEnvironment) WriteFile(path string, content string) error
 
 // FileExists checks if a file or directory exists at the given path.
 func (e *LocalExecutionEnvironment) FileExists(path string) (bool, error) {
+	path = e.resolvePath(path)
 	_, err := os.Stat(path)
 	if err == nil {
 		return true, nil
@@ -151,6 +163,7 @@ func (e *LocalExecutionEnvironment) FileExists(path string) (bool, error) {
 
 // ListDirectory returns entries in a directory. Depth 0 means immediate children only.
 func (e *LocalExecutionEnvironment) ListDirectory(path string, depth int) ([]DirEntry, error) {
+	path = e.resolvePath(path)
 	if depth == 0 {
 		return e.listDirectoryFlat(path)
 	}

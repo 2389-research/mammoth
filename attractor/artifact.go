@@ -45,6 +45,11 @@ func NewArtifactStore(baseDir string) *ArtifactStore {
 	}
 }
 
+// BaseDir returns the base directory for artifact storage.
+func (s *ArtifactStore) BaseDir() string {
+	return s.baseDir
+}
+
 // Store saves an artifact. Large artifacts (exceeding the threshold) are written to disk.
 func (s *ArtifactStore) Store(id, name string, data []byte) (*ArtifactInfo, error) {
 	s.mu.Lock()
