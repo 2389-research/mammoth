@@ -6,142 +6,234 @@
     <title>Pipeline {{.ID}} - Makeatron</title>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
+    <script src="https://unpkg.com/idiomorph@0.3.0"></script>
+    <script src="https://unpkg.com/htmx-ext-idiomorph@0.3.0/idiomorph-ext.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('theme');
+            if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
     <style>
         :root {
-            --bg: #101014;
-            --bg-card: #18181c;
-            --bg-input: #121216;
-            --bg-hover: #1e1e24;
-            --border: rgba(255,255,255,0.06);
-            --border-hover: rgba(255,255,255,0.12);
-            --text: #e8e8ec;
-            --text-2: #9898a4;
-            --text-3: #58586a;
-            --green: #34d399;
-            --green-bg: rgba(52,211,153,0.08);
-            --amber: #fbbf24;
-            --amber-bg: rgba(251,191,36,0.08);
-            --red: #f87171;
-            --red-bg: rgba(248,113,113,0.08);
-            --slate: #64748b;
-            --slate-bg: rgba(100,116,139,0.08);
-            --brand: #a78bfa;
-            --brand-hover: #c4b5fd;
-            --brand-bg: rgba(167,139,250,0.06);
-            --font: 'DM Sans', -apple-system, sans-serif;
-            --mono: 'DM Mono', 'SF Mono', monospace;
-            --radius: 10px;
+            --color-brand: #2563eb;
+            --color-brand-subtle: rgba(37, 99, 235, 0.08);
+            --color-brand-text: #1d4ed8;
+            --color-green: #16a34a;
+            --color-green-subtle: rgba(22, 163, 74, 0.08);
+            --color-amber: #ca8a04;
+            --color-amber-subtle: rgba(202, 138, 4, 0.08);
+            --color-red: #dc2626;
+            --color-red-subtle: rgba(220, 38, 38, 0.06);
+            --color-slate: #64748b;
+            --color-text-primary: #111827;
+            --color-text-secondary: #6b7280;
+            --color-text-tertiary: #9ca3af;
+            --color-surface: #ffffff;
+            --color-bg: #f9fafb;
+            --color-border: rgba(0, 0, 0, 0.06);
+            --color-graph-bg: #f3f4f6;
+            --color-hover: rgba(0, 0, 0, 0.025);
+            --color-card-shadow: 0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 3px -1px rgba(0,0,0,0.04);
+            --color-btn-text: #ffffff;
+            --font-sans: 'Inter', system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        html.dark {
+            --color-brand: #60a5fa;
+            --color-brand-subtle: rgba(96, 165, 250, 0.1);
+            --color-brand-text: #93bbfd;
+            --color-green: #4ade80;
+            --color-green-subtle: rgba(74, 222, 128, 0.1);
+            --color-amber: #fbbf24;
+            --color-amber-subtle: rgba(251, 191, 36, 0.1);
+            --color-red: #f87171;
+            --color-red-subtle: rgba(248, 113, 113, 0.08);
+            --color-slate: #64748b;
+            --color-text-primary: #f1f5f9;
+            --color-text-secondary: #94a3b8;
+            --color-text-tertiary: #475569;
+            --color-surface: rgba(255, 255, 255, 0.03);
+            --color-bg: #0c0f14;
+            --color-border: rgba(255, 255, 255, 0.06);
+            --color-graph-bg: rgba(255, 255, 255, 0.02);
+            --color-hover: rgba(255, 255, 255, 0.03);
+            --color-card-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+            --color-btn-text: #0c0f14;
         }
 
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            font-family: var(--font);
-            background: var(--bg);
-            color: var(--text);
+            font-family: var(--font-sans);
+            background: var(--color-bg);
+            color: var(--color-text-primary);
             min-height: 100vh;
             -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+
+        /* ---- ANIMATIONS ---- */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulseDot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        @keyframes eventSlide {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
 
         /* ---- NAV ---- */
         .nav {
-            padding: 20px 32px;
+            padding: 16px 24px;
             display: flex;
             align-items: center;
-            gap: 14px;
+            gap: 12px;
             animation: fadeIn 0.3s ease-out;
         }
         .nav-back {
-            color: var(--text-3);
-            text-decoration: none;
-            font-size: 13px;
-            font-weight: 500;
-            transition: color 0.15s;
             display: flex;
             align-items: center;
-            gap: 6px;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            color: var(--color-text-secondary);
+            text-decoration: none;
+            transition: background 0.15s;
         }
-        .nav-back:hover { color: var(--text-2); }
-        .nav-back svg { width: 14px; height: 14px; }
-        .nav-sep { color: var(--text-3); font-size: 13px; }
+        .nav-back:hover { background: var(--color-hover); }
+        .nav-back svg { width: 16px; height: 16px; }
         .nav-id {
-            font-family: var(--mono);
+            font-family: var(--font-mono);
             font-size: 13px;
             font-weight: 500;
-            color: var(--text);
+            color: var(--color-text-primary);
         }
 
-        .badge {
-            font-family: var(--font);
+        /* ---- STATUS BADGE ---- */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-family: var(--font-sans);
             font-size: 11px;
-            font-weight: 600;
-            padding: 3px 10px;
-            border-radius: 6px;
+            font-weight: 500;
+            padding: 2px 8px;
+            border-radius: 9999px;
             white-space: nowrap;
         }
-        .badge-running {
-            color: var(--amber);
-            background: var(--amber-bg);
+        .status-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
         }
-        .badge-completed {
-            color: var(--green);
-            background: var(--green-bg);
-        }
-        .badge-failed {
-            color: var(--red);
-            background: var(--red-bg);
-        }
-        .badge-cancelled {
-            color: var(--slate);
-            background: var(--slate-bg);
-        }
+        .status-running { background: var(--color-amber-subtle); color: var(--color-amber); }
+        .status-running .status-dot { background: var(--color-amber); animation: pulseDot 1.8s ease-in-out infinite; }
+        .status-completed { background: var(--color-green-subtle); color: var(--color-green); }
+        .status-completed .status-dot { background: var(--color-green); }
+        .status-failed { background: var(--color-red-subtle); color: var(--color-red); }
+        .status-failed .status-dot { background: var(--color-red); }
+        .status-cancelled { background: var(--color-hover); color: var(--color-text-tertiary); }
+        .status-cancelled .status-dot { background: var(--color-text-tertiary); }
 
-        .nav-actions { margin-left: auto; }
-
-        .cancel-btn {
-            font-family: var(--font);
+        /* ---- ACTIVE NODE ---- */
+        .active-node {
+            font-family: var(--font-mono);
             font-size: 12px;
-            font-weight: 600;
-            color: var(--red);
-            background: var(--red-bg);
-            border: 1px solid rgba(248,113,113,0.15);
-            padding: 5px 14px;
-            border-radius: 6px;
+            font-weight: 500;
+            color: var(--color-amber);
+        }
+
+        .nav-right {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sse-indicator {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--color-green);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .sse-indicator.connected { opacity: 1; }
+
+        .stop-btn {
+            font-family: var(--font-sans);
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--color-red);
+            background: var(--color-red-subtle);
+            border: none;
+            padding: 6px 14px;
+            border-radius: 12px;
             cursor: pointer;
-            transition: background 0.15s, border-color 0.15s;
+            transition: background 0.15s;
         }
-        .cancel-btn:hover {
-            background: rgba(248,113,113,0.15);
-            border-color: rgba(248,113,113,0.3);
-        }
+        .stop-btn:hover { background: var(--color-red-subtle); }
 
-        /* ---- MAIN GRID ---- */
+        .theme-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: none;
+            background: transparent;
+            color: var(--color-text-tertiary);
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .theme-toggle:hover { background: var(--color-hover); }
+        .theme-toggle svg { width: 16px; height: 16px; }
+        .theme-toggle .icon-sun { display: none; }
+        .theme-toggle .icon-moon { display: block; }
+        html.dark .theme-toggle .icon-sun { display: block; }
+        html.dark .theme-toggle .icon-moon { display: none; }
+
+        /* ---- MAIN LAYOUT ---- */
         .main {
-            max-width: 1200px;
+            max-width: 1100px;
             margin: 0 auto;
-            padding: 8px 32px 80px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
+            padding: 0 24px 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(6px); }
-            to { opacity: 1; transform: translateY(0); }
+        .grid-2col {
+            display: grid;
+            grid-template-columns: 5fr 3fr;
+            gap: 24px;
         }
 
         /* ---- PANELS ---- */
         .panel {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 16px;
+            box-shadow: var(--color-card-shadow);
             overflow: hidden;
             animation: fadeIn 0.4s ease-out both;
         }
@@ -151,108 +243,149 @@
         .panel:nth-child(4) { animation-delay: 0.14s; }
 
         .panel-header {
-            padding: 12px 18px;
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--text-2);
-            letter-spacing: 0.3px;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .panel-header svg {
-            width: 14px;
-            height: 14px;
-            color: var(--text-3);
+            padding: 20px 20px 0 20px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--color-text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
         .panel-body {
-            padding: 16px 18px;
+            padding: 16px 20px 20px;
             max-height: 480px;
             overflow-y: auto;
         }
 
         /* ---- GRAPH PANEL ---- */
-        .graph-panel {
-            grid-column: 1 / -1;
-        }
         .graph-panel .panel-body {
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 200px;
-            max-height: 420px;
-            overflow: auto;
-            background: var(--bg);
+            min-height: 120px;
+            overflow: hidden;
+            background: var(--color-graph-bg);
+            border-radius: 12px;
+            margin: 16px 20px 20px;
             padding: 20px;
         }
         .graph-panel .panel-body svg {
-            max-width: 100%;
+            width: 100%;
             height: auto;
         }
 
-        /* ---- EVENT LOG ---- */
-        .event-item {
-            font-family: var(--mono);
-            font-size: 12px;
-            padding: 6px 0;
-            border-bottom: 1px solid var(--border);
+        /* ---- TOKEN STATS ---- */
+        .token-stats {
             display: flex;
-            gap: 10px;
-            line-height: 1.5;
-            animation: eventSlide 0.2s ease-out;
+            flex-wrap: wrap;
+            gap: 16px 24px;
         }
-        .event-item:last-child { border-bottom: none; }
-
-        @keyframes eventSlide {
-            from { opacity: 0; transform: translateY(4px); }
-            to { opacity: 1; transform: translateY(0); }
+        .token-counter {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
         }
-
-        .event-time {
-            color: var(--text-3);
-            min-width: 65px;
-        }
-        .event-type {
-            color: var(--brand);
-            min-width: 130px;
+        .token-value {
+            font-family: var(--font-mono);
+            font-size: 17px;
             font-weight: 500;
+            color: var(--color-text-primary);
+            line-height: 1.3;
+            font-variant-numeric: tabular-nums;
         }
-        .event-node {
-            color: var(--amber);
-        }
-        .event-detail {
-            color: var(--text-3);
-            margin-left: auto;
+        .token-label {
+            font-size: 11px;
+            color: var(--color-text-tertiary);
         }
 
-        /* ---- CONTEXT TABLE ---- */
-        .ctx-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-family: var(--mono);
-            font-size: 12px;
+        /* ---- TOOL ACTIVITY ---- */
+        .tool-card {
+            background: var(--color-graph-bg);
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: background 0.15s;
         }
-        .ctx-table tr { border-bottom: 1px solid var(--border); }
-        .ctx-table tr:last-child { border-bottom: none; }
-        .ctx-key {
-            padding: 6px 12px 6px 0;
-            color: var(--amber);
+        .tool-card:hover { background: var(--color-hover); }
+        .tool-card:last-child { margin-bottom: 0; }
+        .tool-output-full { display: none; font-family: var(--font-mono); font-size: 12px; color: var(--color-text-secondary); margin-top: 8px; white-space: pre-wrap; word-break: break-all; }
+        .tool-card.expanded .tool-output { display: none; }
+        .tool-card.expanded .tool-output-full { display: block; }
+
+        .tool-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tool-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+        .tool-done .tool-dot { background: var(--color-green); }
+        .tool-running .tool-dot { background: var(--color-amber); animation: pulseDot 1.8s ease-in-out infinite; }
+        .tool-name {
+            font-family: var(--font-mono);
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--color-text-primary);
+        }
+        .tool-node {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--color-text-tertiary);
+        }
+        .tool-duration {
+            margin-left: auto;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--color-text-tertiary);
+            font-variant-numeric: tabular-nums;
+        }
+        .tool-running .tool-duration {
+            color: var(--color-amber);
+            animation: pulseDot 1.8s ease-in-out infinite;
+        }
+        .tool-output {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--color-text-tertiary);
+            margin-top: 8px;
+            overflow: hidden;
+            text-overflow: ellipsis;
             white-space: nowrap;
-            vertical-align: top;
+        }
+
+        /* ---- CONTEXT ---- */
+        .ctx-entries {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .ctx-row {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+        }
+        .ctx-key {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--color-text-tertiary);
+            white-space: nowrap;
         }
         .ctx-val {
-            padding: 6px 0;
-            color: var(--text-2);
-            word-break: break-word;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--color-text-primary);
+            word-break: break-all;
         }
 
         /* ---- QUESTIONS ---- */
         .question-card {
-            background: var(--bg);
-            border: 1px solid var(--border);
-            border-radius: 8px;
+            background: var(--color-graph-bg);
+            border-radius: 12px;
             padding: 16px;
             margin-bottom: 10px;
         }
@@ -262,7 +395,7 @@
             font-size: 14px;
             font-weight: 500;
             margin-bottom: 12px;
-            color: var(--text);
+            color: var(--color-text-primary);
             line-height: 1.5;
         }
         .question-options {
@@ -271,165 +404,324 @@
             flex-wrap: wrap;
         }
         .answer-btn {
-            font-family: var(--font);
+            font-family: var(--font-sans);
             font-size: 12px;
-            font-weight: 600;
-            background: var(--brand-bg);
-            color: var(--brand);
-            border: 1px solid rgba(167,139,250,0.15);
-            padding: 7px 16px;
-            border-radius: 6px;
+            font-weight: 500;
+            background: transparent;
+            color: var(--color-text-primary);
+            border: 1px solid var(--color-border);
+            padding: 6px 14px;
+            border-radius: 12px;
             cursor: pointer;
-            transition: background 0.15s, border-color 0.15s, transform 0.1s;
+            transition: background 0.15s, border-color 0.15s, color 0.15s;
         }
         .answer-btn:hover {
-            background: rgba(167,139,250,0.12);
-            border-color: rgba(167,139,250,0.3);
+            background: var(--color-brand-subtle);
+            border-color: var(--color-brand);
+            color: var(--color-brand-text);
         }
         .answer-btn:active { transform: scale(0.97); }
 
+        /* ---- EVENT LOG (collapsible) ---- */
+        .events-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s;
+        }
+        .events-toggle:hover { background: var(--color-hover); }
+        .events-toggle-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .events-toggle-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--color-text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .events-count {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 20px;
+            height: 20px;
+            padding: 0 6px;
+            border-radius: 9999px;
+            background: var(--color-brand-subtle);
+            color: var(--color-brand);
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .chevron {
+            width: 16px;
+            height: 16px;
+            color: var(--color-text-tertiary);
+            transition: transform 0.2s ease;
+        }
+        .events-toggle.open .chevron {
+            transform: rotate(180deg);
+        }
+        .events-body {
+            display: none;
+        }
+        .events-body.open {
+            display: block;
+        }
+        .events-body .panel-body {
+            padding: 0 20px 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        /* ---- EVENT ITEMS ---- */
+        .event-item {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            display: flex;
+            align-items: baseline;
+            gap: 16px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            animation: eventSlide 0.2s ease-out;
+        }
+        .event-item:hover { background: var(--color-hover); }
+
+        .event-time {
+            color: var(--color-text-tertiary);
+            min-width: 65px;
+        }
+        .event-type {
+            color: var(--color-brand);
+            min-width: 130px;
+            font-weight: 500;
+        }
+        .event-node {
+            color: var(--color-amber);
+        }
+        .event-detail {
+            color: var(--color-text-tertiary);
+            margin-left: auto;
+        }
+        .event-output {
+            color: var(--color-text-tertiary);
+        }
+        .event-tokens {
+            color: var(--color-brand);
+            font-size: 11px;
+        }
+
         /* ---- EMPTY / NO-DATA ---- */
         .no-data {
-            color: var(--text-3);
+            color: var(--color-text-tertiary);
             font-size: 13px;
             text-align: center;
             padding: 32px 16px;
         }
 
-        /* ---- RUNNING DOT ---- */
-        .running-dot {
-            display: inline-block;
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: var(--amber);
-            margin-right: 6px;
-            animation: pulse 1.8s ease-in-out infinite;
-            vertical-align: middle;
+        /* ---- ERROR DISPLAY ---- */
+        .error-banner {
+            background: var(--color-red-subtle);
+            border-radius: 12px;
+            color: var(--color-red);
+            font-family: var(--font-mono);
+            font-size: 13px;
+            line-height: 1.6;
+            padding: 12px 16px;
+            word-break: break-word;
         }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(251,191,36,0.3); }
-            50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(251,191,36,0); }
+
+        /* ---- RIGHT COLUMN STACK ---- */
+        .right-col {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
         }
 
         /* ---- RESPONSIVE ---- */
         @media (max-width: 900px) {
-            .main { grid-template-columns: 1fr; padding: 8px 16px 60px; }
-            .graph-panel { grid-column: 1; }
-            .nav { padding: 16px; }
+            .grid-2col { grid-template-columns: 1fr; }
+            .nav { padding: 12px 16px; }
+            .main { padding: 0 16px 32px; }
         }
     </style>
 </head>
 <body>
+    <div id="dashboard-sse" hx-ext="sse" sse-connect="/ui/pipelines/{{.ID}}/dashboard-stream" sse-close="pipeline-done">
     <nav class="nav">
-        <a class="nav-back" href="/">
+        <a class="nav-back" href="/" aria-label="Back to dashboard">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="15 18 9 12 15 6"/>
+                <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
             </svg>
-            Dashboard
         </a>
-        <span class="nav-sep">/</span>
         <span class="nav-id">{{.ID}}</span>
-        <span id="status-badge"
-              hx-get="/ui/pipelines/{{.ID}}/status-fragment"
-              hx-trigger="load, every 2s"
-              hx-swap="innerHTML">
-            {{if eq .Status "running"}}<span class="running-dot"></span>{{end}}
-            <span class="badge badge-{{.Status}}">{{.Status}}</span>
+        <span id="status-badge" sse-swap="status" hx-swap="innerHTML">
+            <span class="status-badge status-{{.Status}}"><span class="status-dot"></span>{{.Status}}</span>
         </span>
-        {{if eq .Status "running"}}
-        <div class="nav-actions">
+        <span id="active-node-indicator" sse-swap="active-node" hx-swap="innerHTML">
+        </span>
+        <div class="nav-right">
+            <span class="sse-indicator" id="sse-dot"></span>
+            {{if eq .Status "running"}}
             <form method="POST" action="/pipelines/{{.ID}}/cancel" style="display:inline">
-                <button type="submit" class="cancel-btn">Cancel</button>
+                <button type="submit" class="stop-btn">Stop</button>
             </form>
+            {{end}}
+            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+                <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+                <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+            </button>
         </div>
-        {{end}}
     </nav>
 
     <div class="main">
+        {{if .Error}}
+        <!-- Error Banner -->
+        <div class="error-banner">{{.Error}}</div>
+        {{end}}
+
         <!-- Graph Panel -->
         <div class="panel graph-panel">
-            <div class="panel-header">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-                </svg>
-                Pipeline Graph
-            </div>
+            <div class="panel-header">Pipeline Graph</div>
             <div class="panel-body" id="graph-container"
-                 hx-get="/ui/pipelines/{{.ID}}/graph-fragment"
-                 hx-trigger="load, every 3s"
-                 hx-swap="innerHTML">
+                 sse-swap="graph" hx-swap="innerHTML">
                 <div class="no-data">Loading graph...</div>
             </div>
         </div>
 
-        <!-- Events Panel -->
-        <div class="panel">
-            <div class="panel-header">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                </svg>
-                Event Log
+        <!-- Two-column grid -->
+        <div class="grid-2col">
+            <!-- Left column -->
+            <div style="display:flex; flex-direction:column; gap:24px;">
+                <!-- Token Stats -->
+                <div class="panel">
+                    <div class="panel-header">Token Usage</div>
+                    <div class="panel-body" id="tokens-container"
+                         hx-ext="morph"
+                         sse-swap="tokens"
+                         hx-swap="morph:innerHTML">
+                    </div>
+                </div>
+
+                <!-- Tool Activity -->
+                <div class="panel">
+                    <div class="panel-header">Tool Activity</div>
+                    <div class="panel-body" id="tools-container"
+                         hx-ext="morph"
+                         sse-swap="tools"
+                         hx-swap="morph:innerHTML">
+                        <div class="no-data">No tool calls yet</div>
+                    </div>
+                </div>
             </div>
-            <div class="panel-body" id="events-container"
-                 hx-get="/ui/pipelines/{{.ID}}/events-fragment"
-                 hx-trigger="load"
-                 hx-swap="innerHTML">
-            </div>
-            <div id="events-stream"
-                 hx-ext="sse"
-                 sse-connect="/ui/pipelines/{{.ID}}/events-stream"
-                 sse-swap="message"
-                 hx-target="#events-container"
-                 hx-swap="beforeend">
+
+            <!-- Right column -->
+            <div class="right-col">
+                <!-- Questions Panel -->
+                <div class="panel">
+                    <div class="panel-header">Human Gates</div>
+                    <div class="panel-body" id="questions-container"
+                         sse-swap="questions"
+                         hx-swap="innerHTML">
+                        <div class="no-data">No pending questions</div>
+                    </div>
+                </div>
+
+                <!-- Context Panel -->
+                <div class="panel">
+                    <div class="panel-header">Pipeline Context</div>
+                    <div class="panel-body" id="context-container"
+                         sse-swap="context"
+                         hx-swap="innerHTML">
+                        <div class="no-data">No context available yet</div>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- Questions Panel -->
+        <!-- Event Log (collapsible) -->
         <div class="panel">
-            <div class="panel-header">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            <div class="events-toggle" id="events-toggle" role="button" tabindex="0" aria-expanded="false" onclick="toggleEvents()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleEvents();}">
+                <div class="events-toggle-left">
+                    <span class="events-toggle-label">Event Log</span>
+                    <span class="events-count" id="events-count">0</span>
+                </div>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron">
+                    <polyline points="6 9 12 15 18 9"/>
                 </svg>
-                Human Gates
             </div>
-            <div class="panel-body" id="questions-container"
-                 hx-get="/ui/pipelines/{{.ID}}/questions-fragment"
-                 hx-trigger="load, every 2s"
-                 hx-swap="innerHTML">
-                <div class="no-data">No pending questions</div>
-            </div>
-        </div>
-
-        <!-- Context Panel -->
-        <div class="panel">
-            <div class="panel-header">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
-                    <line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/>
-                    <line x1="2" y1="12" x2="22" y2="12"/>
-                </svg>
-                Pipeline Context
-            </div>
-            <div class="panel-body" id="context-container"
-                 hx-get="/ui/pipelines/{{.ID}}/context-fragment"
-                 hx-trigger="load, every 3s"
-                 hx-swap="innerHTML">
-                <div class="no-data">No context available yet</div>
+            <div class="events-body" id="events-body">
+                <div class="panel-body" id="events-container"
+                     sse-swap="events"
+                     hx-swap="innerHTML">
+                </div>
+                <!-- Appends individual new events as they arrive -->
+                <div sse-swap="event-item"
+                     hx-target="#events-container"
+                     hx-swap="beforeend"
+                     style="display:none">
+                </div>
             </div>
         </div>
     </div>
+    </div>
 
     <script>
+        function toggleTheme() {
+            document.documentElement.classList.toggle('dark');
+            localStorage.setItem('theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+        }
+
+        function toggleEvents() {
+            var toggle = document.getElementById('events-toggle');
+            var body = document.getElementById('events-body');
+            toggle.classList.toggle('open');
+            body.classList.toggle('open');
+            toggle.setAttribute('aria-expanded', toggle.classList.contains('open'));
+        }
+
+        // Update event count badge
+        function updateEventCount() {
+            var container = document.getElementById('events-container');
+            var badge = document.getElementById('events-count');
+            if (container && badge) {
+                var items = container.querySelectorAll('.event-item');
+                badge.textContent = items.length;
+            }
+        }
+
         // Auto-scroll events panel as new events arrive
-        const eventsContainer = document.getElementById('events-container');
+        var eventsContainer = document.getElementById('events-container');
         if (eventsContainer) {
-            const observer = new MutationObserver(function() {
+            var observer = new MutationObserver(function() {
                 eventsContainer.scrollTop = eventsContainer.scrollHeight;
+                updateEventCount();
             });
             observer.observe(eventsContainer, { childList: true, subtree: true });
         }
+
+        // SSE connection indicator
+        document.body.addEventListener('htmx:sseOpen', function() {
+            var dot = document.getElementById('sse-dot');
+            if (dot) dot.classList.add('connected');
+        });
+        document.body.addEventListener('htmx:sseClose', function() {
+            var dot = document.getElementById('sse-dot');
+            if (dot) dot.classList.remove('connected');
+        });
+        document.body.addEventListener('htmx:sseError', function() {
+            var dot = document.getElementById('sse-dot');
+            if (dot) dot.classList.remove('connected');
+        });
     </script>
 </body>
 </html>

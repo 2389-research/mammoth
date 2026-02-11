@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"strconv"
@@ -45,14 +46,15 @@ type PipelineServer struct {
 
 // PipelineRun tracks a running pipeline.
 type PipelineRun struct {
-	ID        string
-	Status    string // "running", "completed", "failed", "cancelled"
-	Source    string // original DOT source
-	Result    *RunResult
-	Error     string
-	Events    []EngineEvent    // collected events
-	Cancel    context.CancelFunc
-	Questions   []PendingQuestion      // for human-in-the-loop
+	ID          string
+	Status      string // "running", "completed", "failed", "cancelled"
+	Source      string // original DOT source
+	Result      *RunResult
+	Error       string
+	ArtifactDir string        // path to the run's artifact directory
+	Events      []EngineEvent // collected events
+	Cancel      context.CancelFunc
+	Questions   []PendingQuestion // for human-in-the-loop
 	mu          sync.RWMutex
 	CreatedAt   time.Time
 	answerChans map[string]chan string // qid -> channel for delivering answers
@@ -75,6 +77,7 @@ type PipelineStatus struct {
 	ID             string    `json:"id"`
 	Status         string    `json:"status"`
 	CompletedNodes []string  `json:"completed_nodes,omitempty"`
+	ArtifactDir    string    `json:"artifact_dir,omitempty"`
 	Error          string    `json:"error,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 }
@@ -162,9 +165,42 @@ func (s *PipelineServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
-// Handler returns the HTTP handler for this server.
+// Handler returns the HTTP handler for this server, wrapped with request logging.
 func (s *PipelineServer) Handler() http.Handler {
-	return s.mux
+	return &loggingHandler{inner: s.mux}
+}
+
+// loggingHandler wraps an http.Handler with request/response logging.
+type loggingHandler struct {
+	inner http.Handler
+}
+
+func (h *loggingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	lw := &statusWriter{ResponseWriter: w, status: 200}
+	h.inner.ServeHTTP(lw, r)
+	log.Printf("%s %s %d %s\n", r.Method, r.URL.Path, lw.status, time.Since(start).Round(time.Millisecond))
+}
+
+// statusWriter captures the HTTP status code from WriteHeader.
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *statusWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
 
 // registerRoutes sets up all HTTP routes using Go 1.22+ ServeMux patterns.
@@ -214,6 +250,21 @@ func (s *PipelineServer) handleSubmitPipeline(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Pre-validate: parse and validate the pipeline before accepting it.
+	// Catches syntax errors and structural problems immediately instead of
+	// creating a pipeline run that fails asynchronously.
+	graph, parseErr := Parse(source)
+	if parseErr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("parse error: %v", parseErr)})
+		return
+	}
+	transforms := DefaultTransforms()
+	graph = ApplyTransforms(graph, transforms...)
+	if _, validErr := ValidateOrError(graph); validErr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("validation failed: %v", validErr)})
+		return
+	}
+
 	id := generateID()
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -232,12 +283,22 @@ func (s *PipelineServer) handleSubmitPipeline(w http.ResponseWriter, r *http.Req
 	s.pipelines[id] = run
 	s.mu.Unlock()
 
-	// Build a per-pipeline engine config that captures events and injects the interviewer
+	log.Printf("[pipeline %s] submitted (%d bytes)\n", id, len(source))
+
+	// Build a per-pipeline engine config that captures events and injects the interviewer.
+	// Each pipeline gets its own run directory under the artifacts base, keyed by pipeline ID.
+	// Chain the base event handler (e.g. verbose logging) with the per-pipeline handler
+	// that stores events for the web UI.
 	engineConfig := s.engine.config
+	engineConfig.RunID = id
+	baseHandler := engineConfig.EventHandler
 	engineConfig.EventHandler = func(evt EngineEvent) {
 		run.mu.Lock()
 		run.Events = append(run.Events, evt)
 		run.mu.Unlock()
+		if baseHandler != nil {
+			baseHandler(evt)
+		}
 	}
 
 	// Create a new handler registry that wraps each handler with interviewer injection.
@@ -257,12 +318,22 @@ func (s *PipelineServer) handleSubmitPipeline(w http.ResponseWriter, r *http.Req
 		if err != nil {
 			if ctx.Err() != nil {
 				run.Status = "cancelled"
+				log.Printf("[pipeline %s] cancelled\n", id)
 			} else {
 				run.Status = "failed"
 				run.Error = err.Error()
+				log.Printf("[pipeline %s] failed: %s\n", id, err.Error())
 			}
 		} else {
 			run.Status = "completed"
+			completedCount := 0
+			if result != nil {
+				completedCount = len(result.CompletedNodes)
+				if workDir := result.Context.GetString("_workdir", ""); workDir != "" {
+					run.ArtifactDir = workDir
+				}
+			}
+			log.Printf("[pipeline %s] completed (%d nodes)\n", id, completedCount)
 		}
 		run.Result = result
 	}()
@@ -288,10 +359,11 @@ func (s *PipelineServer) handleGetPipeline(w http.ResponseWriter, r *http.Reques
 
 	run.mu.RLock()
 	status := PipelineStatus{
-		ID:        run.ID,
-		Status:    run.Status,
-		Error:     run.Error,
-		CreatedAt: run.CreatedAt,
+		ID:          run.ID,
+		Status:      run.Status,
+		Error:       run.Error,
+		ArtifactDir: run.ArtifactDir,
+		CreatedAt:   run.CreatedAt,
 	}
 	if run.Result != nil {
 		status.CompletedNodes = run.Result.CompletedNodes
@@ -599,6 +671,9 @@ func (s *PipelineServer) handleGetQuestions(w http.ResponseWriter, r *http.Reque
 }
 
 // handleAnswerQuestion handles POST /pipelines/{id}/questions/{qid}/answer.
+// Supports both HTMX form-encoded requests (detected via HX-Request header)
+// and JSON API requests. HTMX requests return updated questions HTML;
+// API requests return JSON.
 func (s *PipelineServer) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	qid := r.PathValue("qid")
@@ -612,11 +687,26 @@ func (s *PipelineServer) handleAnswerQuestion(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	var req struct {
-		Answer string `json:"answer"`
+	isHTMX := r.Header.Get("HX-Request") != ""
+
+	// Extract answer from form data (HTMX) or JSON body (API)
+	var answer string
+	if isHTMX {
+		r.ParseForm()
+		answer = r.FormValue("answer")
+	} else {
+		var payload struct {
+			Answer string `json:"answer"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+			return
+		}
+		answer = payload.Answer
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+
+	if answer == "" {
+		http.Error(w, "answer is required", http.StatusBadRequest)
 		return
 	}
 
@@ -625,7 +715,7 @@ func (s *PipelineServer) handleAnswerQuestion(w http.ResponseWriter, r *http.Req
 	for i := range run.Questions {
 		if run.Questions[i].ID == qid {
 			run.Questions[i].Answered = true
-			run.Questions[i].Answer = req.Answer
+			run.Questions[i].Answer = answer
 			found = true
 			break
 		}
@@ -645,10 +735,20 @@ func (s *PipelineServer) handleAnswerQuestion(w http.ResponseWriter, r *http.Req
 	}
 
 	if answerCh != nil {
-		answerCh <- req.Answer
+		answerCh <- answer
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "answered"})
+	if isHTMX {
+		// Return updated questions HTML for HTMX swap
+		run.mu.RLock()
+		questions := make([]PendingQuestion, len(run.Questions))
+		copy(questions, run.Questions)
+		run.mu.RUnlock()
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(renderQuestionsFragmentHTML(id, questions)))
+	} else {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "answered"})
+	}
 }
 
 // handleGetContext handles GET /pipelines/{id}/context.
@@ -786,7 +886,7 @@ type interviewerInjectingHandler struct {
 	interviewer Interviewer
 }
 
-func (h *interviewerInjectingHandler) Type() string        { return h.inner.Type() }
+func (h *interviewerInjectingHandler) Type() string              { return h.inner.Type() }
 func (h *interviewerInjectingHandler) InnerHandler() NodeHandler { return h.inner }
 
 func (h *interviewerInjectingHandler) Execute(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
