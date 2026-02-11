@@ -73,6 +73,14 @@ func (s *FSRunStateStore) Create(state *RunState) error {
 		return fmt.Errorf("write context: %w", err)
 	}
 
+	// Write source.dot if the pipeline source is available
+	if state.Source != "" {
+		sourcePath := filepath.Join(runDir, "source.dot")
+		if err := os.WriteFile(sourcePath, []byte(state.Source), 0644); err != nil {
+			return fmt.Errorf("write source.dot: %w", err)
+		}
+	}
+
 	// Create empty events.jsonl
 	eventsPath := filepath.Join(runDir, "events.jsonl")
 	if err := os.WriteFile(eventsPath, []byte(""), 0644); err != nil {
@@ -117,10 +125,18 @@ func (s *FSRunStateStore) getUnlocked(id string) (*RunState, error) {
 		return nil, fmt.Errorf("read events for %q: %w", id, err)
 	}
 
+	// Read source.dot if it exists (optional file)
+	var source string
+	sourceData, sourceErr := os.ReadFile(filepath.Join(runDir, "source.dot"))
+	if sourceErr == nil {
+		source = string(sourceData)
+	}
+
 	state := &RunState{
 		ID:             manifest.ID,
 		PipelineFile:   manifest.PipelineFile,
 		Status:         manifest.Status,
+		Source:         source,
 		CurrentNode:    manifest.CurrentNode,
 		CompletedNodes: manifest.CompletedNodes,
 		Context:        ctx,

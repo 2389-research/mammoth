@@ -68,6 +68,9 @@ func TestParseFlagsDefaults(t *testing.T) {
 	if cfg.artifactDir != "" {
 		t.Errorf("expected empty artifactDir, got %q", cfg.artifactDir)
 	}
+	if cfg.dataDir != "" {
+		t.Errorf("expected empty dataDir, got %q", cfg.dataDir)
+	}
 	if cfg.retryPolicy != "none" {
 		t.Errorf("expected retryPolicy=none, got %q", cfg.retryPolicy)
 	}
@@ -172,6 +175,44 @@ func TestParseFlagsBaseURLDefaultEmpty(t *testing.T) {
 
 	if cfg.baseURL != "" {
 		t.Errorf("expected empty baseURL by default, got %q", cfg.baseURL)
+	}
+}
+
+func TestParseFlagsDataDir(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"mammoth", "--data-dir", "/tmp/mammoth-data", "test.dot"}
+	cfg := parseFlags()
+
+	if cfg.dataDir != "/tmp/mammoth-data" {
+		t.Errorf("expected dataDir=/tmp/mammoth-data, got %q", cfg.dataDir)
+	}
+}
+
+func TestResolveDataDirWithOverride(t *testing.T) {
+	dir := t.TempDir()
+	got, err := resolveDataDir(dir)
+	if err != nil {
+		t.Fatalf("resolveDataDir failed: %v", err)
+	}
+	if got != dir {
+		t.Errorf("expected %q, got %q", dir, got)
+	}
+}
+
+func TestResolveDataDirUsesDefault(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	got, err := resolveDataDir("")
+	if err != nil {
+		t.Fatalf("resolveDataDir failed: %v", err)
+	}
+	if got == "" {
+		t.Error("expected non-empty default data dir")
+	}
+	if !strings.Contains(got, "mammoth") {
+		t.Errorf("expected data dir to contain 'mammoth', got %q", got)
 	}
 }
 
@@ -388,8 +429,18 @@ func TestRunRequiresPipelineFile(t *testing.T) {
 		pipelineFile: "",
 	}
 	exitCode := run(cfg)
-	if exitCode != 1 {
-		t.Errorf("expected exit code 1 when no pipeline file given (non-server mode), got %d", exitCode)
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 when no pipeline file given (shows help), got %d", exitCode)
+	}
+}
+
+func TestRunNoArgsShowsHelp(t *testing.T) {
+	cfg := config{
+		pipelineFile: "",
+	}
+	exitCode := run(cfg)
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 for no-args help display, got %d", exitCode)
 	}
 }
 
@@ -398,8 +449,12 @@ func TestRunRequiresPipelineFile(t *testing.T) {
 func TestBuildPipelineServerWiresRenderFunctions(t *testing.T) {
 	cfg := config{
 		retryPolicy: "none",
+		dataDir:     t.TempDir(),
 	}
-	server := buildPipelineServer(cfg)
+	server, err := buildPipelineServer(cfg)
+	if err != nil {
+		t.Fatalf("buildPipelineServer failed: %v", err)
+	}
 
 	if server.ToDOT == nil {
 		t.Error("expected ToDOT to be wired on the pipeline server")
@@ -415,8 +470,12 @@ func TestBuildPipelineServerWiresRenderFunctions(t *testing.T) {
 func TestBuildPipelineServerToDOTProducesValidOutput(t *testing.T) {
 	cfg := config{
 		retryPolicy: "none",
+		dataDir:     t.TempDir(),
 	}
-	server := buildPipelineServer(cfg)
+	server, err := buildPipelineServer(cfg)
+	if err != nil {
+		t.Fatalf("buildPipelineServer failed: %v", err)
+	}
 
 	graph := &attractor.Graph{
 		Name: "wiring_test",
@@ -442,8 +501,12 @@ func TestBuildPipelineServerToDOTProducesValidOutput(t *testing.T) {
 func TestBuildPipelineServerToDOTWithStatusProducesColoredOutput(t *testing.T) {
 	cfg := config{
 		retryPolicy: "none",
+		dataDir:     t.TempDir(),
 	}
-	server := buildPipelineServer(cfg)
+	server, err := buildPipelineServer(cfg)
+	if err != nil {
+		t.Fatalf("buildPipelineServer failed: %v", err)
+	}
 
 	graph := &attractor.Graph{
 		Name: "status_test",
@@ -578,8 +641,12 @@ func TestExampleDOTFilesParseAndValidate(t *testing.T) {
 func TestBuildPipelineServerGraphEndpointReturnsDOT(t *testing.T) {
 	cfg := config{
 		retryPolicy: "none",
+		dataDir:     t.TempDir(),
 	}
-	server := buildPipelineServer(cfg)
+	server, err := buildPipelineServer(cfg)
+	if err != nil {
+		t.Fatalf("buildPipelineServer failed: %v", err)
+	}
 
 	// Submit a pipeline via POST
 	dotSource := `digraph test { start [shape=Mdiamond]; finish [shape=Msquare]; start -> finish }`

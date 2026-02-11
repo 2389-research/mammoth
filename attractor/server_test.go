@@ -1448,6 +1448,398 @@ func TestGetPipelineGraphNoFuncsConfigured(t *testing.T) {
 	}
 }
 
+// --- List Pipelines Endpoint Tests ---
+
+func TestGetPipelinesListReturnsEmptyArray(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/pipelines")
+	if err != nil {
+		t.Fatalf("GET /pipelines failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var result []PipelineStatus
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty list, got %d items", len(result))
+	}
+}
+
+func TestGetPipelinesListReturnsPipelines(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Submit a pipeline
+	resp, err := http.Post(ts.URL+"/pipelines", "text/plain", strings.NewReader(simpleDOTSource()))
+	if err != nil {
+		t.Fatalf("POST /pipelines failed: %v", err)
+	}
+	var submitResult struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&submitResult)
+	resp.Body.Close()
+
+	// Wait for completion
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err = http.Get(ts.URL + "/pipelines/" + submitResult.ID)
+		if err != nil {
+			break
+		}
+		var status PipelineStatus
+		json.NewDecoder(resp.Body).Decode(&status)
+		resp.Body.Close()
+		if status.Status == "completed" || status.Status == "failed" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// GET /pipelines should return the submitted pipeline
+	resp, err = http.Get(ts.URL + "/pipelines")
+	if err != nil {
+		t.Fatalf("GET /pipelines failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var result []PipelineStatus
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 pipeline, got %d", len(result))
+	}
+	if result[0].ID != submitResult.ID {
+		t.Errorf("expected ID %q, got %q", submitResult.ID, result[0].ID)
+	}
+}
+
+func TestGetPipelinesListSortedByCreatedAt(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+
+	// Manually insert runs with known timestamps
+	now := time.Now()
+	runs := []*PipelineRun{
+		{ID: "run-c", Status: "completed", CreatedAt: now.Add(-1 * time.Hour)},
+		{ID: "run-a", Status: "completed", CreatedAt: now.Add(-3 * time.Hour)},
+		{ID: "run-b", Status: "completed", CreatedAt: now.Add(-2 * time.Hour)},
+	}
+
+	srv.mu.Lock()
+	for _, r := range runs {
+		srv.pipelines[r.ID] = r
+	}
+	srv.mu.Unlock()
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/pipelines")
+	if err != nil {
+		t.Fatalf("GET /pipelines failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result []PipelineStatus
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(result) != 3 {
+		t.Fatalf("expected 3 pipelines, got %d", len(result))
+	}
+
+	// Should be sorted by CreatedAt descending (most recent first)
+	if result[0].ID != "run-c" {
+		t.Errorf("expected first pipeline to be 'run-c' (most recent), got %q", result[0].ID)
+	}
+	if result[2].ID != "run-a" {
+		t.Errorf("expected last pipeline to be 'run-a' (oldest), got %q", result[2].ID)
+	}
+}
+
+// --- Server Persistence Tests ---
+
+func TestServerSetRunStateStore(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+
+	dir := t.TempDir()
+	store, err := NewFSRunStateStore(filepath.Join(dir, "runs"))
+	if err != nil {
+		t.Fatalf("NewFSRunStateStore failed: %v", err)
+	}
+
+	srv.SetRunStateStore(store)
+
+	// Verify the store was set (by checking it doesn't panic on submit)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/pipelines", "text/plain", strings.NewReader(simpleDOTSource()))
+	if err != nil {
+		t.Fatalf("POST /pipelines failed: %v", err)
+	}
+	var submitResult struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&submitResult)
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", resp.StatusCode)
+	}
+
+	// Wait for pipeline to complete so the persist goroutine finishes before cleanup
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err = http.Get(ts.URL + "/pipelines/" + submitResult.ID)
+		if err != nil {
+			break
+		}
+		var status PipelineStatus
+		json.NewDecoder(resp.Body).Decode(&status)
+		resp.Body.Close()
+		if status.Status == "completed" || status.Status == "failed" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	// Allow persist goroutine to flush
+	time.Sleep(50 * time.Millisecond)
+}
+
+func TestServerPersistsRunOnSubmit(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+
+	dir := t.TempDir()
+	store, err := NewFSRunStateStore(filepath.Join(dir, "runs"))
+	if err != nil {
+		t.Fatalf("NewFSRunStateStore failed: %v", err)
+	}
+	srv.SetRunStateStore(store)
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Submit a pipeline
+	resp, err := http.Post(ts.URL+"/pipelines", "text/plain", strings.NewReader(simpleDOTSource()))
+	if err != nil {
+		t.Fatalf("POST /pipelines failed: %v", err)
+	}
+	var submitResult struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&submitResult)
+	resp.Body.Close()
+
+	// Wait for completion
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err = http.Get(ts.URL + "/pipelines/" + submitResult.ID)
+		if err != nil {
+			break
+		}
+		var status PipelineStatus
+		json.NewDecoder(resp.Body).Decode(&status)
+		resp.Body.Close()
+		if status.Status == "completed" || status.Status == "failed" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Verify run was persisted to disk
+	persisted, err := store.Get(submitResult.ID)
+	if err != nil {
+		t.Fatalf("store.Get failed: %v", err)
+	}
+	if persisted.ID != submitResult.ID {
+		t.Errorf("persisted ID mismatch: got %q, want %q", persisted.ID, submitResult.ID)
+	}
+	if persisted.Source != simpleDOTSource() {
+		t.Error("expected source to be persisted")
+	}
+}
+
+func TestServerPersistsFinalStatus(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+
+	dir := t.TempDir()
+	store, err := NewFSRunStateStore(filepath.Join(dir, "runs"))
+	if err != nil {
+		t.Fatalf("NewFSRunStateStore failed: %v", err)
+	}
+	srv.SetRunStateStore(store)
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/pipelines", "text/plain", strings.NewReader(simpleDOTSource()))
+	if err != nil {
+		t.Fatalf("POST /pipelines failed: %v", err)
+	}
+	var submitResult struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&submitResult)
+	resp.Body.Close()
+
+	// Wait for completion
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err = http.Get(ts.URL + "/pipelines/" + submitResult.ID)
+		if err != nil {
+			break
+		}
+		var status PipelineStatus
+		json.NewDecoder(resp.Body).Decode(&status)
+		resp.Body.Close()
+		if status.Status == "completed" || status.Status == "failed" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Small delay for the final persist to flush
+	time.Sleep(100 * time.Millisecond)
+
+	persisted, err := store.Get(submitResult.ID)
+	if err != nil {
+		t.Fatalf("store.Get failed: %v", err)
+	}
+	if persisted.Status != "completed" {
+		t.Errorf("expected persisted status 'completed', got %q", persisted.Status)
+	}
+}
+
+func TestServerLoadPersistedRuns(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewFSRunStateStore(filepath.Join(dir, "runs"))
+	if err != nil {
+		t.Fatalf("NewFSRunStateStore failed: %v", err)
+	}
+
+	// Pre-populate the store with a completed run
+	runState := &RunState{
+		ID:             "persisted-run-1",
+		PipelineFile:   "test.dot",
+		Status:         "completed",
+		Source:         simpleDOTSource(),
+		StartedAt:      time.Now().Add(-1 * time.Hour),
+		CurrentNode:    "done",
+		CompletedNodes: []string{"start", "step", "done"},
+		Context:        map[string]any{},
+		Events:         []EngineEvent{},
+	}
+	if err := store.Create(runState); err != nil {
+		t.Fatalf("store.Create failed: %v", err)
+	}
+
+	// Create a fresh server and load persisted runs
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	srv.SetRunStateStore(store)
+	if err := srv.LoadPersistedRuns(); err != nil {
+		t.Fatalf("LoadPersistedRuns failed: %v", err)
+	}
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// The pre-populated run should be visible in the list
+	resp, err := http.Get(ts.URL + "/pipelines")
+	if err != nil {
+		t.Fatalf("GET /pipelines failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result []PipelineStatus
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 pipeline, got %d", len(result))
+	}
+	if result[0].ID != "persisted-run-1" {
+		t.Errorf("expected ID 'persisted-run-1', got %q", result[0].ID)
+	}
+	if result[0].Status != "completed" {
+		t.Errorf("expected status 'completed', got %q", result[0].Status)
+	}
+}
+
+func TestServerLoadPersistedRunGetByID(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewFSRunStateStore(filepath.Join(dir, "runs"))
+	if err != nil {
+		t.Fatalf("NewFSRunStateStore failed: %v", err)
+	}
+
+	// Pre-populate with a run that has source
+	runState := &RunState{
+		ID:             "old-run",
+		PipelineFile:   "old.dot",
+		Status:         "completed",
+		Source:         simpleDOTSource(),
+		StartedAt:      time.Now().Add(-2 * time.Hour),
+		CurrentNode:    "done",
+		CompletedNodes: []string{"start", "step", "done"},
+		Context:        map[string]any{},
+		Events:         []EngineEvent{},
+	}
+	if err := store.Create(runState); err != nil {
+		t.Fatalf("store.Create failed: %v", err)
+	}
+
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	srv.SetRunStateStore(store)
+	if err := srv.LoadPersistedRuns(); err != nil {
+		t.Fatalf("LoadPersistedRuns failed: %v", err)
+	}
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Should be able to GET the persisted run by ID
+	resp, err := http.Get(ts.URL + "/pipelines/old-run")
+	if err != nil {
+		t.Fatalf("GET /pipelines/old-run failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	var status PipelineStatus
+	json.NewDecoder(resp.Body).Decode(&status)
+	if status.ID != "old-run" {
+		t.Errorf("expected ID 'old-run', got %q", status.ID)
+	}
+}
+
 func TestPipelineCreatesRunDirWithPipelineID(t *testing.T) {
 	artifactsBase := t.TempDir()
 

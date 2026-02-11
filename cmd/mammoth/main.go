@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/2389-research/mammoth/attractor"
 	"github.com/2389-research/mammoth/render"
@@ -29,6 +31,7 @@ type config struct {
 	tuiMode       bool
 	checkpointDir string
 	artifactDir   string
+	dataDir       string
 	retryPolicy   string
 	baseURL       string
 	verbose       bool
@@ -59,6 +62,7 @@ func parseFlags() config {
 	fs.BoolVar(&cfg.validateOnly, "validate", false, "Validate pipeline without executing")
 	fs.StringVar(&cfg.checkpointDir, "checkpoint-dir", "", "Directory for checkpoint files")
 	fs.StringVar(&cfg.artifactDir, "artifact-dir", "", "Directory for artifact storage")
+	fs.StringVar(&cfg.dataDir, "data-dir", "", "Data directory for persistent state (default: $XDG_DATA_HOME/mammoth)")
 	fs.StringVar(&cfg.retryPolicy, "retry", "none", "Default retry policy: none, standard, aggressive, linear, patient")
 	fs.StringVar(&cfg.baseURL, "base-url", "", "Custom API base URL for the LLM provider")
 	fs.BoolVar(&cfg.tuiMode, "tui", false, "Run with interactive terminal UI")
@@ -66,11 +70,13 @@ func parseFlags() config {
 	fs.BoolVar(&cfg.showVersion, "version", false, "Print version and exit")
 
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: mammoth [options] <pipeline.dot>\n\nOptions:\n")
-		fs.PrintDefaults()
+		printHelp(os.Stderr, version)
 	}
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			os.Exit(0)
+		}
 		os.Exit(2)
 	}
 
@@ -89,8 +95,8 @@ func run(cfg config) int {
 	}
 
 	if cfg.pipelineFile == "" {
-		fmt.Fprintln(os.Stderr, "error: pipeline file required (use mammoth <pipeline.dot>)")
-		return 1
+		printHelp(os.Stderr, version)
+		return 0
 	}
 
 	if cfg.validateOnly {
@@ -120,6 +126,29 @@ func runPipeline(cfg config) int {
 		return 1
 	}
 
+	// Resolve data directory for persistent state
+	dataDir, err := resolveDataDir(cfg.dataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not resolve data dir: %v\n", err)
+	}
+
+	// Set up persistent run state store
+	var store *attractor.FSRunStateStore
+	if dataDir != "" {
+		runsDir := dataDir + "/runs"
+		store, err = attractor.NewFSRunStateStore(runsDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not create run state store: %v\n", err)
+		}
+	}
+
+	// Generate a run ID for tracking
+	runID, err := attractor.GenerateRunID()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+
 	engineCfg := attractor.EngineConfig{
 		CheckpointDir: cfg.checkpointDir,
 		ArtifactDir:   cfg.artifactDir,
@@ -127,6 +156,7 @@ func runPipeline(cfg config) int {
 		Handlers:      attractor.DefaultHandlerRegistry(),
 		Backend:       detectBackend(cfg.verbose),
 		BaseURL:       cfg.baseURL,
+		RunID:         runID,
 	}
 
 	if cfg.verbose {
@@ -137,6 +167,24 @@ func runPipeline(cfg config) int {
 
 	// Wire CLI interviewer for human gate nodes
 	wireInterviewer(engine)
+
+	// Persist initial run state
+	startTime := time.Now()
+	if store != nil {
+		initialState := &attractor.RunState{
+			ID:             runID,
+			PipelineFile:   cfg.pipelineFile,
+			Status:         "running",
+			Source:         string(source),
+			StartedAt:      startTime,
+			CompletedNodes: []string{},
+			Context:        map[string]any{},
+			Events:         []attractor.EngineEvent{},
+		}
+		if err := store.Create(initialState); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not persist initial state: %v\n", err)
+		}
+	}
 
 	// Set up context with signal handling for graceful cancellation.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -150,9 +198,39 @@ func runPipeline(cfg config) int {
 		cancel()
 	}()
 
-	result, err := engine.Run(ctx, string(source))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	result, runErr := engine.Run(ctx, string(source))
+
+	// Persist final run state
+	if store != nil {
+		now := time.Now()
+		finalState := &attractor.RunState{
+			ID:           runID,
+			PipelineFile: cfg.pipelineFile,
+			StartedAt:    startTime,
+			CompletedAt:  &now,
+			Source:       string(source),
+			Context:      map[string]any{},
+			Events:       []attractor.EngineEvent{},
+		}
+		if runErr != nil {
+			finalState.Status = "failed"
+			finalState.Error = runErr.Error()
+		} else {
+			finalState.Status = "completed"
+			if result != nil {
+				finalState.CompletedNodes = result.CompletedNodes
+				if result.Context != nil {
+					finalState.Context = result.Context.Snapshot()
+				}
+			}
+		}
+		if err := store.Update(finalState); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not persist final state: %v\n", err)
+		}
+	}
+
+	if runErr != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", runErr)
 		return 1
 	}
 
@@ -223,15 +301,30 @@ func runPipelineWithTUI(cfg config) int {
 	return 0
 }
 
-// buildPipelineServer creates a PipelineServer with the render functions wired in.
-func buildPipelineServer(cfg config) *attractor.PipelineServer {
+// resolveDataDir returns the data directory to use, preferring an explicit
+// override and falling back to the XDG-based default.
+func resolveDataDir(override string) (string, error) {
+	if override != "" {
+		return override, nil
+	}
+	return defaultDataDir()
+}
+
+// buildPipelineServer creates a PipelineServer with the render functions and
+// persistent state store wired in.
+func buildPipelineServer(cfg config) (*attractor.PipelineServer, error) {
+	dataDir, err := resolveDataDir(cfg.dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data dir: %w", err)
+	}
+
 	engineCfg := attractor.EngineConfig{
-		CheckpointDir: cfg.checkpointDir,
-		ArtifactDir:   cfg.artifactDir,
-		DefaultRetry:  retryPolicyFromName(cfg.retryPolicy),
-		Handlers:      attractor.DefaultHandlerRegistry(),
-		Backend:       detectBackend(cfg.verbose),
-		BaseURL:       cfg.baseURL,
+		CheckpointDir:   cfg.checkpointDir,
+		ArtifactDir:     cfg.artifactDir,
+		DefaultRetry:    retryPolicyFromName(cfg.retryPolicy),
+		Handlers:        attractor.DefaultHandlerRegistry(),
+		Backend:         detectBackend(cfg.verbose),
+		BaseURL:         cfg.baseURL,
 	}
 
 	if cfg.verbose {
@@ -246,7 +339,19 @@ func buildPipelineServer(cfg config) *attractor.PipelineServer {
 	server.ToDOTWithStatus = render.ToDOTWithStatus
 	server.RenderDOTSource = render.RenderDOTSource
 
-	return server
+	// Wire persistent run state store
+	runsDir := dataDir + "/runs"
+	store, err := attractor.NewFSRunStateStore(runsDir)
+	if err != nil {
+		return nil, fmt.Errorf("create run state store: %w", err)
+	}
+	server.SetRunStateStore(store)
+
+	if err := server.LoadPersistedRuns(); err != nil {
+		return nil, fmt.Errorf("load persisted runs: %w", err)
+	}
+
+	return server, nil
 }
 
 // runServer starts the HTTP pipeline server.
@@ -256,7 +361,11 @@ func runServer(cfg config) int {
 		fmt.Fprintln(os.Stderr, "Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY")
 	}
 
-	server := buildPipelineServer(cfg)
+	server, err := buildPipelineServer(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
 
 	addr := fmt.Sprintf("127.0.0.1:%d", cfg.port)
 

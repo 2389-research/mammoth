@@ -575,3 +575,66 @@ func TestRunStateEmptyEventsFile(t *testing.T) {
 		t.Errorf("expected 0 events, got %d", len(got.Events))
 	}
 }
+
+// --- Source persistence tests ---
+
+func TestRunStateSourcePersistedOnCreate(t *testing.T) {
+	store := newTestStore(t)
+	state := newTestRunState(t)
+	state.Source = `digraph test { start -> finish }`
+
+	if err := store.Create(state); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	// Verify source.dot file exists on disk
+	sourcePath := filepath.Join(store.baseDir, state.ID, "source.dot")
+	data, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatalf("source.dot not created: %v", err)
+	}
+	if string(data) != state.Source {
+		t.Errorf("source.dot content mismatch: got %q, want %q", string(data), state.Source)
+	}
+}
+
+func TestRunStateSourceLoadedOnGet(t *testing.T) {
+	store := newTestStore(t)
+	state := newTestRunState(t)
+	state.Source = `digraph roundtrip { a -> b -> c }`
+
+	if err := store.Create(state); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	got, err := store.Get(state.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if got.Source != state.Source {
+		t.Errorf("Source mismatch: got %q, want %q", got.Source, state.Source)
+	}
+}
+
+func TestRunStateSourceOmittedWhenEmpty(t *testing.T) {
+	store := newTestStore(t)
+	state := newTestRunState(t)
+	// No source set — source.dot should not be created
+
+	if err := store.Create(state); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	sourcePath := filepath.Join(store.baseDir, state.ID, "source.dot")
+	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+		t.Error("expected source.dot to not exist when Source is empty")
+	}
+
+	got, err := store.Get(state.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if got.Source != "" {
+		t.Errorf("expected empty Source, got %q", got.Source)
+	}
+}

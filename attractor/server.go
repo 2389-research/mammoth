@@ -11,6 +11,7 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -31,7 +32,8 @@ type PipelineServer struct {
 	pipelines  map[string]*PipelineRun
 	mu         sync.RWMutex
 	mux        *http.ServeMux
-	eventQuery EventQuery // optional backing store for event query endpoints
+	eventQuery EventQuery     // optional backing store for event query endpoints
+	runStore   RunStateStore  // optional persistent store for run state
 
 	// ToDOT converts a Graph to DOT text. If nil, handleGetGraph uses a minimal fallback.
 	ToDOT GraphDOTFunc
@@ -105,6 +107,59 @@ type EventSummaryResponse struct {
 // SetEventQuery configures the EventQuery backing store for the event query REST endpoints.
 func (s *PipelineServer) SetEventQuery(eq EventQuery) {
 	s.eventQuery = eq
+}
+
+// SetRunStateStore configures the persistent RunStateStore for the server.
+// When set, the server persists pipeline runs on creation and completion,
+// and can load previously persisted runs on startup.
+func (s *PipelineServer) SetRunStateStore(store RunStateStore) {
+	s.runStore = store
+}
+
+// LoadPersistedRuns loads all previously persisted pipeline runs from the
+// configured RunStateStore into the server's in-memory map. This allows
+// the server to serve historical run data after a restart.
+func (s *PipelineServer) LoadPersistedRuns() error {
+	if s.runStore == nil {
+		return nil
+	}
+
+	states, err := s.runStore.List()
+	if err != nil {
+		return fmt.Errorf("list persisted runs: %w", err)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, state := range states {
+		// Skip runs that are already loaded (e.g. from a concurrent submit)
+		if _, exists := s.pipelines[state.ID]; exists {
+			continue
+		}
+
+		run := &PipelineRun{
+			ID:        state.ID,
+			Status:    state.Status,
+			Source:    state.Source,
+			CreatedAt: state.StartedAt,
+			Events:    state.Events,
+			Error:     state.Error,
+			Questions: make([]PendingQuestion, 0),
+		}
+
+		// Reconstruct a minimal RunResult from persisted state
+		if len(state.CompletedNodes) > 0 {
+			run.Result = &RunResult{
+				CompletedNodes: state.CompletedNodes,
+			}
+		}
+
+		s.pipelines[state.ID] = run
+	}
+
+	log.Printf("loaded %d persisted pipeline runs\n", len(states))
+	return nil
 }
 
 // httpInterviewer implements the Interviewer interface by bridging HTTP requests.
@@ -206,6 +261,7 @@ func (w *statusWriter) Unwrap() http.ResponseWriter {
 // registerRoutes sets up all HTTP routes using Go 1.22+ ServeMux patterns.
 func (s *PipelineServer) registerRoutes() {
 	// JSON API routes
+	s.mux.HandleFunc("GET /pipelines", s.handleListPipelines)
 	s.mux.HandleFunc("POST /pipelines", s.handleSubmitPipeline)
 	s.mux.HandleFunc("GET /pipelines/{id}", s.handleGetPipeline)
 	s.mux.HandleFunc("GET /pipelines/{id}/events/query", s.handleQueryEvents)
@@ -220,6 +276,40 @@ func (s *PipelineServer) registerRoutes() {
 
 	// HTMX web frontend routes
 	s.registerUIRoutes()
+}
+
+// handleListPipelines handles GET /pipelines.
+// Returns a JSON array of all pipeline runs sorted by creation time (most recent first).
+func (s *PipelineServer) handleListPipelines(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	runs := make([]*PipelineRun, 0, len(s.pipelines))
+	for _, run := range s.pipelines {
+		runs = append(runs, run)
+	}
+	s.mu.RUnlock()
+
+	// Sort by CreatedAt descending (most recent first)
+	sort.Slice(runs, func(i, j int) bool {
+		return runs[i].CreatedAt.After(runs[j].CreatedAt)
+	})
+
+	result := make([]PipelineStatus, 0, len(runs))
+	for _, run := range runs {
+		run.mu.RLock()
+		ps := PipelineStatus{
+			ID:        run.ID,
+			Status:    run.Status,
+			Error:     run.Error,
+			CreatedAt: run.CreatedAt,
+		}
+		if run.Result != nil {
+			ps.CompletedNodes = run.Result.CompletedNodes
+		}
+		run.mu.RUnlock()
+		result = append(result, ps)
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // handleSubmitPipeline handles POST /pipelines.
@@ -283,6 +373,23 @@ func (s *PipelineServer) handleSubmitPipeline(w http.ResponseWriter, r *http.Req
 	s.pipelines[id] = run
 	s.mu.Unlock()
 
+	// Persist initial run state to disk
+	if s.runStore != nil {
+		initialState := &RunState{
+			ID:             id,
+			Status:         "running",
+			Source:         source,
+			StartedAt:      run.CreatedAt,
+			CurrentNode:    "",
+			CompletedNodes: []string{},
+			Context:        map[string]any{},
+			Events:         []EngineEvent{},
+		}
+		if err := s.runStore.Create(initialState); err != nil {
+			log.Printf("[pipeline %s] warning: failed to persist initial state: %v\n", id, err)
+		}
+	}
+
 	log.Printf("[pipeline %s] submitted (%d bytes)\n", id, len(source))
 
 	// Build a per-pipeline engine config that captures events and injects the interviewer.
@@ -311,10 +418,10 @@ func (s *PipelineServer) handleSubmitPipeline(w http.ResponseWriter, r *http.Req
 	pipelineEngine := NewEngine(engineConfig)
 
 	// Start pipeline execution in a goroutine
+	runStore := s.runStore // capture for the goroutine
 	go func() {
 		result, err := pipelineEngine.Run(ctx, source)
 		run.mu.Lock()
-		defer run.mu.Unlock()
 		if err != nil {
 			if ctx.Err() != nil {
 				run.Status = "cancelled"
@@ -336,6 +443,34 @@ func (s *PipelineServer) handleSubmitPipeline(w http.ResponseWriter, r *http.Req
 			log.Printf("[pipeline %s] completed (%d nodes)\n", id, completedCount)
 		}
 		run.Result = result
+		finalStatus := run.Status
+		finalError := run.Error
+		var completedNodes []string
+		if result != nil {
+			completedNodes = result.CompletedNodes
+		}
+		run.mu.Unlock()
+
+		// Persist final state to disk
+		if runStore != nil {
+			now := time.Now()
+			finalState := &RunState{
+				ID:             id,
+				Status:         finalStatus,
+				Source:         source,
+				StartedAt:      run.CreatedAt,
+				CompletedAt:    &now,
+				CompletedNodes: completedNodes,
+				Context:        map[string]any{},
+				Error:          finalError,
+			}
+			if result != nil && result.Context != nil {
+				finalState.Context = result.Context.Snapshot()
+			}
+			if err := runStore.Update(finalState); err != nil {
+				log.Printf("[pipeline %s] warning: failed to persist final state: %v\n", id, err)
+			}
+		}
 	}()
 
 	writeJSON(w, http.StatusAccepted, map[string]string{

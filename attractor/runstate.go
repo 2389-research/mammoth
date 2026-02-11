@@ -14,6 +14,7 @@ type RunState struct {
 	ID             string         `json:"id"`
 	PipelineFile   string         `json:"pipeline_file"`
 	Status         string         `json:"status"` // "running", "completed", "failed", "cancelled"
+	Source         string         `json:"source,omitempty"`
 	StartedAt      time.Time      `json:"started_at"`
 	CompletedAt    *time.Time     `json:"completed_at,omitempty"`
 	CurrentNode    string         `json:"current_node"`
