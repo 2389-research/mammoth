@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/2389-research/makeatron/llm"
+	"github.com/2389-research/mammoth/llm"
 )
 
 // testProviderAdapter is a test double for llm.ProviderAdapter that returns
@@ -56,12 +56,12 @@ func (a *testProviderAdapter) getCalls() []llm.Request {
 // makeTestTextResponse creates a simple text-only LLM response for testing.
 func makeTestTextResponse(text string) *llm.Response {
 	return &llm.Response{
-		ID:       "resp-text",
-		Model:    "test-model",
-		Provider: "anthropic",
-		Message:  llm.AssistantMessage(text),
+		ID:           "resp-text",
+		Model:        "test-model",
+		Provider:     "anthropic",
+		Message:      llm.AssistantMessage(text),
 		FinishReason: llm.FinishReason{Reason: llm.FinishStop},
-		Usage:    llm.Usage{InputTokens: 100, OutputTokens: 50, TotalTokens: 150},
+		Usage:        llm.Usage{InputTokens: 100, OutputTokens: 50, TotalTokens: 150},
 	}
 }
 
@@ -359,7 +359,7 @@ func TestAgentBackendProviderSelectionOpenAI(t *testing.T) {
 }
 
 func TestCreateProviderAdapterAnthropicReturnsRealAdapter(t *testing.T) {
-	adapter := createProviderAdapter("anthropic", "test-key-anthropic")
+	adapter := createProviderAdapter("anthropic", "test-key-anthropic", "")
 
 	// Should return the real AnthropicAdapter, not a placeholder
 	anthropicAdapter, ok := adapter.(*llm.AnthropicAdapter)
@@ -372,7 +372,7 @@ func TestCreateProviderAdapterAnthropicReturnsRealAdapter(t *testing.T) {
 }
 
 func TestCreateProviderAdapterOpenAIReturnsRealAdapter(t *testing.T) {
-	adapter := createProviderAdapter("openai", "test-key-openai")
+	adapter := createProviderAdapter("openai", "test-key-openai", "")
 
 	// Should return the real OpenAIAdapter, not a placeholder
 	openaiAdapter, ok := adapter.(*llm.OpenAIAdapter)
@@ -385,7 +385,7 @@ func TestCreateProviderAdapterOpenAIReturnsRealAdapter(t *testing.T) {
 }
 
 func TestCreateProviderAdapterGeminiReturnsRealAdapter(t *testing.T) {
-	adapter := createProviderAdapter("gemini", "test-key-gemini")
+	adapter := createProviderAdapter("gemini", "test-key-gemini", "")
 
 	// Should return the real GeminiAdapter, not a placeholder
 	geminiAdapter, ok := adapter.(*llm.GeminiAdapter)
@@ -398,7 +398,7 @@ func TestCreateProviderAdapterGeminiReturnsRealAdapter(t *testing.T) {
 }
 
 func TestCreateProviderAdapterUnknownDefaultsToAnthropic(t *testing.T) {
-	adapter := createProviderAdapter("unknown-provider", "test-key")
+	adapter := createProviderAdapter("unknown-provider", "test-key", "")
 
 	// Unknown providers should default to AnthropicAdapter
 	anthropicAdapter, ok := adapter.(*llm.AnthropicAdapter)
@@ -413,7 +413,7 @@ func TestCreateProviderAdapterUnknownDefaultsToAnthropic(t *testing.T) {
 func TestCreateProviderAdapterNeverReturnsPlaceholder(t *testing.T) {
 	providers := []string{"anthropic", "openai", "gemini", "unknown"}
 	for _, provider := range providers {
-		adapter := createProviderAdapter(provider, "test-key-"+provider)
+		adapter := createProviderAdapter(provider, "test-key-"+provider, "")
 
 		// Verify the adapter is never a placeholder by checking it does not
 		// return the characteristic placeholder error on Complete

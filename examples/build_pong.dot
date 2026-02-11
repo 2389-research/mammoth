@@ -1,4 +1,4 @@
-// Build a Pong TUI game end-to-end using makeatron.
+// Build a Pong TUI game end-to-end using mammoth.
 // Exercises: stylesheet, goal gates, conditional branching, human review, retry.
 digraph build_pong {
     graph [

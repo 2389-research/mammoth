@@ -24,7 +24,7 @@ type recordingManagerBackend struct {
 }
 
 type observeCall struct {
-	nodeID  string
+	nodeID    string
 	iteration int
 }
 

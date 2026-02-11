@@ -351,10 +351,10 @@ func TestToolHandlerMultipleEnvVars(t *testing.T) {
 	node := &Node{
 		ID: "multi_env",
 		Attrs: map[string]string{
-			"shape":    "parallelogram",
-			"command":  "sh -c 'echo $FOO $BAR'",
-			"env_FOO":  "hello",
-			"env_BAR":  "world",
+			"shape":   "parallelogram",
+			"command": "sh -c 'echo $FOO $BAR'",
+			"env_FOO": "hello",
+			"env_BAR": "world",
 		},
 	}
 	pctx := NewContext()

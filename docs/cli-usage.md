@@ -1,19 +1,19 @@
 # CLI Usage Guide
 
-Makeatron is a command-line tool for running DOT-based LLM agent pipelines. It supports three modes: pipeline execution, validation, and HTTP server mode.
+Mammoth is a command-line tool for running DOT-based LLM agent pipelines. It supports three modes: pipeline execution, validation, and HTTP server mode.
 
 ## Installation
 
 Build from source:
 
 ```bash
-go build -o makeatron ./cmd/makeatron/
+go build -o mammoth ./cmd/mammoth/
 ```
 
 ## Synopsis
 
 ```
-makeatron [options] <pipeline.dot>
+mammoth [options] <pipeline.dot>
 ```
 
 ## Commands by Mode
@@ -21,15 +21,15 @@ makeatron [options] <pipeline.dot>
 ### Run a Pipeline
 
 ```bash
-makeatron pipeline.dot
+mammoth pipeline.dot
 ```
 
-This is the default mode. Makeatron parses the DOT file, validates the graph, and executes the pipeline from the start node to an exit node. The pipeline runs synchronously -- the process blocks until completion or failure.
+This is the default mode. Mammoth parses the DOT file, validates the graph, and executes the pipeline from the start node to an exit node. The pipeline runs synchronously -- the process blocks until completion or failure.
 
 ### Validate a Pipeline
 
 ```bash
-makeatron -validate pipeline.dot
+mammoth -validate pipeline.dot
 ```
 
 Parses and validates the DOT file without executing it. Reports errors and warnings to stderr and exits with code 0 (valid) or 1 (errors found). Useful for CI/CD and pre-commit checks.
@@ -37,7 +37,7 @@ Parses and validates the DOT file without executing it. Reports errors and warni
 ### Start HTTP Server
 
 ```bash
-makeatron -server
+mammoth -server
 ```
 
 Starts an HTTP server for managing pipeline execution via REST API. Pipelines are submitted and monitored via HTTP endpoints. See [Server Mode](#server-mode) below.
@@ -45,7 +45,7 @@ Starts an HTTP server for managing pipeline execution via REST API. Pipelines ar
 ### Print Version
 
 ```bash
-makeatron -version
+mammoth -version
 ```
 
 Prints the version string and exits.
@@ -69,46 +69,46 @@ Prints the version string and exits.
 
 ```bash
 # Run a simple pipeline
-makeatron examples/simple.dot
+mammoth examples/simple.dot
 
 # Run with verbose output to see stage transitions
-makeatron -verbose examples/branching.dot
+mammoth -verbose examples/branching.dot
 
 # Run with checkpointing for crash recovery
-makeatron -checkpoint-dir ./checkpoints examples/full_pipeline.dot
+mammoth -checkpoint-dir ./checkpoints examples/full_pipeline.dot
 
 # Run with artifact storage
-makeatron -artifact-dir ./artifacts examples/build_pong.dot
+mammoth -artifact-dir ./artifacts examples/build_pong.dot
 
 # Run with retry policy
-makeatron -retry standard examples/plan_implement_review.dot
+mammoth -retry standard examples/plan_implement_review.dot
 ```
 
 ### Validation
 
 ```bash
 # Validate a pipeline
-makeatron -validate examples/simple.dot
+mammoth -validate examples/simple.dot
 # Output: "Pipeline is valid."
 
 # Validate with verbose output
-makeatron -verbose -validate examples/branching.dot
+mammoth -verbose -validate examples/branching.dot
 
 # Use in CI (exit code 0 = valid, 1 = errors)
-makeatron -validate my_pipeline.dot && echo "Valid" || echo "Invalid"
+mammoth -validate my_pipeline.dot && echo "Valid" || echo "Invalid"
 ```
 
 ### Server Mode
 
 ```bash
 # Start server on default port (2389)
-makeatron -server
+mammoth -server
 
 # Start server on custom port with verbose logging
-makeatron -server -port 8080 -verbose
+mammoth -server -port 8080 -verbose
 
 # Start server with retry policy and checkpointing
-makeatron -server -retry standard -checkpoint-dir ./checkpoints
+mammoth -server -retry standard -checkpoint-dir ./checkpoints
 ```
 
 ## Output
@@ -179,7 +179,7 @@ Per-node overrides via the `max_retries` attribute adjust only the attempt count
 
 ## Signal Handling
 
-Makeatron handles `SIGINT` (Ctrl+C) and `SIGTERM` gracefully. When interrupted:
+Mammoth handles `SIGINT` (Ctrl+C) and `SIGTERM` gracefully. When interrupted:
 
 1. The cancellation propagates to all running handlers via Go's `context.Context`.
 2. Tool handlers kill their entire process group on cancellation.
@@ -197,7 +197,7 @@ In server mode, the HTTP server performs a graceful shutdown on signal.
 
 ## Server Mode
 
-When started with `-server`, makeatron exposes a REST API for managing pipelines.
+When started with `-server`, mammoth exposes a REST API for managing pipelines.
 
 ### Endpoints
 
@@ -315,14 +315,14 @@ curl "http://localhost:2389/pipelines/{id}/events/tail?n=5"
 
 ## Environment Variables
 
-Makeatron reads LLM API keys from the environment. See [Backend Configuration](backend-config.md) for details.
+Mammoth reads LLM API keys from the environment. See [Backend Configuration](backend-config.md) for details.
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
 export OPENAI_API_KEY="sk-..."
 export GEMINI_API_KEY="..."
 
-makeatron examples/full_pipeline.dot
+mammoth examples/full_pipeline.dot
 ```
 
 ## Checkpointing

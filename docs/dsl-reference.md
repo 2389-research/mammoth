@@ -1,6 +1,6 @@
 # DOT DSL Reference
 
-Makeatron pipelines are defined using Graphviz DOT digraph syntax with custom attributes for controlling LLM agent execution, conditional branching, human interaction, and more.
+Mammoth pipelines are defined using Graphviz DOT digraph syntax with custom attributes for controlling LLM agent execution, conditional branching, human interaction, and more.
 
 ## Graph Structure
 
@@ -352,7 +352,7 @@ Supported formats: `[K] Label`, `K) Label`, `K - Label`. The accelerator key is 
 
 ## Pipeline Validation
 
-Makeatron validates pipelines before execution. The built-in rules are:
+Mammoth validates pipelines before execution. The built-in rules are:
 
 | Rule | Severity | Description |
 |------|----------|-------------|

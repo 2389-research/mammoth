@@ -43,12 +43,12 @@ type GenerateResult struct {
 // GenerateOptions configures a Generate, StreamGenerate, or GenerateObject call.
 type GenerateOptions struct {
 	Model           string
-	Prompt          string        // simple text prompt (mutually exclusive with Messages)
-	Messages        []Message     // full message history
-	System          string        // system message
-	Tools           []Tool        // tools with optional execute handlers
+	Prompt          string    // simple text prompt (mutually exclusive with Messages)
+	Messages        []Message // full message history
+	System          string    // system message
+	Tools           []Tool    // tools with optional execute handlers
 	ToolChoice      *ToolChoice
-	MaxToolRounds   int           // default 1
+	MaxToolRounds   int // default 1
 	StopWhen        StopCondition
 	ResponseFormat  *ResponseFormat
 	Temperature     *float64
@@ -80,12 +80,12 @@ func (sr *StreamResult) Response() *Response {
 
 // StreamAccumulator collects streaming events and builds a complete Response.
 type StreamAccumulator struct {
-	textParts    []string
-	toolCalls    map[string]*ToolCall
+	textParts     []string
+	toolCalls     map[string]*ToolCall
 	toolCallOrder []string
-	usage        *Usage
-	finishReason *FinishReason
-	mu           sync.Mutex
+	usage         *Usage
+	finishReason  *FinishReason
+	mu            sync.Mutex
 }
 
 // NewStreamAccumulator creates a new StreamAccumulator ready to process events.

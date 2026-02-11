@@ -11,9 +11,9 @@ import (
 
 // acceleratorPatterns matches accelerator prefixes like "[Y] ", "Y) ", "Y - " at the start of a label.
 var acceleratorPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`^\[\w\]\s+`),   // [Y] Yes
-	regexp.MustCompile(`^\w\)\s*`),      // Y) Yes
-	regexp.MustCompile(`^\w\s*-\s+`),    // Y - Yes
+	regexp.MustCompile(`^\[\w\]\s+`), // [Y] Yes
+	regexp.MustCompile(`^\w\)\s*`),   // Y) Yes
+	regexp.MustCompile(`^\w\s*-\s+`), // Y - Yes
 }
 
 // NormalizeLabel lowercases a label, trims whitespace, and strips accelerator prefixes

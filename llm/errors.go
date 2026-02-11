@@ -71,8 +71,8 @@ type AuthenticationError struct {
 	ProviderError
 }
 
-func (e *AuthenticationError) Error() string   { return e.ProviderError.Error() }
-func (e *AuthenticationError) Unwrap() error   { return e.ProviderError.Unwrap() }
+func (e *AuthenticationError) Error() string     { return e.ProviderError.Error() }
+func (e *AuthenticationError) Unwrap() error     { return e.ProviderError.Unwrap() }
 func (e *AuthenticationError) IsRetryable() bool { return false }
 
 func (e *AuthenticationError) As(target any) bool {
@@ -93,8 +93,8 @@ type AccessDeniedError struct {
 	ProviderError
 }
 
-func (e *AccessDeniedError) Error() string   { return e.ProviderError.Error() }
-func (e *AccessDeniedError) Unwrap() error   { return e.ProviderError.Unwrap() }
+func (e *AccessDeniedError) Error() string     { return e.ProviderError.Error() }
+func (e *AccessDeniedError) Unwrap() error     { return e.ProviderError.Unwrap() }
 func (e *AccessDeniedError) IsRetryable() bool { return false }
 
 func (e *AccessDeniedError) As(target any) bool {
@@ -115,8 +115,8 @@ type NotFoundError struct {
 	ProviderError
 }
 
-func (e *NotFoundError) Error() string   { return e.ProviderError.Error() }
-func (e *NotFoundError) Unwrap() error   { return e.ProviderError.Unwrap() }
+func (e *NotFoundError) Error() string     { return e.ProviderError.Error() }
+func (e *NotFoundError) Unwrap() error     { return e.ProviderError.Unwrap() }
 func (e *NotFoundError) IsRetryable() bool { return false }
 
 func (e *NotFoundError) As(target any) bool {
@@ -137,8 +137,8 @@ type InvalidRequestError struct {
 	ProviderError
 }
 
-func (e *InvalidRequestError) Error() string   { return e.ProviderError.Error() }
-func (e *InvalidRequestError) Unwrap() error   { return e.ProviderError.Unwrap() }
+func (e *InvalidRequestError) Error() string     { return e.ProviderError.Error() }
+func (e *InvalidRequestError) Unwrap() error     { return e.ProviderError.Unwrap() }
 func (e *InvalidRequestError) IsRetryable() bool { return false }
 
 func (e *InvalidRequestError) As(target any) bool {
@@ -159,8 +159,8 @@ type RateLimitError struct {
 	ProviderError
 }
 
-func (e *RateLimitError) Error() string   { return e.ProviderError.Error() }
-func (e *RateLimitError) Unwrap() error   { return e.ProviderError.Unwrap() }
+func (e *RateLimitError) Error() string     { return e.ProviderError.Error() }
+func (e *RateLimitError) Unwrap() error     { return e.ProviderError.Unwrap() }
 func (e *RateLimitError) IsRetryable() bool { return true }
 
 func (e *RateLimitError) As(target any) bool {
@@ -181,8 +181,8 @@ type ServerError struct {
 	ProviderError
 }
 
-func (e *ServerError) Error() string   { return e.ProviderError.Error() }
-func (e *ServerError) Unwrap() error   { return e.ProviderError.Unwrap() }
+func (e *ServerError) Error() string     { return e.ProviderError.Error() }
+func (e *ServerError) Unwrap() error     { return e.ProviderError.Unwrap() }
 func (e *ServerError) IsRetryable() bool { return true }
 
 func (e *ServerError) As(target any) bool {
@@ -203,8 +203,8 @@ type ContentFilterError struct {
 	ProviderError
 }
 
-func (e *ContentFilterError) Error() string   { return e.ProviderError.Error() }
-func (e *ContentFilterError) Unwrap() error   { return e.ProviderError.Unwrap() }
+func (e *ContentFilterError) Error() string     { return e.ProviderError.Error() }
+func (e *ContentFilterError) Unwrap() error     { return e.ProviderError.Unwrap() }
 func (e *ContentFilterError) IsRetryable() bool { return false }
 
 func (e *ContentFilterError) As(target any) bool {
@@ -225,8 +225,8 @@ type ContextLengthError struct {
 	ProviderError
 }
 
-func (e *ContextLengthError) Error() string   { return e.ProviderError.Error() }
-func (e *ContextLengthError) Unwrap() error   { return e.ProviderError.Unwrap() }
+func (e *ContextLengthError) Error() string     { return e.ProviderError.Error() }
+func (e *ContextLengthError) Unwrap() error     { return e.ProviderError.Unwrap() }
 func (e *ContextLengthError) IsRetryable() bool { return false }
 
 func (e *ContextLengthError) As(target any) bool {
@@ -247,8 +247,8 @@ type QuotaExceededError struct {
 	ProviderError
 }
 
-func (e *QuotaExceededError) Error() string   { return e.ProviderError.Error() }
-func (e *QuotaExceededError) Unwrap() error   { return e.ProviderError.Unwrap() }
+func (e *QuotaExceededError) Error() string     { return e.ProviderError.Error() }
+func (e *QuotaExceededError) Unwrap() error     { return e.ProviderError.Unwrap() }
 func (e *QuotaExceededError) IsRetryable() bool { return false }
 
 func (e *QuotaExceededError) As(target any) bool {
@@ -269,8 +269,8 @@ type RequestTimeoutError struct {
 	SDKError
 }
 
-func (e *RequestTimeoutError) Error() string   { return e.SDKError.Error() }
-func (e *RequestTimeoutError) Unwrap() error   { return e.SDKError.Unwrap() }
+func (e *RequestTimeoutError) Error() string     { return e.SDKError.Error() }
+func (e *RequestTimeoutError) Unwrap() error     { return e.SDKError.Unwrap() }
 func (e *RequestTimeoutError) IsRetryable() bool { return true }
 
 func (e *RequestTimeoutError) As(target any) bool {
@@ -288,8 +288,8 @@ type AbortError struct {
 	SDKError
 }
 
-func (e *AbortError) Error() string   { return e.SDKError.Error() }
-func (e *AbortError) Unwrap() error   { return e.SDKError.Unwrap() }
+func (e *AbortError) Error() string     { return e.SDKError.Error() }
+func (e *AbortError) Unwrap() error     { return e.SDKError.Unwrap() }
 func (e *AbortError) IsRetryable() bool { return false }
 
 func (e *AbortError) As(target any) bool {
@@ -307,8 +307,8 @@ type NetworkError struct {
 	SDKError
 }
 
-func (e *NetworkError) Error() string   { return e.SDKError.Error() }
-func (e *NetworkError) Unwrap() error   { return e.SDKError.Unwrap() }
+func (e *NetworkError) Error() string     { return e.SDKError.Error() }
+func (e *NetworkError) Unwrap() error     { return e.SDKError.Unwrap() }
 func (e *NetworkError) IsRetryable() bool { return true }
 
 func (e *NetworkError) As(target any) bool {
@@ -326,8 +326,8 @@ type StreamError struct {
 	SDKError
 }
 
-func (e *StreamError) Error() string   { return e.SDKError.Error() }
-func (e *StreamError) Unwrap() error   { return e.SDKError.Unwrap() }
+func (e *StreamError) Error() string     { return e.SDKError.Error() }
+func (e *StreamError) Unwrap() error     { return e.SDKError.Unwrap() }
 func (e *StreamError) IsRetryable() bool { return true }
 
 func (e *StreamError) As(target any) bool {
@@ -345,8 +345,8 @@ type InvalidToolCallError struct {
 	SDKError
 }
 
-func (e *InvalidToolCallError) Error() string   { return e.SDKError.Error() }
-func (e *InvalidToolCallError) Unwrap() error   { return e.SDKError.Unwrap() }
+func (e *InvalidToolCallError) Error() string     { return e.SDKError.Error() }
+func (e *InvalidToolCallError) Unwrap() error     { return e.SDKError.Unwrap() }
 func (e *InvalidToolCallError) IsRetryable() bool { return false }
 
 func (e *InvalidToolCallError) As(target any) bool {
@@ -364,8 +364,8 @@ type NoObjectGeneratedError struct {
 	SDKError
 }
 
-func (e *NoObjectGeneratedError) Error() string   { return e.SDKError.Error() }
-func (e *NoObjectGeneratedError) Unwrap() error   { return e.SDKError.Unwrap() }
+func (e *NoObjectGeneratedError) Error() string     { return e.SDKError.Error() }
+func (e *NoObjectGeneratedError) Unwrap() error     { return e.SDKError.Unwrap() }
 func (e *NoObjectGeneratedError) IsRetryable() bool { return false }
 
 func (e *NoObjectGeneratedError) As(target any) bool {
@@ -383,8 +383,8 @@ type ConfigurationError struct {
 	SDKError
 }
 
-func (e *ConfigurationError) Error() string   { return e.SDKError.Error() }
-func (e *ConfigurationError) Unwrap() error   { return e.SDKError.Unwrap() }
+func (e *ConfigurationError) Error() string     { return e.SDKError.Error() }
+func (e *ConfigurationError) Unwrap() error     { return e.SDKError.Unwrap() }
 func (e *ConfigurationError) IsRetryable() bool { return false }
 
 func (e *ConfigurationError) As(target any) bool {

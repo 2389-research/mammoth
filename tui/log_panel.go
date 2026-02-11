@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/2389-research/makeatron/attractor"
+	"github.com/2389-research/mammoth/attractor"
 )
 
 // LogPanelModel is a scrollable event log that displays engine events.
@@ -160,6 +160,14 @@ func eventStyle(evtType attractor.EngineEventType) lipgloss.Style {
 	case attractor.EventPipelineFailed, attractor.EventStageFailed:
 		return LogErrorStyle
 	case attractor.EventStageRetrying:
+		return LogRetryStyle
+	case attractor.EventAgentToolCallStart, attractor.EventAgentToolCallEnd:
+		return LogAgentToolStyle
+	case attractor.EventAgentLLMTurn:
+		return LogAgentTurnStyle
+	case attractor.EventAgentSteering:
+		return LogAgentSteeringStyle
+	case attractor.EventAgentLoopDetected:
 		return LogRetryStyle
 	default:
 		return LogEventStyle

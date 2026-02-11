@@ -245,8 +245,8 @@ func TestComposeGraphs_NamespacePreventsConflicts(t *testing.T) {
 	child := &Graph{
 		Name: "child",
 		Nodes: map[string]*Node{
-			"begin": {ID: "begin", Attrs: map[string]string{"shape": "Mdiamond"}},
-			"work":  {ID: "work", Attrs: map[string]string{"shape": "box", "prompt": "child work"}},
+			"begin":  {ID: "begin", Attrs: map[string]string{"shape": "Mdiamond"}},
+			"work":   {ID: "work", Attrs: map[string]string{"shape": "box", "prompt": "child work"}},
 			"finish": {ID: "finish", Attrs: map[string]string{"shape": "Msquare"}},
 		},
 		Edges: []*Edge{

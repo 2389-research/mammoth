@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/2389-research/makeatron/attractor"
+	"github.com/2389-research/mammoth/attractor"
 )
 
 // testGraph creates a simple linear DAG: start -> build -> test -> deploy -> done.

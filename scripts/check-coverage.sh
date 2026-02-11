@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# ABOUTME: Coverage threshold checker for makeatron.
+# ABOUTME: Coverage threshold checker for mammoth.
 # ABOUTME: Runs tests, parses coverage, fails if any critical package is below its threshold.
 
 set -eo pipefail
 
 # --- Configuration ---
-PREFIX="github.com/2389-research/makeatron"
+PREFIX="github.com/2389-research/mammoth"
 
 # Package thresholds (bash 3.2 compatible - no associative arrays).
 # Based on measured coverage as of 2026-02-07, set 2-3 points below actual.
-PACKAGES="llm/sse attractor agent llm cmd/makeatron"
+PACKAGES="llm/sse attractor agent llm cmd/mammoth"
 threshold_for() {
     case "$1" in
         llm/sse)       echo 95 ;;
         attractor)     echo 85 ;;
         agent)         echo 80 ;;
         llm)           echo 80 ;;
-        cmd/makeatron) echo 65 ;;
+        cmd/mammoth)   echo 65 ;;
         *)             echo 0  ;;
     esac
 }
@@ -36,8 +36,8 @@ else
 fi
 
 # --- Run tests with coverage ---
-COVERFILE=$(mktemp /tmp/makeatron-coverage.XXXXXX)
-TESTOUT=$(mktemp /tmp/makeatron-testout.XXXXXX)
+COVERFILE=$(mktemp /tmp/mammoth-coverage.XXXXXX)
+TESTOUT=$(mktemp /tmp/mammoth-testout.XXXXXX)
 trap 'rm -f "$COVERFILE" "$TESTOUT"' EXIT
 
 printf "${BOLD}Running tests with coverage...${RESET}\n"
@@ -61,9 +61,9 @@ echo "------------------------------------------------------"
 FAILED=0
 
 # Extract per-package coverage from go test output lines like:
-#   ok  	github.com/2389-research/makeatron/agent	2.739s	coverage: 82.3% of statements
+#   ok  	github.com/2389-research/mammoth/agent	2.739s	coverage: 82.3% of statements
 # Also handles cached results:
-#   ok  	github.com/2389-research/makeatron/llm	(cached)	coverage: 82.1% of statements
+#   ok  	github.com/2389-research/mammoth/llm	(cached)	coverage: 82.1% of statements
 extract_coverage() {
     local full_pkg="$1"
     # grep for the "ok" line for this exact package (tab-delimited), extract the percentage.

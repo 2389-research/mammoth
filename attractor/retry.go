@@ -11,7 +11,7 @@ import (
 
 // RetryPolicy controls how many times a node execution is retried on failure.
 type RetryPolicy struct {
-	MaxAttempts int             // minimum 1 (1 = no retries)
+	MaxAttempts int // minimum 1 (1 = no retries)
 	Backoff     BackoffConfig
 	ShouldRetry func(error) bool
 }

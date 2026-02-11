@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389-research/makeatron/llm"
+	"github.com/2389-research/mammoth/llm"
 )
 
 // loopTestAdapter is a ProviderAdapter that returns pre-configured responses in sequence.
@@ -58,13 +58,13 @@ func (a *loopTestAdapter) getCalls() []llm.Request {
 
 // testProfile implements ProviderProfile for testing purposes.
 type testProfile struct {
-	id             string
-	model          string
-	systemPrompt   string
-	toolDefs       []llm.ToolDefinition
-	providerOpts   map[string]any
-	registry       *ToolRegistry
-	parallelTools  bool
+	id            string
+	model         string
+	systemPrompt  string
+	toolDefs      []llm.ToolDefinition
+	providerOpts  map[string]any
+	registry      *ToolRegistry
+	parallelTools bool
 }
 
 func (p *testProfile) ID() string    { return p.id }
@@ -73,18 +73,18 @@ func (p *testProfile) BuildSystemPrompt(env ExecutionEnvironment, projectDocs []
 	return p.systemPrompt
 }
 func (p *testProfile) Tools() []llm.ToolDefinition     { return p.toolDefs }
-func (p *testProfile) ProviderOptions() map[string]any  { return p.providerOpts }
-func (p *testProfile) ToolRegistry() *ToolRegistry      { return p.registry }
-func (p *testProfile) SupportsParallelToolCalls() bool  { return p.parallelTools }
-func (p *testProfile) SupportsReasoning() bool           { return false }
-func (p *testProfile) SupportsStreaming() bool            { return false }
-func (p *testProfile) ContextWindowSize() int             { return 200000 }
+func (p *testProfile) ProviderOptions() map[string]any { return p.providerOpts }
+func (p *testProfile) ToolRegistry() *ToolRegistry     { return p.registry }
+func (p *testProfile) SupportsParallelToolCalls() bool { return p.parallelTools }
+func (p *testProfile) SupportsReasoning() bool         { return false }
+func (p *testProfile) SupportsStreaming() bool         { return false }
+func (p *testProfile) ContextWindowSize() int          { return 200000 }
 
 // loopTestEnv implements ExecutionEnvironment for loop testing purposes.
 type loopTestEnv struct {
-	workDir  string
-	files    map[string]string
-	mu       sync.Mutex
+	workDir string
+	files   map[string]string
+	mu      sync.Mutex
 }
 
 func newLoopTestEnv() *loopTestEnv {
@@ -136,19 +136,19 @@ func (e *loopTestEnv) Glob(pattern, path string) ([]string, error) {
 
 func (e *loopTestEnv) Initialize() error        { return nil }
 func (e *loopTestEnv) Cleanup() error           { return nil }
-func (e *loopTestEnv) WorkingDirectory() string  { return e.workDir }
-func (e *loopTestEnv) Platform() string          { return "test" }
-func (e *loopTestEnv) OSVersion() string         { return "1.0" }
+func (e *loopTestEnv) WorkingDirectory() string { return e.workDir }
+func (e *loopTestEnv) Platform() string         { return "test" }
+func (e *loopTestEnv) OSVersion() string        { return "1.0" }
 
 // makeTextResponse creates a Response with text content and no tool calls.
 func makeTextResponse(text string) *llm.Response {
 	return &llm.Response{
-		ID:       "resp-text",
-		Model:    "test-model",
-		Provider: "test",
-		Message:  llm.AssistantMessage(text),
+		ID:           "resp-text",
+		Model:        "test-model",
+		Provider:     "test",
+		Message:      llm.AssistantMessage(text),
 		FinishReason: llm.FinishReason{Reason: llm.FinishStop},
-		Usage:    llm.Usage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
+		Usage:        llm.Usage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
 	}
 }
 

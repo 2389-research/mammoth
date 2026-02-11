@@ -1,6 +1,6 @@
 # Backend Configuration
 
-Makeatron's LLM layer supports three providers: Anthropic, OpenAI, and Google Gemini. This document covers API key setup, provider selection, the model catalog, and retry/fallback configuration.
+Mammoth's LLM layer supports three providers: Anthropic, OpenAI, and Google Gemini. This document covers API key setup, provider selection, the model catalog, and retry/fallback configuration.
 
 ## Environment Variables
 
@@ -129,7 +129,7 @@ graph [
 ### Gemini
 
 - Uses query parameter authentication (`?key=API_KEY`).
-- Does not assign tool call IDs natively; makeatron generates synthetic UUIDs.
+- Does not assign tool call IDs natively; mammoth generates synthetic UUIDs.
 - System messages are sent via the `systemInstruction` parameter.
 
 ## Retry Configuration
@@ -139,7 +139,7 @@ graph [
 Set the default retry policy via the `-retry` flag:
 
 ```bash
-makeatron -retry standard pipeline.dot
+mammoth -retry standard pipeline.dot
 ```
 
 | Policy | Attempts | Initial Delay | Backoff | Jitter |

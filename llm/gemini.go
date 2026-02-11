@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/2389-research/makeatron/llm/sse"
+	"github.com/2389-research/mammoth/llm/sse"
 )
 
 // GeminiAdapter implements ProviderAdapter for Google's Gemini API.
@@ -582,7 +582,7 @@ func (a *GeminiAdapter) processSSEStream(ctx context.Context, body io.ReadCloser
 
 // geminiResponse represents the top-level JSON response from the Gemini API.
 type geminiResponse struct {
-	Candidates   []geminiCandidate  `json:"candidates"`
+	Candidates    []geminiCandidate `json:"candidates"`
 	UsageMetadata *geminiUsage      `json:"usageMetadata"`
 	ModelVersion  string            `json:"modelVersion"`
 }
@@ -601,7 +601,7 @@ type geminiContent struct {
 
 // geminiPart represents a single part in a Gemini content block.
 type geminiPart struct {
-	Text         string             `json:"text,omitempty"`
+	Text         string              `json:"text,omitempty"`
 	FunctionCall *geminiFunctionCall `json:"functionCall,omitempty"`
 }
 
@@ -613,10 +613,10 @@ type geminiFunctionCall struct {
 
 // geminiUsage represents token usage metadata from Gemini.
 type geminiUsage struct {
-	PromptTokenCount       int `json:"promptTokenCount"`
-	CandidatesTokenCount   int `json:"candidatesTokenCount"`
-	TotalTokenCount        int `json:"totalTokenCount"`
-	ThoughtsTokenCount     int `json:"thoughtsTokenCount"`
+	PromptTokenCount        int `json:"promptTokenCount"`
+	CandidatesTokenCount    int `json:"candidatesTokenCount"`
+	TotalTokenCount         int `json:"totalTokenCount"`
+	ThoughtsTokenCount      int `json:"thoughtsTokenCount"`
 	CachedContentTokenCount int `json:"cachedContentTokenCount"`
 }
 

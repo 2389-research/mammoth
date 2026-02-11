@@ -1,4 +1,4 @@
-// ABOUTME: Tests for the makeatron CLI entrypoint covering flag parsing, retry policy mapping,
+// ABOUTME: Tests for the mammoth CLI entrypoint covering flag parsing, retry policy mapping,
 // ABOUTME: pipeline validation, pipeline execution, version display, and render wiring.
 package main
 
@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389-research/makeatron/attractor"
+	"github.com/2389-research/mammoth/attractor"
 )
 
 // writeTempDOT creates a temporary DOT file with the given content and returns its path.
@@ -50,7 +50,7 @@ func TestParseFlagsDefaults(t *testing.T) {
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
-	os.Args = []string{"makeatron", "pipeline.dot"}
+	os.Args = []string{"mammoth", "pipeline.dot"}
 	cfg := parseFlags()
 
 	if cfg.serverMode {
@@ -89,7 +89,7 @@ func TestParseFlagsServer(t *testing.T) {
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
-	os.Args = []string{"makeatron", "--server"}
+	os.Args = []string{"mammoth", "--server"}
 	cfg := parseFlags()
 
 	if !cfg.serverMode {
@@ -101,7 +101,7 @@ func TestParseFlagsValidate(t *testing.T) {
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
-	os.Args = []string{"makeatron", "--validate", "test.dot"}
+	os.Args = []string{"mammoth", "--validate", "test.dot"}
 	cfg := parseFlags()
 
 	if !cfg.validateOnly {
@@ -116,7 +116,7 @@ func TestParseFlagsPort(t *testing.T) {
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
-	os.Args = []string{"makeatron", "--server", "--port", "9999"}
+	os.Args = []string{"mammoth", "--server", "--port", "9999"}
 	cfg := parseFlags()
 
 	if cfg.port != 9999 {
@@ -128,7 +128,7 @@ func TestParseFlagsTUI(t *testing.T) {
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
-	os.Args = []string{"makeatron", "--tui", "pipeline.dot"}
+	os.Args = []string{"mammoth", "--tui", "pipeline.dot"}
 	cfg := parseFlags()
 
 	if !cfg.tuiMode {
@@ -143,7 +143,7 @@ func TestParseFlagsTUIDefaultFalse(t *testing.T) {
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
-	os.Args = []string{"makeatron", "pipeline.dot"}
+	os.Args = []string{"mammoth", "pipeline.dot"}
 	cfg := parseFlags()
 
 	if cfg.tuiMode {
@@ -151,11 +151,35 @@ func TestParseFlagsTUIDefaultFalse(t *testing.T) {
 	}
 }
 
+func TestParseFlagsBaseURL(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"mammoth", "--base-url", "https://custom.api.example.com", "test.dot"}
+	cfg := parseFlags()
+
+	if cfg.baseURL != "https://custom.api.example.com" {
+		t.Errorf("expected baseURL='https://custom.api.example.com', got %q", cfg.baseURL)
+	}
+}
+
+func TestParseFlagsBaseURLDefaultEmpty(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"mammoth", "test.dot"}
+	cfg := parseFlags()
+
+	if cfg.baseURL != "" {
+		t.Errorf("expected empty baseURL by default, got %q", cfg.baseURL)
+	}
+}
+
 func TestParseFlagsRetry(t *testing.T) {
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
-	os.Args = []string{"makeatron", "--retry", "aggressive", "test.dot"}
+	os.Args = []string{"mammoth", "--retry", "aggressive", "test.dot"}
 	cfg := parseFlags()
 
 	if cfg.retryPolicy != "aggressive" {
@@ -328,6 +352,9 @@ func TestRunValidateMode(t *testing.T) {
 }
 
 func TestRunRunMode(t *testing.T) {
+	// run() requires an API key to be set before dispatching to pipeline execution.
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+
 	dotFile := writeTempDOT(t, validDOT)
 	cfg := config{
 		pipelineFile: dotFile,
@@ -336,6 +363,23 @@ func TestRunRunMode(t *testing.T) {
 	exitCode := run(cfg)
 	if exitCode != 0 {
 		t.Errorf("expected exit code 0 for run mode with valid pipeline, got %d", exitCode)
+	}
+}
+
+func TestRunRejectsExecutionWithoutAPIKey(t *testing.T) {
+	// Ensure no API keys are set.
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	dotFile := writeTempDOT(t, validDOT)
+	cfg := config{
+		pipelineFile: dotFile,
+		retryPolicy:  "none",
+	}
+	exitCode := run(cfg)
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 when no API key is set, got %d", exitCode)
 	}
 }
 
@@ -449,6 +493,51 @@ func TestRunPipelineWiresInterviewer(t *testing.T) {
 
 	// Verify cfg is used (suppress unused variable)
 	_ = cfg
+}
+
+func TestVerboseEventHandlerAgentEvents(t *testing.T) {
+	// Capture stderr output to verify agent events are logged
+	// We test the function directly without capturing stderr since
+	// verboseEventHandler writes to os.Stderr. Just verify it doesn't panic.
+	agentEvents := []attractor.EngineEvent{
+		{
+			Type:   attractor.EventAgentToolCallStart,
+			NodeID: "codegen",
+			Data:   map[string]any{"tool_name": "file_write"},
+		},
+		{
+			Type:   attractor.EventAgentToolCallEnd,
+			NodeID: "codegen",
+			Data:   map[string]any{"tool_name": "file_write", "duration_ms": int64(150)},
+		},
+		{
+			Type:   attractor.EventAgentLLMTurn,
+			NodeID: "codegen",
+			Data:   map[string]any{"tokens": 500},
+		},
+		{
+			Type:   attractor.EventAgentSteering,
+			NodeID: "codegen",
+			Data:   map[string]any{"message": "focus"},
+		},
+		{
+			Type:   attractor.EventAgentLoopDetected,
+			NodeID: "codegen",
+			Data:   map[string]any{"message": "loop detected"},
+		},
+	}
+
+	// Just make sure the handler doesn't panic on any agent event type
+	for _, evt := range agentEvents {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("verboseEventHandler panicked on %s: %v", evt.Type, r)
+				}
+			}()
+			verboseEventHandler(evt)
+		}()
+	}
 }
 
 func TestExampleDOTFilesParseAndValidate(t *testing.T) {

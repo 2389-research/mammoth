@@ -11,7 +11,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/2389-research/makeatron/llm/sse"
+	"github.com/2389-research/mammoth/llm/sse"
 )
 
 // OpenAIAdapter implements ProviderAdapter for the OpenAI Responses API.
@@ -360,21 +360,21 @@ func (a *OpenAIAdapter) translateResponseFormat(rf *ResponseFormat) map[string]a
 
 // openaiResponseBody represents the structure of an OpenAI Responses API response.
 type openaiResponseBody struct {
-	ID                string              `json:"id"`
-	Model             string              `json:"model"`
-	Status            string              `json:"status"`
-	Output            []openaiOutputItem  `json:"output"`
-	Usage             openaiUsage         `json:"usage"`
-	IncompleteDetails *openaiIncomplete   `json:"incomplete_details,omitempty"`
+	ID                string             `json:"id"`
+	Model             string             `json:"model"`
+	Status            string             `json:"status"`
+	Output            []openaiOutputItem `json:"output"`
+	Usage             openaiUsage        `json:"usage"`
+	IncompleteDetails *openaiIncomplete  `json:"incomplete_details,omitempty"`
 }
 
 type openaiOutputItem struct {
-	Type      string               `json:"type"`
-	ID        string               `json:"id,omitempty"`
-	Role      string               `json:"role,omitempty"`
-	Content   []openaiContentItem  `json:"content,omitempty"`
-	Name      string               `json:"name,omitempty"`
-	Arguments string               `json:"arguments,omitempty"`
+	Type      string              `json:"type"`
+	ID        string              `json:"id,omitempty"`
+	Role      string              `json:"role,omitempty"`
+	Content   []openaiContentItem `json:"content,omitempty"`
+	Name      string              `json:"name,omitempty"`
+	Arguments string              `json:"arguments,omitempty"`
 }
 
 type openaiContentItem struct {
@@ -383,11 +383,11 @@ type openaiContentItem struct {
 }
 
 type openaiUsage struct {
-	InputTokens        int                    `json:"input_tokens"`
-	OutputTokens       int                    `json:"output_tokens"`
-	TotalTokens        int                    `json:"total_tokens"`
-	OutputTokensDetail *openaiOutputDetail    `json:"output_tokens_details,omitempty"`
-	PromptTokensDetail *openaiPromptDetail    `json:"prompt_tokens_details,omitempty"`
+	InputTokens        int                 `json:"input_tokens"`
+	OutputTokens       int                 `json:"output_tokens"`
+	TotalTokens        int                 `json:"total_tokens"`
+	OutputTokensDetail *openaiOutputDetail `json:"output_tokens_details,omitempty"`
+	PromptTokensDetail *openaiPromptDetail `json:"prompt_tokens_details,omitempty"`
 }
 
 type openaiOutputDetail struct {

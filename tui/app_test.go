@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389-research/makeatron/attractor"
+	"github.com/2389-research/mammoth/attractor"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

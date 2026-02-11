@@ -319,7 +319,7 @@ func TestLexFullDigraph(t *testing.T) {
 
 func TestLexDuration(t *testing.T) {
 	tests := []struct {
-		name string
+		name  string
 		input string
 		want  string
 	}{

@@ -1,0 +1,224 @@
+<!-- ABOUTME: A faithful recreation of the classic DVD screensaver with a bouncing DVD Video logo.
+     ABOUTME: The logo bounces around the viewport, changes color on wall hits, and celebrates corner hits. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DVD Screensaver</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #111;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  #dvd-logo {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 150px;
+    height: 90px;
+    border-radius: 12px;
+    background: currentColor;
+    transition: color 0.3s ease;
+    color: #ff0040;
+    filter: drop-shadow(0 0 12px currentColor);
+    will-change: transform, left, top;
+  }
+
+  #dvd-logo .inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: calc(100% - 8px);
+    height: calc(100% - 8px);
+    border-radius: 9px;
+    background: #111;
+  }
+
+  #dvd-logo .dvd-text {
+    font-size: 42px;
+    font-weight: 900;
+    font-style: italic;
+    letter-spacing: 4px;
+    line-height: 1;
+    color: currentColor;
+    /* Inherit color from parent #dvd-logo */
+  }
+
+  #dvd-logo .video-text {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 8px;
+    text-transform: uppercase;
+    line-height: 1;
+    margin-top: 2px;
+    color: currentColor;
+  }
+
+  /* The inner element inherits currentColor from #dvd-logo */
+  #dvd-logo .inner {
+    color: inherit;
+  }
+
+  #corner-counter {
+    position: fixed;
+    top: 16px;
+    right: 20px;
+    color: #555;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 14px;
+    user-select: none;
+    z-index: 10;
+    transition: color 0.3s ease;
+  }
+
+  #corner-counter.flash {
+    color: #fff;
+  }
+
+  @keyframes corner-pulse {
+    0%   { transform: scale(1); filter: drop-shadow(0 0 12px currentColor); }
+    50%  { transform: scale(1.4); filter: drop-shadow(0 0 40px currentColor) drop-shadow(0 0 80px currentColor); }
+    100% { transform: scale(1); filter: drop-shadow(0 0 12px currentColor); }
+  }
+
+  #dvd-logo.corner-hit {
+    animation: corner-pulse 0.4s ease-out;
+  }
+</style>
+</head>
+<body>
+
+<div id="dvd-logo">
+  <div class="inner">
+    <span class="dvd-text">DVD</span>
+    <span class="video-text">Video</span>
+  </div>
+</div>
+
+<div id="corner-counter">Corner hits: 0</div>
+
+<script>
+  // ABOUTME: Animation logic for the bouncing DVD logo screensaver.
+  // ABOUTME: Handles movement, wall collision, color cycling, and corner hit detection.
+
+  const logo = document.getElementById('dvd-logo');
+  const counter = document.getElementById('corner-counter');
+
+  const COLORS = [
+    '#ff0040', // red
+    '#2196f3', // blue
+    '#4caf50', // green
+    '#ffeb3b', // yellow
+    '#9c27b0', // purple
+    '#00e5ff', // cyan
+    '#ff9800', // orange
+    '#e91e9f', // magenta
+  ];
+
+  let colorIndex = 0;
+  let cornerHits = 0;
+
+  const logoWidth = 150;
+  const logoHeight = 90;
+
+  let x = Math.random() * (window.innerWidth - logoWidth);
+  let y = Math.random() * (window.innerHeight - logoHeight);
+  let dx = 2;
+  let dy = 2;
+
+  // Randomize initial direction
+  if (Math.random() > 0.5) dx = -dx;
+  if (Math.random() > 0.5) dy = -dy;
+
+  function nextColor() {
+    colorIndex = (colorIndex + 1) % COLORS.length;
+    logo.style.color = COLORS[colorIndex];
+  }
+
+  function celebrateCornerHit() {
+    cornerHits++;
+    counter.textContent = 'Corner hits: ' + cornerHits;
+
+    // Flash the counter text white briefly
+    counter.classList.add('flash');
+    setTimeout(function() {
+      counter.classList.remove('flash');
+    }, 500);
+
+    // Pulse the logo
+    logo.classList.remove('corner-hit');
+    // Force reflow to restart animation
+    void logo.offsetWidth;
+    logo.classList.add('corner-hit');
+    setTimeout(function() {
+      logo.classList.remove('corner-hit');
+    }, 400);
+  }
+
+  function animate() {
+    x += dx;
+    y += dy;
+
+    let hitX = false;
+    let hitY = false;
+
+    // Check horizontal boundaries
+    if (x <= 0) {
+      x = 0;
+      dx = Math.abs(dx);
+      hitX = true;
+    } else if (x + logoWidth >= window.innerWidth) {
+      x = window.innerWidth - logoWidth;
+      dx = -Math.abs(dx);
+      hitX = true;
+    }
+
+    // Check vertical boundaries
+    if (y <= 0) {
+      y = 0;
+      dy = Math.abs(dy);
+      hitY = true;
+    } else if (y + logoHeight >= window.innerHeight) {
+      y = window.innerHeight - logoHeight;
+      dy = -Math.abs(dy);
+      hitY = true;
+    }
+
+    // Color change on any wall hit
+    if (hitX || hitY) {
+      nextColor();
+    }
+
+    // Corner hit: both axes bounced simultaneously
+    if (hitX && hitY) {
+      celebrateCornerHit();
+    }
+
+    logo.style.left = x + 'px';
+    logo.style.top = y + 'px';
+
+    requestAnimationFrame(animate);
+  }
+
+  // Set initial position and kick off animation
+  logo.style.left = x + 'px';
+  logo.style.top = y + 'px';
+  requestAnimationFrame(animate);
+</script>
+
+</body>
+</html>

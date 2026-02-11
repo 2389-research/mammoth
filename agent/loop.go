@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/2389-research/makeatron/llm"
+	"github.com/2389-research/mammoth/llm"
 )
 
 // ProcessInput runs the core agentic loop: it appends the user input to the session,
@@ -101,8 +101,14 @@ func ProcessInput(ctx context.Context, session *Session, profile ProviderProfile
 		}
 		session.AppendTurn(assistantTurn)
 		session.Emit(EventAssistantTextEnd, map[string]any{
-			"text":      textContent,
-			"reasoning": reasoning,
+			"text":               textContent,
+			"reasoning":          reasoning,
+			"input_tokens":       response.Usage.InputTokens,
+			"output_tokens":      response.Usage.OutputTokens,
+			"total_tokens":       response.Usage.TotalTokens,
+			"reasoning_tokens":   response.Usage.ReasoningTokens,
+			"cache_read_tokens":  response.Usage.CacheReadTokens,
+			"cache_write_tokens": response.Usage.CacheWriteTokens,
 		})
 
 		// 8. If no tool calls, natural completion

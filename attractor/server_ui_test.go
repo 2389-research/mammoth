@@ -37,8 +37,8 @@ func TestDashboardReturnsHTML(t *testing.T) {
 
 	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
-	if !strings.Contains(html, "Makeatron") {
-		t.Error("expected dashboard to contain 'Makeatron'")
+	if !strings.Contains(html, "Mammoth") {
+		t.Error("expected dashboard to contain 'Mammoth'")
 	}
 	if !strings.Contains(html, "htmx") {
 		t.Error("expected dashboard to contain 'htmx'")

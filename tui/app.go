@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/2389-research/makeatron/attractor"
+	"github.com/2389-research/mammoth/attractor"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -35,9 +35,9 @@ type AppModel struct {
 	ctx    context.Context // cancellation context for engine execution
 
 	focus     FocusTarget
-	done      bool   // pipeline finished
-	err       error  // pipeline error (if any)
-	completed int    // count of completed nodes
+	done      bool  // pipeline finished
+	err       error // pipeline error (if any)
+	completed int   // count of completed nodes
 	width     int
 	height    int
 }

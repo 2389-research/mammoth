@@ -1,0 +1,21 @@
+<!-- ABOUTME: Homepage template that lists all blog posts. -->
+<!-- ABOUTME: Shows each post as a card with title, date, and preview text. -->
+{% extends "base.html" %}
+
+{% block title %}Blog - All Posts{% endblock %}
+
+{% block content %}
+<div class="post-list">
+    <h1>All Posts</h1>
+
+    {% if posts %}
+        {% for post in posts %}
+            {% include "post_item.html" %}
+        {% endfor %}
+    {% else %}
+        <div class="empty-state">
+            <p>No posts yet. Why not <a href="/posts/new" hx-get="/posts/new" hx-target="#main-content" hx-push-url="true">write one</a>?</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

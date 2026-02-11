@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389-research/makeatron/llm"
+	"github.com/2389-research/mammoth/llm"
 )
 
 // --- Integration Test: Tool Execution via ExecutionEnvironment ---
@@ -22,12 +22,12 @@ func TestIntegration_ToolDispatchThroughExecEnv(t *testing.T) {
 	// to the LLM as a ToolResultsTurn.
 
 	tests := []struct {
-		name          string
-		toolName      string
-		toolArgs      map[string]any
-		setupEnv      func(*loopTestEnv)
-		wantContains  string
-		wantIsError   bool
+		name         string
+		toolName     string
+		toolArgs     map[string]any
+		setupEnv     func(*loopTestEnv)
+		wantContains string
+		wantIsError  bool
 	}{
 		{
 			name:     "shell_tool_executes_via_env",
@@ -49,18 +49,18 @@ func TestIntegration_ToolDispatchThroughExecEnv(t *testing.T) {
 			wantIsError:  false,
 		},
 		{
-			name:     "write_file_tool_writes_to_env",
-			toolName: "write_file",
-			toolArgs: map[string]any{"file_path": "/tmp/test-agent/out.txt", "content": "written content"},
-			setupEnv: func(env *loopTestEnv) {},
+			name:         "write_file_tool_writes_to_env",
+			toolName:     "write_file",
+			toolArgs:     map[string]any{"file_path": "/tmp/test-agent/out.txt", "content": "written content"},
+			setupEnv:     func(env *loopTestEnv) {},
 			wantContains: "Successfully wrote",
 			wantIsError:  false,
 		},
 		{
-			name:     "read_file_tool_missing_file_returns_error",
-			toolName: "read_file",
-			toolArgs: map[string]any{"file_path": "/tmp/test-agent/nonexistent.txt"},
-			setupEnv: func(env *loopTestEnv) {},
+			name:         "read_file_tool_missing_file_returns_error",
+			toolName:     "read_file",
+			toolArgs:     map[string]any{"file_path": "/tmp/test-agent/nonexistent.txt"},
+			setupEnv:     func(env *loopTestEnv) {},
 			wantContains: "Tool error",
 			wantIsError:  true,
 		},

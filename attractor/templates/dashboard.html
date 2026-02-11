@@ -3,56 +3,85 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Makeatron Dashboard</title>
+    <title>Mammoth Dashboard</title>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('theme');
+            if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
     <style>
         :root {
-            --bg: #101014;
-            --bg-card: #18181c;
-            --bg-input: #121216;
-            --bg-hover: #1e1e24;
-            --border: rgba(255,255,255,0.06);
-            --border-hover: rgba(255,255,255,0.12);
-            --text: #e8e8ec;
-            --text-2: #9898a4;
-            --text-3: #58586a;
-            --green: #34d399;
-            --green-bg: rgba(52,211,153,0.08);
-            --amber: #fbbf24;
-            --amber-bg: rgba(251,191,36,0.08);
-            --red: #f87171;
-            --red-bg: rgba(248,113,113,0.08);
-            --slate: #64748b;
-            --slate-bg: rgba(100,116,139,0.08);
-            --brand: #a78bfa;
-            --brand-hover: #c4b5fd;
-            --brand-bg: rgba(167,139,250,0.06);
-            --font: 'DM Sans', -apple-system, sans-serif;
-            --mono: 'DM Mono', 'SF Mono', monospace;
-            --radius: 10px;
+            --color-brand: #2563eb;
+            --color-brand-subtle: rgba(37, 99, 235, 0.08);
+            --color-brand-text: #1d4ed8;
+            --color-green: #16a34a;
+            --color-green-subtle: rgba(22, 163, 74, 0.08);
+            --color-amber: #ca8a04;
+            --color-amber-subtle: rgba(202, 138, 4, 0.08);
+            --color-red: #dc2626;
+            --color-red-subtle: rgba(220, 38, 38, 0.06);
+            --color-slate: #64748b;
+            --color-text-primary: #111827;
+            --color-text-secondary: #6b7280;
+            --color-text-tertiary: #9ca3af;
+            --color-surface: #ffffff;
+            --color-bg: #f9fafb;
+            --color-border: rgba(0, 0, 0, 0.06);
+            --color-hover: rgba(0, 0, 0, 0.025);
+            --color-card-shadow: 0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 3px -1px rgba(0,0,0,0.04);
+            --color-btn-text: #ffffff;
+            --font-sans: 'Inter', system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        html.dark {
+            --color-brand: #60a5fa;
+            --color-brand-subtle: rgba(96, 165, 250, 0.1);
+            --color-brand-text: #93bbfd;
+            --color-green: #4ade80;
+            --color-green-subtle: rgba(74, 222, 128, 0.1);
+            --color-amber: #fbbf24;
+            --color-amber-subtle: rgba(251, 191, 36, 0.1);
+            --color-red: #f87171;
+            --color-red-subtle: rgba(248, 113, 113, 0.08);
+            --color-slate: #64748b;
+            --color-text-primary: #f1f5f9;
+            --color-text-secondary: #94a3b8;
+            --color-text-tertiary: #475569;
+            --color-surface: rgba(255, 255, 255, 0.03);
+            --color-bg: #0c0f14;
+            --color-border: rgba(255, 255, 255, 0.06);
+            --color-hover: rgba(255, 255, 255, 0.03);
+            --color-card-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+            --color-btn-text: #0c0f14;
         }
 
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            font-family: var(--font);
-            background: var(--bg);
-            color: var(--text);
+            font-family: var(--font-sans);
+            background: var(--color-bg);
+            color: var(--color-text-primary);
             min-height: 100vh;
             -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
 
         /* ---- NAV ---- */
         .nav {
-            padding: 20px 32px;
+            padding: 16px 24px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -65,45 +94,61 @@
         .nav-logo {
             width: 28px;
             height: 28px;
-            background: var(--brand);
-            border-radius: 7px;
+            background: var(--color-brand);
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
+            flex-shrink: 0;
         }
-        .nav-logo svg { width: 15px; height: 15px; }
+        .nav-logo svg { width: 14px; height: 14px; }
         .nav-title {
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 600;
-            letter-spacing: -0.2px;
         }
-        .nav-title span { color: var(--text-3); font-weight: 400; }
-        .nav-right {
-            font-size: 12px;
-            color: var(--text-3);
-            font-family: var(--mono);
+        .theme-toggle {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: none;
+            background: transparent;
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s, color 0.15s;
         }
+        .theme-toggle:hover {
+            background: var(--color-hover);
+            color: var(--color-text-primary);
+        }
+        .theme-toggle svg { width: 18px; height: 18px; }
+        .theme-toggle .icon-sun { display: none; }
+        .theme-toggle .icon-moon { display: block; }
+        html.dark .theme-toggle .icon-sun { display: block; }
+        html.dark .theme-toggle .icon-moon { display: none; }
 
         /* ---- MAIN ---- */
         .main {
-            max-width: 860px;
+            max-width: 672px;
             margin: 0 auto;
-            padding: 20px 32px 80px;
+            padding: 48px 24px 80px;
         }
 
         /* ---- HERO ---- */
         .hero {
-            margin-bottom: 48px;
+            margin-bottom: 40px;
             animation: fadeIn 0.4s ease-out;
         }
         .hero h1 {
-            font-size: 32px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
+            font-size: 28px;
+            font-weight: 600;
+            letter-spacing: -0.02em;
             margin-bottom: 6px;
         }
         .hero p {
-            color: var(--text-2);
+            color: var(--color-text-secondary);
             font-size: 15px;
         }
 
@@ -111,73 +156,85 @@
             from { opacity: 0; transform: translateY(8px); }
             to { opacity: 1; transform: translateY(0); }
         }
+        @keyframes pulseDot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
 
-        /* ---- SUBMIT ---- */
+        /* ---- SUBMIT CARD ---- */
         .submit-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 24px;
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 16px;
+            box-shadow: var(--color-card-shadow);
+            padding: 4px;
             margin-bottom: 48px;
             animation: fadeIn 0.4s ease-out 0.05s both;
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
-        .submit-label {
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--text-2);
-            margin-bottom: 10px;
+        .submit-card:focus-within {
+            border-color: var(--color-brand);
+            box-shadow: 0 0 0 3px var(--color-brand-subtle);
         }
 
-        textarea {
+        .submit-card textarea {
             width: 100%;
-            min-height: 130px;
-            background: var(--bg-input);
-            color: var(--text);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 14px 16px;
-            font-family: var(--mono);
+            min-height: 140px;
+            background: transparent;
+            color: var(--color-text-primary);
+            border: none;
+            border-radius: 12px;
+            padding: 16px;
+            font-family: var(--font-mono);
             font-size: 13px;
             line-height: 1.6;
             resize: vertical;
-            margin-bottom: 14px;
-            transition: border-color 0.15s;
+            transition: none;
         }
-        textarea:focus {
+        .submit-card textarea:focus {
             outline: none;
-            border-color: var(--brand);
         }
-        textarea::placeholder { color: var(--text-3); }
+        .submit-card textarea::placeholder {
+            color: var(--color-text-tertiary);
+        }
 
-        .submit-row {
+        .submit-bar {
             display: flex;
             align-items: center;
-            gap: 14px;
+            justify-content: space-between;
+            padding: 8px 12px 8px 16px;
+        }
+        .submit-hint {
+            font-size: 12px;
+            color: var(--color-text-tertiary);
         }
 
-        .btn {
-            font-family: var(--font);
+        .btn-run {
+            font-family: var(--font-sans);
             font-size: 13px;
-            font-weight: 600;
-            background: var(--brand);
-            color: #fff;
+            font-weight: 500;
+            background: var(--color-brand);
+            color: var(--color-btn-text);
             border: none;
-            padding: 9px 22px;
-            border-radius: 8px;
+            padding: 7px 16px 7px 18px;
+            border-radius: 12px;
             cursor: pointer;
-            transition: background 0.15s, transform 0.1s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.15s, transform 0.1s, opacity 0.15s;
         }
-        .btn:hover { background: var(--brand-hover); }
-        .btn:active { transform: scale(0.97); }
-        .btn:disabled {
+        .btn-run:hover { filter: brightness(1.1); }
+        .btn-run:active { transform: scale(0.97); }
+        .btn-run:disabled {
             opacity: 0.4;
             cursor: not-allowed;
             transform: none;
+            filter: none;
         }
-
-        .submit-hint {
-            font-size: 12px;
-            color: var(--text-3);
+        .btn-run svg {
+            width: 14px;
+            height: 14px;
         }
 
         /* ---- PIPELINE LIST ---- */
@@ -185,131 +242,156 @@
             animation: fadeIn 0.4s ease-out 0.1s both;
         }
         .list-header {
-            display: flex;
-            align-items: baseline;
-            justify-content: space-between;
+            font-size: 13px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--color-text-tertiary);
             margin-bottom: 12px;
         }
-        .list-title {
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--text-2);
-        }
-        .list-count {
-            font-size: 12px;
-            color: var(--text-3);
-            font-family: var(--mono);
-        }
 
-        #pipeline-entries {
+        .pipeline-row {
             display: flex;
-            flex-direction: column;
-            gap: 1px;
-            background: var(--border);
-            border-radius: var(--radius);
-            overflow: hidden;
-        }
-
-        .pipeline-card {
-            display: grid;
-            grid-template-columns: 1fr auto auto;
             align-items: center;
-            gap: 16px;
-            padding: 14px 18px;
-            background: var(--bg-card);
+            gap: 12px;
+            margin-left: -12px;
+            margin-right: -12px;
+            padding: 12px;
+            border-radius: 12px;
             text-decoration: none;
             color: inherit;
-            transition: background 0.12s;
+            transition: background 0.15s;
+            animation: fadeIn 0.3s ease-out both;
         }
-        .pipeline-card:hover { background: var(--bg-hover); }
-
-        .card-main {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            min-width: 0;
-        }
-        .card-id {
-            font-family: var(--mono);
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--text);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .card-time {
-            font-size: 12px;
-            color: var(--text-3);
+        .pipeline-row:nth-child(1) { animation-delay: 0s; }
+        .pipeline-row:nth-child(2) { animation-delay: 0.03s; }
+        .pipeline-row:nth-child(3) { animation-delay: 0.06s; }
+        .pipeline-row:nth-child(4) { animation-delay: 0.09s; }
+        .pipeline-row:nth-child(5) { animation-delay: 0.12s; }
+        .pipeline-row:nth-child(6) { animation-delay: 0.15s; }
+        .pipeline-row:nth-child(7) { animation-delay: 0.18s; }
+        .pipeline-row:nth-child(8) { animation-delay: 0.21s; }
+        .pipeline-row:nth-child(9) { animation-delay: 0.24s; }
+        .pipeline-row:nth-child(10) { animation-delay: 0.27s; }
+        .pipeline-row:nth-child(n+11) { animation-delay: 0.3s; }
+        .pipeline-row:hover {
+            background: var(--color-hover);
         }
 
-        .badge {
-            font-family: var(--font);
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            border-radius: 9999px;
+            padding: 2px 8px;
             font-size: 11px;
-            font-weight: 600;
-            padding: 3px 10px;
-            border-radius: 6px;
+            font-weight: 500;
             white-space: nowrap;
+            flex-shrink: 0;
         }
-        .badge-running {
-            color: var(--amber);
-            background: var(--amber-bg);
-        }
-        .badge-completed {
-            color: var(--green);
-            background: var(--green-bg);
-        }
-        .badge-failed {
-            color: var(--red);
-            background: var(--red-bg);
-        }
-        .badge-cancelled {
-            color: var(--slate);
-            background: var(--slate-bg);
-        }
-
-        .card-arrow {
-            color: var(--text-3);
-            font-size: 18px;
-            transition: transform 0.15s, color 0.15s;
-            line-height: 1;
-        }
-        .pipeline-card:hover .card-arrow {
-            color: var(--text-2);
-            transform: translateX(2px);
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 56px 20px;
-            color: var(--text-3);
-            font-size: 14px;
-            background: var(--bg-card);
-            border-radius: var(--radius);
-            border: 1px dashed var(--border);
-        }
-
-        .running-dot {
-            display: inline-block;
+        .status-dot {
             width: 6px;
             height: 6px;
             border-radius: 50%;
-            background: var(--amber);
-            margin-right: 6px;
-            animation: pulse 1.8s ease-in-out infinite;
-            vertical-align: middle;
+            flex-shrink: 0;
         }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(251,191,36,0.3); }
-            50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(251,191,36,0); }
+        .status-running {
+            color: var(--color-amber);
+            background: var(--color-amber-subtle);
+        }
+        .status-running .status-dot {
+            background: var(--color-amber);
+            animation: pulseDot 1.8s ease-in-out infinite;
+        }
+        .status-completed {
+            color: var(--color-green);
+            background: var(--color-green-subtle);
+        }
+        .status-completed .status-dot {
+            background: var(--color-green);
+        }
+        .status-failed {
+            color: var(--color-red);
+            background: var(--color-red-subtle);
+        }
+        .status-failed .status-dot {
+            background: var(--color-red);
+        }
+        .status-cancelled {
+            color: var(--color-text-tertiary);
+            background: var(--color-hover);
+        }
+        .status-cancelled .status-dot {
+            background: var(--color-text-tertiary);
+        }
+
+        .pipeline-id {
+            font-family: var(--font-mono);
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
+        }
+        .pipeline-time {
+            font-size: 12px;
+            color: var(--color-text-tertiary);
+            white-space: nowrap;
+            margin-left: auto;
+        }
+        .row-arrow {
+            color: var(--color-text-tertiary);
+            opacity: 0;
+            transition: opacity 0.15s, transform 0.15s;
+            flex-shrink: 0;
+            font-size: 16px;
+            line-height: 1;
+        }
+        .pipeline-row:hover .row-arrow {
+            opacity: 1;
+            transform: translateX(2px);
+        }
+
+        /* ---- EMPTY STATE ---- */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 64px 20px;
+            text-align: center;
+        }
+        .empty-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: var(--color-brand-subtle);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+        .empty-icon svg {
+            width: 22px;
+            height: 22px;
+            color: var(--color-brand);
+        }
+        .empty-title {
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--color-text-primary);
+            margin-bottom: 4px;
+        }
+        .empty-subtitle {
+            font-size: 14px;
+            color: var(--color-text-tertiary);
         }
 
         @media (max-width: 640px) {
-            .nav { padding: 16px; }
-            .main { padding: 16px 16px 60px; }
-            .hero h1 { font-size: 24px; }
-            .submit-card { padding: 18px; }
-            .nav-right { display: none; }
+            .nav { padding: 12px 16px; }
+            .main { padding: 32px 16px 60px; }
+            .hero h1 { font-size: 22px; }
         }
     </style>
 </head>
@@ -317,28 +399,49 @@
     <nav class="nav">
         <div class="nav-brand">
             <div class="nav-logo">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <path d="M7 1L12 4.5V9.5L7 13L2 9.5V4.5L7 1Z" stroke="var(--color-btn-text)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+                    <circle cx="7" cy="7" r="1.5" fill="var(--color-btn-text)"/>
                 </svg>
             </div>
-            <div class="nav-title">Makeatron <span>/ dashboard</span></div>
+            <div class="nav-title">Mammoth</div>
         </div>
-        <div class="nav-right">v1.0</div>
+        <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="5"/>
+                <line x1="12" y1="1" x2="12" y2="3"/>
+                <line x1="12" y1="21" x2="12" y2="23"/>
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                <line x1="1" y1="12" x2="3" y2="12"/>
+                <line x1="21" y1="12" x2="23" y2="12"/>
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+        </button>
     </nav>
 
     <div class="main">
         <div class="hero">
             <h1>Pipelines</h1>
-            <p>Submit DOT definitions and watch them execute</p>
+            <p>Define a graph, run it, watch it think.</p>
         </div>
 
         <div class="submit-card">
-            <div class="submit-label">New pipeline</div>
             <form id="submit-form" onsubmit="submitPipeline(event)">
-                <textarea id="dot-source" placeholder="digraph pipeline {&#10;    start [shape=Mdiamond]&#10;    done  [shape=Msquare]&#10;    start -> step -> done&#10;}" spellcheck="false"></textarea>
-                <div class="submit-row">
-                    <button type="submit" class="btn" id="submit-btn">Run Pipeline</button>
-                    <span class="submit-hint">Paste DOT source to begin execution</span>
+                <textarea id="dot-source" rows="5" aria-label="DOT graph definition" placeholder="digraph pipeline {&#10;    start [shape=Mdiamond]&#10;    done  [shape=Msquare]&#10;    start -> step -> done&#10;}" spellcheck="false"></textarea>
+                <div class="submit-bar">
+                    <span class="submit-hint">Paste a DOT digraph definition</span>
+                    <button type="submit" class="btn-run" id="submit-btn" disabled>
+                        Run
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                            <polyline points="12 5 19 12 12 19"/>
+                        </svg>
+                    </button>
                 </div>
             </form>
         </div>
@@ -349,52 +452,72 @@
              hx-select="#pipeline-entries"
              hx-target="#pipeline-entries"
              hx-swap="outerHTML">
-            <div class="list-header">
-                <span class="list-title">All pipelines</span>
-                {{if .Pipelines}}
-                <span class="list-count">{{len .Pipelines}}</span>
-                {{end}}
-            </div>
             <div id="pipeline-entries">
                 {{if .Pipelines}}
+                <div class="list-header">Recent</div>
                 {{range .Pipelines}}
-                <a class="pipeline-card" href="/ui/pipelines/{{.ID}}">
-                    <div class="card-main">
-                        <span class="card-id">{{if eq .Status "running"}}<span class="running-dot"></span>{{end}}{{.ID}}</span>
-                        <span class="card-time">{{.CreatedAt}}</span>
-                    </div>
-                    <span class="badge badge-{{.Status}}">{{.Status}}</span>
-                    <span class="card-arrow">&rsaquo;</span>
+                <a class="pipeline-row" href="/ui/pipelines/{{.ID}}">
+                    <span class="status-badge status-{{.Status}}">
+                        <span class="status-dot"></span>
+                        {{.Status}}
+                    </span>
+                    <span class="pipeline-id">{{printf "%.8s" .ID}}</span>
+                    <span class="pipeline-time">{{.CreatedAt}}</span>
+                    <span class="row-arrow">&rsaquo;</span>
                 </a>
                 {{end}}
                 {{else}}
-                <div class="empty-state">No pipelines yet</div>
+                <div class="empty-state">
+                    <div class="empty-icon">
+                        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round">
+                            <path d="M7 1L12 4.5V9.5L7 13L2 9.5V4.5L7 1Z"/>
+                        </svg>
+                    </div>
+                    <div class="empty-title">No pipelines yet</div>
+                    <div class="empty-subtitle">Create your first pipeline above to get started.</div>
+                </div>
                 {{end}}
             </div>
         </div>
     </div>
 
     <script>
+        function toggleTheme() {
+            var html = document.documentElement;
+            var isDark = html.classList.contains('dark');
+            html.classList.toggle('dark');
+            localStorage.setItem('theme', isDark ? 'light' : 'dark');
+        }
+
+        /* Enable/disable Run button based on textarea content */
+        (function() {
+            var ta = document.getElementById('dot-source');
+            var btn = document.getElementById('submit-btn');
+            ta.addEventListener('input', function() {
+                btn.disabled = !ta.value.trim();
+            });
+        })();
+
         async function submitPipeline(e) {
             e.preventDefault();
-            const source = document.getElementById('dot-source').value;
+            var source = document.getElementById('dot-source').value;
             if (!source.trim()) return;
-            const btn = document.getElementById('submit-btn');
+            var btn = document.getElementById('submit-btn');
             btn.disabled = true;
-            btn.textContent = 'Starting\u2026';
+            btn.innerHTML = 'Starting\u2026';
             try {
-                const resp = await fetch('/pipelines', {
+                var resp = await fetch('/pipelines', {
                     method: 'POST',
                     headers: {'Content-Type': 'text/plain'},
                     body: source
                 });
-                const data = await resp.json();
+                var data = await resp.json();
                 if (data.id) {
                     window.location.href = '/ui/pipelines/' + data.id;
                 }
             } catch (err) {
                 btn.disabled = false;
-                btn.textContent = 'Run Pipeline';
+                btn.innerHTML = 'Run <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
             }
         }
     </script>

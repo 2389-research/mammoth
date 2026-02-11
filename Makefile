@@ -1,10 +1,10 @@
-# ABOUTME: Build, test, and development automation for makeatron.
+# ABOUTME: Build, test, and development automation for mammoth.
 # ABOUTME: Provides targets for building, testing, linting, and development workflows.
 
-BINARY_NAME := makeatron
-CMD_DIR := ./cmd/makeatron
+BINARY_NAME := mammoth
+CMD_DIR := ./cmd/mammoth
 BUILD_DIR := ./bin
-MODULE := github.com/2389-research/makeatron
+MODULE := github.com/2389-research/mammoth
 
 # Build flags
 LDFLAGS := -s -w
@@ -15,7 +15,7 @@ GOFLAGS := -count=1
 
 all: test build ## Run tests then build
 
-build: ## Build the makeatron binary
+build: ## Build the mammoth binary
 	@mkdir -p $(BUILD_DIR)
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
 

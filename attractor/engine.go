@@ -4,6 +4,7 @@ package attractor
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -26,6 +27,13 @@ const (
 	EventStageRetrying     EngineEventType = "stage.retrying"
 	EventStageStalled      EngineEventType = "stage.stalled"
 	EventCheckpointSaved   EngineEventType = "checkpoint.saved"
+
+	// Agent-level observability events bridged from the coding agent session.
+	EventAgentToolCallStart EngineEventType = "agent.tool_call.start"
+	EventAgentToolCallEnd   EngineEventType = "agent.tool_call.end"
+	EventAgentLLMTurn       EngineEventType = "agent.llm_turn"
+	EventAgentSteering      EngineEventType = "agent.steering"
+	EventAgentLoopDetected  EngineEventType = "agent.loop_detected"
 )
 
 // EngineEvent represents a lifecycle event emitted by the engine during pipeline execution.
@@ -38,15 +46,18 @@ type EngineEvent struct {
 
 // EngineConfig holds configuration for the pipeline execution engine.
 type EngineConfig struct {
-	CheckpointDir  string           // directory for checkpoint files (empty = no checkpoints)
-	ArtifactDir    string           // directory for artifact storage (empty = temp dir)
-	Transforms     []Transform      // transforms to apply (nil = DefaultTransforms)
-	ExtraLintRules []LintRule        // additional validation rules
-	DefaultRetry   RetryPolicy      // default retry policy for nodes
-	Handlers       *HandlerRegistry // nil = DefaultHandlerRegistry
-	EventHandler   func(EngineEvent) // optional event callback
-	Backend        CodergenBackend   // backend for codergen nodes (nil = stub behavior)
-	RestartConfig  *RestartConfig    // loop restart configuration (nil = DefaultRestartConfig)
+	CheckpointDir    string            // directory for checkpoint files (empty = no checkpoints)
+	ArtifactDir      string            // directory for artifact storage (empty = use ArtifactsBaseDir/<RunID>)
+	ArtifactsBaseDir string            // base directory for run directories (default = "./artifacts")
+	RunID            string            // run identifier for the artifact subdirectory (empty = auto-generated)
+	Transforms       []Transform       // transforms to apply (nil = DefaultTransforms)
+	ExtraLintRules   []LintRule        // additional validation rules
+	DefaultRetry     RetryPolicy       // default retry policy for nodes
+	Handlers         *HandlerRegistry  // nil = DefaultHandlerRegistry
+	EventHandler     func(EngineEvent) // optional event callback
+	Backend          CodergenBackend   // backend for codergen nodes (nil = stub behavior)
+	BaseURL          string            // default API base URL for codergen nodes (overridable per-node)
+	RestartConfig    *RestartConfig    // loop restart configuration (nil = DefaultRestartConfig)
 }
 
 // NodeHandlerUnwrapper allows handler wrappers to expose their inner handler.
@@ -91,7 +102,9 @@ func (e *Engine) Run(ctx context.Context, source string) (*RunResult, error) {
 	// Phase 1: PARSE
 	graph, err := Parse(source)
 	if err != nil {
-		return nil, fmt.Errorf("parse error: %w", err)
+		parseErr := fmt.Errorf("parse error: %w", err)
+		e.emitEvent(EngineEvent{Type: EventPipelineFailed, Data: map[string]any{"error": parseErr.Error()}})
+		return nil, parseErr
 	}
 
 	return e.RunGraph(ctx, graph)
@@ -108,7 +121,20 @@ func (e *Engine) RunGraph(ctx context.Context, graph *Graph) (*RunResult, error)
 
 	_, err := ValidateOrError(graph, e.config.ExtraLintRules...)
 	if err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		validationErr := fmt.Errorf("validation failed: %w", err)
+		e.emitEvent(EngineEvent{Type: EventPipelineFailed, Data: map[string]any{"error": validationErr.Error()}})
+		return nil, validationErr
+	}
+
+	// Phase 2b: PREFLIGHT — verify backend availability, env vars, etc.
+	preflightChecks := BuildPreflightChecks(graph, e.config)
+	if len(preflightChecks) > 0 {
+		preflightResult := RunPreflight(ctx, preflightChecks)
+		if !preflightResult.OK() {
+			preflightErr := fmt.Errorf("%s", preflightResult.Error())
+			e.emitEvent(EngineEvent{Type: EventPipelineFailed, Data: map[string]any{"error": preflightErr.Error()}})
+			return nil, preflightErr
+		}
 	}
 
 	// Phase 3: INITIALIZE
@@ -122,13 +148,9 @@ func (e *Engine) RunGraph(ctx context.Context, graph *Graph) (*RunResult, error)
 	// Store graph reference for handlers that need graph traversal (e.g. ParallelHandler)
 	pctx.Set("_graph", graph)
 
-	artifactDir := e.config.ArtifactDir
-	if artifactDir == "" {
-		var mkErr error
-		artifactDir, mkErr = os.MkdirTemp("", "makeatron-pipeline-*")
-		if mkErr != nil {
-			return nil, fmt.Errorf("create pipeline work directory: %w", mkErr)
-		}
+	artifactDir, err := e.resolveArtifactDir()
+	if err != nil {
+		return nil, err
 	}
 	store := NewArtifactStore(artifactDir)
 	pctx.Set("_workdir", artifactDir)
@@ -145,6 +167,8 @@ func (e *Engine) RunGraph(ctx context.Context, graph *Graph) (*RunResult, error)
 		if codergenHandler := registry.Get("codergen"); codergenHandler != nil {
 			if ch, ok := unwrapHandler(codergenHandler).(*CodergenHandler); ok {
 				ch.Backend = e.config.Backend
+				ch.BaseURL = e.config.BaseURL
+				ch.EventHandler = e.emitEvent
 			}
 		}
 	}
@@ -302,7 +326,10 @@ func (e *Engine) ResumeFromCheckpoint(ctx context.Context, graph *Graph, checkpo
 		pctx.Set("_graph", graph)
 	}
 
-	artifactDir := e.config.ArtifactDir
+	artifactDir, resolveErr := e.resolveArtifactDir()
+	if resolveErr != nil {
+		return nil, resolveErr
+	}
 	store := NewArtifactStore(artifactDir)
 
 	registry := e.config.Handlers
@@ -314,6 +341,8 @@ func (e *Engine) ResumeFromCheckpoint(ctx context.Context, graph *Graph, checkpo
 		if codergenHandler := registry.Get("codergen"); codergenHandler != nil {
 			if ch, ok := unwrapHandler(codergenHandler).(*CodergenHandler); ok {
 				ch.Backend = e.config.Backend
+				ch.BaseURL = e.config.BaseURL
+				ch.EventHandler = e.emitEvent
 			}
 		}
 	}
@@ -399,7 +428,7 @@ func (e *Engine) executeGraph(
 				e.emitEvent(EngineEvent{Type: EventStageStarted, NodeID: node.ID})
 				outcome, err := safeExecute(ctx, handler, node, pctx, store)
 				if err != nil {
-					e.emitEvent(EngineEvent{Type: EventStageFailed, NodeID: node.ID})
+					e.emitEvent(EngineEvent{Type: EventStageFailed, NodeID: node.ID, Data: map[string]any{"reason": err.Error()}})
 					return nil, fmt.Errorf("terminal node %q handler error: %w", node.ID, err)
 				}
 				completedNodes = append(completedNodes, node.ID)
@@ -446,7 +475,7 @@ func (e *Engine) executeGraph(
 			})
 		})
 		if err != nil {
-			e.emitEvent(EngineEvent{Type: EventStageFailed, NodeID: node.ID})
+			e.emitEvent(EngineEvent{Type: EventStageFailed, NodeID: node.ID, Data: map[string]any{"reason": err.Error()}})
 			return nil, fmt.Errorf("node %q execution error: %w", node.ID, err)
 		}
 
@@ -457,7 +486,11 @@ func (e *Engine) executeGraph(
 		if outcome.Status == StatusSuccess || outcome.Status == StatusPartialSuccess {
 			e.emitEvent(EngineEvent{Type: EventStageCompleted, NodeID: node.ID})
 		} else {
-			e.emitEvent(EngineEvent{Type: EventStageFailed, NodeID: node.ID})
+			failData := map[string]any{"status": string(outcome.Status)}
+			if outcome.FailureReason != "" {
+				failData["reason"] = outcome.FailureReason
+			}
+			e.emitEvent(EngineEvent{Type: EventStageFailed, NodeID: node.ID, Data: failData})
 		}
 
 		// Step 4: Apply context updates
@@ -732,6 +765,42 @@ func (e *Engine) SetHandler(handler NodeHandler) {
 		e.config.Handlers = DefaultHandlerRegistry()
 	}
 	e.config.Handlers.Register(handler)
+}
+
+// resolveArtifactDir determines the artifact directory for this pipeline run.
+// If ArtifactDir is set explicitly, it is used as-is. Otherwise, a structured
+// run directory is created under ArtifactsBaseDir (default "./artifacts") using
+// RunID as the subdirectory name (auto-generated if not set).
+func (e *Engine) resolveArtifactDir() (string, error) {
+	if e.config.ArtifactDir != "" {
+		return e.config.ArtifactDir, nil
+	}
+
+	baseDir := e.config.ArtifactsBaseDir
+	if baseDir == "" {
+		baseDir = "artifacts"
+	}
+
+	runID := e.config.RunID
+	if runID == "" {
+		runID = generateRunID()
+	}
+
+	rd, err := NewRunDirectory(baseDir, runID)
+	if err != nil {
+		return "", fmt.Errorf("create run directory: %w", err)
+	}
+
+	return rd.BaseDir, nil
+}
+
+// generateRunID creates a random hex ID for a pipeline run.
+func generateRunID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("run-%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
 // emitEvent sends an event to the configured event handler, if any.

@@ -1,4 +1,4 @@
-# MAKEATRON
+# MAMMOTH
 
 ## The Team
 - **SKULLCRUSHER McBYTES** - The AI agent (that's me)
@@ -26,7 +26,7 @@ Specs live in `_specs/` (cloned from upstream).
 
 ## Project Structure
 ```
-makeatron/
+mammoth/
   _specs/           # NLSpec source documents
   llm/              # Layer 1: Unified LLM Client
     types.go        # Data model (Message, Request, Response, etc.)
@@ -65,7 +65,7 @@ makeatron/
     condition.go    # Condition expression language
     server.go       # HTTP server mode
   cmd/
-    makeatron/      # CLI entrypoint
+    mammoth/        # CLI entrypoint
 ```
 
 ## Testing

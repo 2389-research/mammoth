@@ -1,4 +1,4 @@
-# ABOUTME: Main CI workflow for makeatron - runs vet, build, tests, and coverage on push/PR.
+# ABOUTME: Main CI workflow for mammoth - runs vet, build, tests, and coverage on push/PR.
 # ABOUTME: Uses Go module/build caching and uploads test results, coverage, and binary as artifacts.
 
 # Cache strategy:
@@ -78,12 +78,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build makeatron binary
-        run: go build -o makeatron ./cmd/makeatron
+      - name: Build mammoth binary
+        run: go build -o mammoth ./cmd/mammoth
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: makeatron-binary
-          path: makeatron
+          name: mammoth-binary
+          path: mammoth
           retention-days: 14

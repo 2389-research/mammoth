@@ -92,15 +92,15 @@ func DefaultHandlerRegistry() *HandlerRegistry {
 
 // shapeToType maps Graphviz shape names to handler type strings.
 var shapeToType = map[string]string{
-	"Mdiamond":       "start",
-	"Msquare":        "exit",
-	"box":            "codergen",
-	"diamond":        "conditional",
-	"component":      "parallel",
-	"tripleoctagon":  "parallel.fan_in",
-	"parallelogram":  "tool",
-	"house":          "stack.manager_loop",
-	"hexagon":        "wait.human",
+	"Mdiamond":      "start",
+	"Msquare":       "exit",
+	"box":           "codergen",
+	"diamond":       "conditional",
+	"component":     "parallel",
+	"tripleoctagon": "parallel.fan_in",
+	"parallelogram": "tool",
+	"house":         "stack.manager_loop",
+	"hexagon":       "wait.human",
 }
 
 // ShapeToHandlerType returns the handler type string for a given Graphviz shape.

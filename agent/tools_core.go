@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/2389-research/makeatron/llm"
+	"github.com/2389-research/mammoth/llm"
 )
 
 // getStringArg extracts a string argument from a map, returning an error if missing or wrong type.

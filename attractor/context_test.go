@@ -46,11 +46,11 @@ func TestContextSetGet(t *testing.T) {
 
 func TestContextGetString(t *testing.T) {
 	ctx := NewContext()
-	ctx.Set("name", "makeatron")
+	ctx.Set("name", "mammoth")
 
 	got := ctx.GetString("name", "default")
-	if got != "makeatron" {
-		t.Errorf("expected 'makeatron', got %q", got)
+	if got != "mammoth" {
+		t.Errorf("expected 'mammoth', got %q", got)
 	}
 }
 

@@ -11,7 +11,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/2389-research/makeatron/llm/sse"
+	"github.com/2389-research/mammoth/llm/sse"
 )
 
 const (
@@ -392,13 +392,13 @@ func (a *AnthropicAdapter) applyToolConfig(body map[string]any, req Request) {
 
 // anthropicResponse represents the raw Anthropic API response.
 type anthropicResponse struct {
-	ID         string                   `json:"id"`
-	Type       string                   `json:"type"`
-	Role       string                   `json:"role"`
-	Model      string                   `json:"model"`
-	Content    []anthropicContentBlock  `json:"content"`
-	StopReason string                   `json:"stop_reason"`
-	Usage      anthropicUsage           `json:"usage"`
+	ID         string                  `json:"id"`
+	Type       string                  `json:"type"`
+	Role       string                  `json:"role"`
+	Model      string                  `json:"model"`
+	Content    []anthropicContentBlock `json:"content"`
+	StopReason string                  `json:"stop_reason"`
+	Usage      anthropicUsage          `json:"usage"`
 }
 
 // anthropicContentBlock represents a content block in the Anthropic response.

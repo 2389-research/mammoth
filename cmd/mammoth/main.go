@@ -1,4 +1,4 @@
-// ABOUTME: CLI entrypoint for the makeatron pipeline runner with run, validate, and server modes.
+// ABOUTME: CLI entrypoint for the mammoth pipeline runner with run, validate, and server modes.
 // ABOUTME: Wires together the attractor engine, HTTP server, retry policies, and signal handling.
 package main
 
@@ -12,9 +12,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/2389-research/makeatron/attractor"
-	"github.com/2389-research/makeatron/render"
-	"github.com/2389-research/makeatron/tui"
+	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/mammoth/render"
+	"github.com/2389-research/mammoth/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -30,16 +30,19 @@ type config struct {
 	checkpointDir string
 	artifactDir   string
 	retryPolicy   string
+	baseURL       string
 	verbose       bool
 	showVersion   bool
 	pipelineFile  string
 }
 
 func main() {
+	loadDotEnv(".env")
+
 	cfg := parseFlags()
 
 	if cfg.showVersion {
-		fmt.Printf("makeatron %s\n", version)
+		fmt.Printf("mammoth %s\n", version)
 		os.Exit(0)
 	}
 
@@ -50,19 +53,20 @@ func main() {
 func parseFlags() config {
 	var cfg config
 
-	fs := flag.NewFlagSet("makeatron", flag.ContinueOnError)
+	fs := flag.NewFlagSet("mammoth", flag.ContinueOnError)
 	fs.BoolVar(&cfg.serverMode, "server", false, "Start HTTP server mode")
 	fs.IntVar(&cfg.port, "port", 2389, "Server port (default: 2389)")
 	fs.BoolVar(&cfg.validateOnly, "validate", false, "Validate pipeline without executing")
 	fs.StringVar(&cfg.checkpointDir, "checkpoint-dir", "", "Directory for checkpoint files")
 	fs.StringVar(&cfg.artifactDir, "artifact-dir", "", "Directory for artifact storage")
 	fs.StringVar(&cfg.retryPolicy, "retry", "none", "Default retry policy: none, standard, aggressive, linear, patient")
+	fs.StringVar(&cfg.baseURL, "base-url", "", "Custom API base URL for the LLM provider")
 	fs.BoolVar(&cfg.tuiMode, "tui", false, "Run with interactive terminal UI")
 	fs.BoolVar(&cfg.verbose, "verbose", false, "Verbose output")
 	fs.BoolVar(&cfg.showVersion, "version", false, "Print version and exit")
 
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: makeatron [options] <pipeline.dot>\n\nOptions:\n")
+		fmt.Fprintf(os.Stderr, "Usage: mammoth [options] <pipeline.dot>\n\nOptions:\n")
 		fs.PrintDefaults()
 	}
 
@@ -85,12 +89,20 @@ func run(cfg config) int {
 	}
 
 	if cfg.pipelineFile == "" {
-		fmt.Fprintln(os.Stderr, "error: pipeline file required (use makeatron <pipeline.dot>)")
+		fmt.Fprintln(os.Stderr, "error: pipeline file required (use mammoth <pipeline.dot>)")
 		return 1
 	}
 
 	if cfg.validateOnly {
 		return validatePipeline(cfg)
+	}
+
+	// Any mode that actually executes a pipeline needs an LLM backend.
+	// Check for API keys before doing anything else.
+	if detectBackend(false) == nil {
+		fmt.Fprintln(os.Stderr, "error: no LLM API key found")
+		fmt.Fprintln(os.Stderr, "Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY")
+		return 1
 	}
 
 	if cfg.tuiMode {
@@ -114,6 +126,7 @@ func runPipeline(cfg config) int {
 		DefaultRetry:  retryPolicyFromName(cfg.retryPolicy),
 		Handlers:      attractor.DefaultHandlerRegistry(),
 		Backend:       detectBackend(cfg.verbose),
+		BaseURL:       cfg.baseURL,
 	}
 
 	if cfg.verbose {
@@ -180,6 +193,7 @@ func runPipelineWithTUI(cfg config) int {
 		DefaultRetry:  retryPolicyFromName(cfg.retryPolicy),
 		Handlers:      attractor.DefaultHandlerRegistry(),
 		Backend:       detectBackend(cfg.verbose),
+		BaseURL:       cfg.baseURL,
 	}
 
 	engine := attractor.NewEngine(engineCfg)
@@ -217,6 +231,7 @@ func buildPipelineServer(cfg config) *attractor.PipelineServer {
 		DefaultRetry:  retryPolicyFromName(cfg.retryPolicy),
 		Handlers:      attractor.DefaultHandlerRegistry(),
 		Backend:       detectBackend(cfg.verbose),
+		BaseURL:       cfg.baseURL,
 	}
 
 	if cfg.verbose {
@@ -236,6 +251,11 @@ func buildPipelineServer(cfg config) *attractor.PipelineServer {
 
 // runServer starts the HTTP pipeline server.
 func runServer(cfg config) int {
+	if detectBackend(false) == nil {
+		fmt.Fprintln(os.Stderr, "warning: no LLM API key found — pipelines with codergen nodes will fail")
+		fmt.Fprintln(os.Stderr, "Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY")
+	}
+
 	server := buildPipelineServer(cfg)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", cfg.port)
@@ -373,14 +393,36 @@ func verboseEventHandler(evt attractor.EngineEvent) {
 	case attractor.EventStageCompleted:
 		fmt.Fprintf(os.Stderr, "[stage] %s completed\n", evt.NodeID)
 	case attractor.EventStageFailed:
-		fmt.Fprintf(os.Stderr, "[stage] %s failed\n", evt.NodeID)
+		if reason, ok := evt.Data["reason"]; ok {
+			fmt.Fprintf(os.Stderr, "[stage] %s failed: %v\n", evt.NodeID, reason)
+		} else {
+			fmt.Fprintf(os.Stderr, "[stage] %s failed\n", evt.NodeID)
+		}
 	case attractor.EventStageRetrying:
 		fmt.Fprintf(os.Stderr, "[stage] %s retrying\n", evt.NodeID)
 	case attractor.EventPipelineCompleted:
 		fmt.Fprintf(os.Stderr, "[pipeline] completed\n")
 	case attractor.EventPipelineFailed:
-		fmt.Fprintf(os.Stderr, "[pipeline] failed\n")
+		if errVal, ok := evt.Data["error"]; ok {
+			fmt.Fprintf(os.Stderr, "[pipeline] failed: %v\n", errVal)
+		} else {
+			fmt.Fprintf(os.Stderr, "[pipeline] failed\n")
+		}
 	case attractor.EventCheckpointSaved:
 		fmt.Fprintf(os.Stderr, "[checkpoint] saved at %s\n", evt.NodeID)
+	case attractor.EventAgentToolCallStart:
+		fmt.Fprintf(os.Stderr, "[agent] %s: tool %v\n", evt.NodeID, evt.Data["tool_name"])
+	case attractor.EventAgentToolCallEnd:
+		fmt.Fprintf(os.Stderr, "[agent] %s: tool %v done (%vms)\n", evt.NodeID, evt.Data["tool_name"], evt.Data["duration_ms"])
+	case attractor.EventAgentLLMTurn:
+		if inputTok, ok := evt.Data["input_tokens"]; ok {
+			fmt.Fprintf(os.Stderr, "[agent] %s: llm turn (in:%v out:%v total:%v)\n", evt.NodeID, inputTok, evt.Data["output_tokens"], evt.Data["total_tokens"])
+		} else {
+			fmt.Fprintf(os.Stderr, "[agent] %s: llm turn (%v tokens)\n", evt.NodeID, evt.Data["tokens"])
+		}
+	case attractor.EventAgentSteering:
+		fmt.Fprintf(os.Stderr, "[agent] %s: steering: %v\n", evt.NodeID, evt.Data["message"])
+	case attractor.EventAgentLoopDetected:
+		fmt.Fprintf(os.Stderr, "[agent] %s: loop detected: %v\n", evt.NodeID, evt.Data["message"])
 	}
 }

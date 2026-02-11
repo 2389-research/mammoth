@@ -1,7 +1,7 @@
 # Cross-Feature Parity Matrix
 
 Parity matrix per Attractor Specification DoD section 11.12, mapping every spec
-requirement to its implementation status in the makeatron codebase.
+requirement to its implementation status in the mammoth codebase.
 
 **Legend:**
 - **DONE** -- Fully implemented and tested
@@ -221,16 +221,16 @@ requirement to its implementation status in the makeatron codebase.
 
 | Feature | Spec Section | Status | Implementation | Tests |
 |---------|-------------|--------|----------------|-------|
-| CLI entrypoint: `makeatron <pipeline.dot>` | 11.11 | DONE | `cmd/makeatron/main.go:33-42` | `cmd/makeatron/main_test.go` (20 tests) |
-| --server flag: start HTTP server mode | 11.11 | DONE | `cmd/makeatron/main.go:49` | `cmd/makeatron/main_test.go` |
-| --port flag: server port (default 2389) | 11.11 | DONE | `cmd/makeatron/main.go:50` | `cmd/makeatron/main_test.go` |
-| --validate flag: validate-only mode | 11.11 | DONE | `cmd/makeatron/main.go:51` | `cmd/makeatron/main_test.go` |
-| --checkpoint-dir flag | 11.11 | DONE | `cmd/makeatron/main.go:52` | `cmd/makeatron/main_test.go` |
-| --artifact-dir flag | 11.11 | DONE | `cmd/makeatron/main.go:53` | `cmd/makeatron/main_test.go` |
-| --retry flag: policy selection (none/standard/aggressive/linear/patient) | 11.11 | DONE | `cmd/makeatron/main.go:54,236-251` | `cmd/makeatron/main_test.go` |
-| --verbose flag: event output | 11.11 | DONE | `cmd/makeatron/main.go:55,254-273` | `cmd/makeatron/main_test.go` |
-| --version flag | 11.11 | DONE | `cmd/makeatron/main.go:56` | `cmd/makeatron/main_test.go` |
-| Signal handling (SIGINT/SIGTERM) for graceful shutdown | 11.11 | DONE | `cmd/makeatron/main.go:118-124,164-169` | `cmd/makeatron/main_test.go` |
+| CLI entrypoint: `mammoth <pipeline.dot>` | 11.11 | DONE | `cmd/mammoth/main.go:33-42` | `cmd/mammoth/main_test.go` (20 tests) |
+| --server flag: start HTTP server mode | 11.11 | DONE | `cmd/mammoth/main.go:49` | `cmd/mammoth/main_test.go` |
+| --port flag: server port (default 2389) | 11.11 | DONE | `cmd/mammoth/main.go:50` | `cmd/mammoth/main_test.go` |
+| --validate flag: validate-only mode | 11.11 | DONE | `cmd/mammoth/main.go:51` | `cmd/mammoth/main_test.go` |
+| --checkpoint-dir flag | 11.11 | DONE | `cmd/mammoth/main.go:52` | `cmd/mammoth/main_test.go` |
+| --artifact-dir flag | 11.11 | DONE | `cmd/mammoth/main.go:53` | `cmd/mammoth/main_test.go` |
+| --retry flag: policy selection (none/standard/aggressive/linear/patient) | 11.11 | DONE | `cmd/mammoth/main.go:54,236-251` | `cmd/mammoth/main_test.go` |
+| --verbose flag: event output | 11.11 | DONE | `cmd/mammoth/main.go:55,254-273` | `cmd/mammoth/main_test.go` |
+| --version flag | 11.11 | DONE | `cmd/mammoth/main.go:56` | `cmd/mammoth/main_test.go` |
+| Signal handling (SIGINT/SIGTERM) for graceful shutdown | 11.11 | DONE | `cmd/mammoth/main.go:118-124,164-169` | `cmd/mammoth/main_test.go` |
 
 ---
 

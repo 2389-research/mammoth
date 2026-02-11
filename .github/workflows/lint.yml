@@ -1,4 +1,4 @@
-# ABOUTME: Linting workflow for makeatron - runs golangci-lint on push/PR.
+# ABOUTME: Linting workflow for mammoth - runs golangci-lint on push/PR.
 # ABOUTME: Uses golangci-lint-action with config from .golangci.yml.
 
 # Cache strategy:

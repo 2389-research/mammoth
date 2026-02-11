@@ -76,6 +76,7 @@ func TestResumeFromCheckpoint_MidPipeline(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -125,6 +126,7 @@ func TestResumeFromCheckpoint_MidPipeline(t *testing.T) {
 func TestResumeFromCheckpoint_FileNotFound(t *testing.T) {
 	g := buildFidelityGraph(nil)
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -148,6 +150,7 @@ func TestResumeFromCheckpoint_NodeNotInGraph(t *testing.T) {
 	}
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -193,6 +196,7 @@ func TestFidelityDegradation_FullToSummaryHighOnResume(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -246,6 +250,7 @@ func TestFidelityDegradation_RecoveryAfterOneHop(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -306,6 +311,7 @@ func TestFidelityDegradation_NoDegradationWhenPreviousNotFull(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -348,6 +354,7 @@ func TestFidelityDegradation_FreshRunUnaffected(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -398,6 +405,7 @@ func TestResumeFromCheckpoint_RestoresContextValues(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -434,6 +442,7 @@ func TestResumeFromCheckpoint_EmitsResumeEvent(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 		EventHandler: func(evt EngineEvent) {
@@ -477,6 +486,7 @@ func TestResumeFromCheckpoint_CheckpointDirWritesNewCheckpoints(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:       &fakeBackend{},
 		Handlers:      reg,
 		DefaultRetry:  RetryPolicyNone(),
 		CheckpointDir: newCpDir,

@@ -15,25 +15,25 @@ import (
 // testAdapter is a real ProviderAdapter implementation that returns pre-configured values.
 // It records calls for verification and supports configurable Complete/Stream behavior.
 type testAdapter struct {
-	name           string
-	completeResp   *Response
-	completeErr    error
-	streamEvents   []StreamEvent
-	streamErr      error
-	completeCalls  []Request
-	streamCalls    []Request
-	closed         bool
-	mu             sync.Mutex
+	name          string
+	completeResp  *Response
+	completeErr   error
+	streamEvents  []StreamEvent
+	streamErr     error
+	completeCalls []Request
+	streamCalls   []Request
+	closed        bool
+	mu            sync.Mutex
 }
 
 func newTestAdapter(name string) *testAdapter {
 	return &testAdapter{
 		name: name,
 		completeResp: &Response{
-			ID:       "resp-" + name,
-			Model:    "test-model",
-			Provider: name,
-			Message:  AssistantMessage("hello from " + name),
+			ID:           "resp-" + name,
+			Model:        "test-model",
+			Provider:     name,
+			Message:      AssistantMessage("hello from " + name),
 			FinishReason: FinishReason{Reason: FinishStop},
 		},
 	}
@@ -397,9 +397,9 @@ func TestMiddlewareCanShortCircuit(t *testing.T) {
 
 	blocker := func(ctx context.Context, req Request, next NextFunc) (*Response, error) {
 		return &Response{
-			ID:       "blocked",
-			Provider: "middleware",
-			Message:  AssistantMessage("blocked by middleware"),
+			ID:           "blocked",
+			Provider:     "middleware",
+			Message:      AssistantMessage("blocked by middleware"),
 			FinishReason: FinishReason{Reason: FinishStop},
 		}, nil
 	}

@@ -92,14 +92,14 @@ type ThinkingData struct {
 // ContentPart is a single piece of content within a message.
 // It uses a tagged-union pattern: the Kind field determines which data field is populated.
 type ContentPart struct {
-	Kind       ContentKind   `json:"kind"`
-	Text       string        `json:"text,omitempty"`
-	Image      *ImageData    `json:"image,omitempty"`
-	Audio      *AudioData    `json:"audio,omitempty"`
-	Document   *DocumentData `json:"document,omitempty"`
-	ToolCall   *ToolCallData `json:"tool_call,omitempty"`
+	Kind       ContentKind     `json:"kind"`
+	Text       string          `json:"text,omitempty"`
+	Image      *ImageData      `json:"image,omitempty"`
+	Audio      *AudioData      `json:"audio,omitempty"`
+	Document   *DocumentData   `json:"document,omitempty"`
+	ToolCall   *ToolCallData   `json:"tool_call,omitempty"`
 	ToolResult *ToolResultData `json:"tool_result,omitempty"`
-	Thinking   *ThinkingData `json:"thinking,omitempty"`
+	Thinking   *ThinkingData   `json:"thinking,omitempty"`
 }
 
 // TextPart creates a text ContentPart.
@@ -324,7 +324,7 @@ type ResponseFormat struct {
 
 // ToolChoice controls whether and how the model uses tools.
 type ToolChoice struct {
-	Mode     string `json:"mode"`               // "auto", "none", "required", "named"
+	Mode     string `json:"mode"`                // "auto", "none", "required", "named"
 	ToolName string `json:"tool_name,omitempty"` // required when mode is "named"
 }
 
@@ -393,15 +393,15 @@ func Float64Ptr(v float64) *float64 {
 
 // Response is the unified output from a complete() call.
 type Response struct {
-	ID           string         `json:"id"`
-	Model        string         `json:"model"`
-	Provider     string         `json:"provider"`
-	Message      Message        `json:"message"`
-	FinishReason FinishReason   `json:"finish_reason"`
-	Usage        Usage          `json:"usage"`
+	ID           string          `json:"id"`
+	Model        string          `json:"model"`
+	Provider     string          `json:"provider"`
+	Message      Message         `json:"message"`
+	FinishReason FinishReason    `json:"finish_reason"`
+	Usage        Usage           `json:"usage"`
 	Raw          json.RawMessage `json:"raw,omitempty"`
-	Warnings     []Warning      `json:"warnings,omitempty"`
-	RateLimit    *RateLimitInfo `json:"rate_limit,omitempty"`
+	Warnings     []Warning       `json:"warnings,omitempty"`
+	RateLimit    *RateLimitInfo  `json:"rate_limit,omitempty"`
 }
 
 // TextContent returns the concatenated text from the response message.
@@ -423,19 +423,19 @@ func (r *Response) Reasoning() string {
 type StreamEventType string
 
 const (
-	StreamStart        StreamEventType = "stream_start"
-	StreamTextStart    StreamEventType = "text_start"
-	StreamTextDelta    StreamEventType = "text_delta"
-	StreamTextEnd      StreamEventType = "text_end"
-	StreamReasonStart  StreamEventType = "reasoning_start"
-	StreamReasonDelta  StreamEventType = "reasoning_delta"
-	StreamReasonEnd    StreamEventType = "reasoning_end"
-	StreamToolStart    StreamEventType = "tool_call_start"
-	StreamToolDelta    StreamEventType = "tool_call_delta"
-	StreamToolEnd      StreamEventType = "tool_call_end"
-	StreamFinish       StreamEventType = "finish"
-	StreamErrorEvt     StreamEventType = "error"
-	StreamProviderEvt  StreamEventType = "provider_event"
+	StreamStart       StreamEventType = "stream_start"
+	StreamTextStart   StreamEventType = "text_start"
+	StreamTextDelta   StreamEventType = "text_delta"
+	StreamTextEnd     StreamEventType = "text_end"
+	StreamReasonStart StreamEventType = "reasoning_start"
+	StreamReasonDelta StreamEventType = "reasoning_delta"
+	StreamReasonEnd   StreamEventType = "reasoning_end"
+	StreamToolStart   StreamEventType = "tool_call_start"
+	StreamToolDelta   StreamEventType = "tool_call_delta"
+	StreamToolEnd     StreamEventType = "tool_call_end"
+	StreamFinish      StreamEventType = "finish"
+	StreamErrorEvt    StreamEventType = "error"
+	StreamProviderEvt StreamEventType = "provider_event"
 )
 
 // StreamEvent represents a single event in a streaming response.

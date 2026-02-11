@@ -11,7 +11,7 @@ import (
 
 // PreflightCheck represents a single validation check to run before pipeline execution.
 type PreflightCheck struct {
-	Name  string                         // human-readable check name
+	Name  string                          // human-readable check name
 	Check func(ctx context.Context) error // the actual check; nil error means pass
 }
 

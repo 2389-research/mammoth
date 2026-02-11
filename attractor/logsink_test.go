@@ -189,10 +189,10 @@ func TestLogSinkQueryWithFilter(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
-		filter        EventFilter
-		wantCount     int
-		wantTotal     int
+		name      string
+		filter    EventFilter
+		wantCount int
+		wantTotal int
 	}{
 		{
 			name:      "no filter returns all",

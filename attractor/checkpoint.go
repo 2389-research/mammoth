@@ -10,12 +10,12 @@ import (
 
 // Checkpoint is a serializable snapshot of execution state.
 type Checkpoint struct {
-	Timestamp      time.Time         `json:"timestamp"`
-	CurrentNode    string            `json:"current_node"`
-	CompletedNodes []string          `json:"completed_nodes"`
-	NodeRetries    map[string]int    `json:"node_retries"`
-	ContextValues  map[string]any    `json:"context_values"`
-	Logs           []string          `json:"logs"`
+	Timestamp      time.Time      `json:"timestamp"`
+	CurrentNode    string         `json:"current_node"`
+	CompletedNodes []string       `json:"completed_nodes"`
+	NodeRetries    map[string]int `json:"node_retries"`
+	ContextValues  map[string]any `json:"context_values"`
+	Logs           []string       `json:"logs"`
 }
 
 // NewCheckpoint creates a checkpoint from the current execution state.

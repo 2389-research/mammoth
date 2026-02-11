@@ -11,7 +11,7 @@ import (
 type Severity int
 
 const (
-	SeverityError   Severity = iota
+	SeverityError Severity = iota
 	SeverityWarning
 	SeverityInfo
 )

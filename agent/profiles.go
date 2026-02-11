@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/2389-research/makeatron/llm"
+	"github.com/2389-research/mammoth/llm"
 )
 
 // ProviderProfile defines the interface for provider-specific tool and prompt configurations.
@@ -35,18 +35,18 @@ type BaseProfile struct {
 	registry                  *ToolRegistry
 	supportsParallelToolCalls bool
 	supportsReasoning         bool
-	supportsStreaming          bool
+	supportsStreaming         bool
 	contextWindowSize         int
 	providerOpts              map[string]any
 }
 
-func (b *BaseProfile) ID() string                    { return b.id }
-func (b *BaseProfile) Model() string                 { return b.model }
+func (b *BaseProfile) ID() string                      { return b.id }
+func (b *BaseProfile) Model() string                   { return b.model }
 func (b *BaseProfile) SupportsParallelToolCalls() bool { return b.supportsParallelToolCalls }
-func (b *BaseProfile) SupportsReasoning() bool       { return b.supportsReasoning }
-func (b *BaseProfile) SupportsStreaming() bool        { return b.supportsStreaming }
-func (b *BaseProfile) ContextWindowSize() int         { return b.contextWindowSize }
-func (b *BaseProfile) ToolRegistry() *ToolRegistry   { return b.registry }
+func (b *BaseProfile) SupportsReasoning() bool         { return b.supportsReasoning }
+func (b *BaseProfile) SupportsStreaming() bool         { return b.supportsStreaming }
+func (b *BaseProfile) ContextWindowSize() int          { return b.contextWindowSize }
+func (b *BaseProfile) ToolRegistry() *ToolRegistry     { return b.registry }
 
 // Tools returns all tool definitions from the profile's registry.
 func (b *BaseProfile) Tools() []llm.ToolDefinition {
@@ -161,7 +161,7 @@ func NewOpenAIProfile(model string, opts ...ProfileOption) *OpenAIProfile {
 			registry:                  registry,
 			supportsParallelToolCalls: true,
 			supportsReasoning:         true,
-			supportsStreaming:          true,
+			supportsStreaming:         true,
 			contextWindowSize:         200000,
 			providerOpts:              make(map[string]any),
 		},
@@ -242,7 +242,7 @@ func NewAnthropicProfile(model string, opts ...ProfileOption) *AnthropicProfile 
 			registry:                  registry,
 			supportsParallelToolCalls: true,
 			supportsReasoning:         true,
-			supportsStreaming:          true,
+			supportsStreaming:         true,
 			contextWindowSize:         200000,
 			providerOpts:              make(map[string]any),
 		},
@@ -313,7 +313,7 @@ func NewGeminiProfile(model string, opts ...ProfileOption) *GeminiProfile {
 			registry:                  registry,
 			supportsParallelToolCalls: false,
 			supportsReasoning:         true,
-			supportsStreaming:          true,
+			supportsStreaming:         true,
 			contextWindowSize:         1000000,
 			providerOpts:              make(map[string]any),
 		},

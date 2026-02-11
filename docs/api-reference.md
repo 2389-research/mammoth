@@ -1,6 +1,6 @@
 # API Reference
 
-This document provides a comprehensive reference for makeatron's Go package APIs, HTTP endpoints, configuration types, interfaces, event systems, and error types. It is intended for developers integrating with makeatron programmatically.
+This document provides a comprehensive reference for mammoth's Go package APIs, HTTP endpoints, configuration types, interfaces, event systems, and error types. It is intended for developers integrating with mammoth programmatically.
 
 For higher-level guides, see: [CLI Usage](cli-usage.md), [DSL Reference](dsl-reference.md), [Handlers Reference](handlers.md), [Backend Configuration](backend-config.md), [Walkthrough](walkthrough.md).
 

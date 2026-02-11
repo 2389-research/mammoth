@@ -216,7 +216,7 @@ func TestCodergenHandlerType(t *testing.T) {
 }
 
 func TestCodergenHandlerExecuteStub(t *testing.T) {
-	h := &CodergenHandler{}
+	h := &CodergenHandler{Backend: &fakeBackend{}}
 	g := newTestGraph()
 	node := addNode(g, "codegen1", map[string]string{
 		"shape":        "box",
@@ -242,7 +242,8 @@ func TestCodergenHandlerExecuteStub(t *testing.T) {
 }
 
 func TestCodergenHandlerUsesLabelAsFallbackPrompt(t *testing.T) {
-	h := &CodergenHandler{}
+	backend := &fakeBackend{}
+	h := &CodergenHandler{Backend: backend}
 	g := newTestGraph()
 	node := addNode(g, "codegen2", map[string]string{
 		"shape": "box",
@@ -258,14 +259,17 @@ func TestCodergenHandlerUsesLabelAsFallbackPrompt(t *testing.T) {
 	if outcome.Status != StatusSuccess {
 		t.Errorf("expected status success, got %v", outcome.Status)
 	}
-	// Notes should reference the label
-	if outcome.Notes == "" {
-		t.Error("expected non-empty notes")
+	// Verify the label was used as the prompt (no explicit prompt attr)
+	if len(backend.calls) != 1 {
+		t.Fatalf("expected 1 backend call, got %d", len(backend.calls))
+	}
+	if backend.calls[0].Prompt != "My Label Prompt" {
+		t.Errorf("expected prompt to fall back to label, got %q", backend.calls[0].Prompt)
 	}
 }
 
 func TestCodergenHandlerGoalGateAttribute(t *testing.T) {
-	h := &CodergenHandler{}
+	h := &CodergenHandler{Backend: &fakeBackend{}}
 	g := newTestGraph()
 	node := addNode(g, "codegen3", map[string]string{
 		"shape":     "box",
@@ -285,7 +289,7 @@ func TestCodergenHandlerGoalGateAttribute(t *testing.T) {
 }
 
 func TestCodergenHandlerMaxRetriesAttribute(t *testing.T) {
-	h := &CodergenHandler{}
+	h := &CodergenHandler{Backend: &fakeBackend{}}
 	g := newTestGraph()
 	node := addNode(g, "codegen4", map[string]string{
 		"shape":       "box",
@@ -299,7 +303,7 @@ func TestCodergenHandlerMaxRetriesAttribute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Stub always returns success; max_retries is recorded for engine use
+	// max_retries is recorded for engine use
 	if outcome.Status != StatusSuccess {
 		t.Errorf("expected status success, got %v", outcome.Status)
 	}
@@ -794,7 +798,7 @@ func TestShapeToHandlerTypeUnknownShape(t *testing.T) {
 // --- Codergen handler with graph context ---
 
 func TestCodergenHandlerRecordsLLMConfig(t *testing.T) {
-	h := &CodergenHandler{}
+	h := &CodergenHandler{Backend: &fakeBackend{}}
 	g := newTestGraph()
 	node := addNode(g, "codegen_cfg", map[string]string{
 		"shape":        "box",

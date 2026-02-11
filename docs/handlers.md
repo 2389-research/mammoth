@@ -1,6 +1,6 @@
 # Handler Reference
 
-Handlers are the execution units of the makeatron pipeline engine. Each node in a pipeline graph is dispatched to a handler based on its shape or explicit `type` attribute. There are 9 built-in handlers.
+Handlers are the execution units of the mammoth pipeline engine. Each node in a pipeline graph is dispatched to a handler based on its shape or explicit `type` attribute. There are 9 built-in handlers.
 
 ## Handler Resolution
 
@@ -182,7 +182,7 @@ When a `timeout` is configured and expires:
 
 ### Interviewer Implementations
 
-Makeatron provides several built-in `Interviewer` implementations:
+Mammoth provides several built-in `Interviewer` implementations:
 
 | Implementation | Description |
 |----------------|-------------|

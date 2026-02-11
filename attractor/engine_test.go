@@ -107,6 +107,12 @@ func buildLinearGraph() *Graph {
 	return g
 }
 
+// testBackend returns a CodergenBackend test double that returns success.
+// This satisfies the preflight check without calling any real LLM.
+func testBackend() CodergenBackend {
+	return &stubCodergenBackend{}
+}
+
 // --- Engine tests ---
 
 func TestEngineRunGraphLinearPipeline(t *testing.T) {
@@ -119,6 +125,7 @@ func TestEngineRunGraphLinearPipeline(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -180,6 +187,7 @@ func TestEngineRunGraphConditionalBranching(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -247,6 +255,7 @@ func TestEngineRunGraphGoalGateEnforcementWithRetryTarget(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -292,6 +301,7 @@ func TestEngineRunGraphGoalGateFailureNoRetryTarget(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -342,6 +352,7 @@ func TestEngineRunGraphRetryLogic(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -392,6 +403,7 @@ func TestEngineRunGraphRetryExhaustion(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -436,6 +448,7 @@ func TestEngineRunGraphContextUpdatesPropagated(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -462,6 +475,7 @@ func TestEngineRunGraphCheckpointSaving(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:      reg,
+		Backend:       testBackend(),
 		CheckpointDir: cpDir,
 		DefaultRetry:  RetryPolicyNone(),
 	})
@@ -509,6 +523,7 @@ func TestEngineRunGraphNoStartNode(t *testing.T) {
 	)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -536,6 +551,7 @@ func TestEngineRunGraphValidationFailure(t *testing.T) {
 	)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -575,6 +591,7 @@ func TestEngineRunGraphContextCancellation(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -623,6 +640,7 @@ func TestEngineRunGraphFailureRouting(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -667,6 +685,7 @@ func TestEngineRunGraphEmptyConditionTreatedAsUnconditional(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -697,6 +716,7 @@ func TestEngineRunFromDOTSource(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -721,6 +741,7 @@ func TestEngineRunWithEvents(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 		EventHandler: func(evt EngineEvent) {
 			events = append(events, evt)
@@ -769,6 +790,7 @@ func TestEngineRunGraphGraphAttrsInContext(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -808,6 +830,7 @@ func TestEngineRunGraphStageFailNoOutgoingEdge(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -858,6 +881,7 @@ func TestEngineRunGraphRetryWithErrorFromHandler(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -971,7 +995,7 @@ func TestBackendWiringThroughWrappedHandler(t *testing.T) {
 	}
 }
 
-func TestRunGraphCreatesSharedWorkDir(t *testing.T) {
+func TestRunGraphCreatesRunDirUnderArtifacts(t *testing.T) {
 	g := buildLinearGraph()
 
 	// Track what _workdir was set to in context during execution
@@ -989,10 +1013,16 @@ func TestRunGraphCreatesSharedWorkDir(t *testing.T) {
 	exitH := newSuccessHandler("exit")
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
-	// Engine with NO ArtifactDir set — should create a shared temp dir
+	// Use a temp dir as a stand-in for the artifacts base so we don't
+	// pollute the real ./artifacts/ during tests.
+	artifactsBase := t.TempDir()
+
+	// Engine with NO ArtifactDir but with ArtifactsBaseDir set
 	engine := NewEngine(EngineConfig{
-		Handlers:     reg,
-		DefaultRetry: RetryPolicyNone(),
+		Handlers:         reg,
+		Backend:          testBackend(),
+		DefaultRetry:     RetryPolicyNone(),
+		ArtifactsBaseDir: artifactsBase,
 	})
 
 	result, err := engine.RunGraph(context.Background(), g)
@@ -1006,6 +1036,11 @@ func TestRunGraphCreatesSharedWorkDir(t *testing.T) {
 		t.Fatal("expected _workdir to be set in result context, but it was empty")
 	}
 
+	// The directory should be under the artifacts base dir
+	if !strings.HasPrefix(workDir, artifactsBase) {
+		t.Errorf("expected _workdir to be under %q, got %q", artifactsBase, workDir)
+	}
+
 	// The directory should exist on disk
 	info, err := os.Stat(workDir)
 	if err != nil {
@@ -1015,13 +1050,90 @@ func TestRunGraphCreatesSharedWorkDir(t *testing.T) {
 		t.Fatalf("expected _workdir %q to be a directory", workDir)
 	}
 
+	// The nodes subdirectory should exist (RunDirectory creates it)
+	nodesDir := filepath.Join(workDir, "nodes")
+	info, err = os.Stat(nodesDir)
+	if err != nil {
+		t.Fatalf("expected nodes dir %q to exist: %v", nodesDir, err)
+	}
+	if !info.IsDir() {
+		t.Fatal("expected nodes dir to be a directory")
+	}
+
 	// The handler should have seen the same value
 	if observedWorkDir != workDir {
 		t.Errorf("handler saw _workdir=%q, but result context has %q", observedWorkDir, workDir)
 	}
+}
 
-	// Clean up the temp dir
-	os.RemoveAll(workDir)
+func TestRunGraphUsesRunIDForDirectory(t *testing.T) {
+	g := buildLinearGraph()
+
+	artifactsBase := t.TempDir()
+	runID := "my-custom-run-id"
+
+	startH := newSuccessHandler("start")
+	codergenH := newSuccessHandler("codergen")
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, codergenH, exitH)
+
+	engine := NewEngine(EngineConfig{
+		Handlers:         reg,
+		Backend:          testBackend(),
+		DefaultRetry:     RetryPolicyNone(),
+		ArtifactsBaseDir: artifactsBase,
+		RunID:            runID,
+	})
+
+	result, err := engine.RunGraph(context.Background(), g)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	workDir := result.Context.GetString("_workdir", "")
+	expectedDir := filepath.Join(artifactsBase, runID)
+	if workDir != expectedDir {
+		t.Errorf("expected _workdir=%q, got %q", expectedDir, workDir)
+	}
+}
+
+func TestRunGraphGeneratesRunIDWhenNotSet(t *testing.T) {
+	g := buildLinearGraph()
+
+	artifactsBase := t.TempDir()
+
+	startH := newSuccessHandler("start")
+	codergenH := newSuccessHandler("codergen")
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, codergenH, exitH)
+
+	engine := NewEngine(EngineConfig{
+		Handlers:         reg,
+		Backend:          testBackend(),
+		DefaultRetry:     RetryPolicyNone(),
+		ArtifactsBaseDir: artifactsBase,
+	})
+
+	result, err := engine.RunGraph(context.Background(), g)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	workDir := result.Context.GetString("_workdir", "")
+	if workDir == "" {
+		t.Fatal("expected _workdir to be set")
+	}
+
+	// Should be a subdirectory of artifactsBase with some generated name
+	if !strings.HasPrefix(workDir, artifactsBase+string(filepath.Separator)) {
+		t.Errorf("expected _workdir under %q, got %q", artifactsBase, workDir)
+	}
+
+	// The generated run ID directory should contain the nodes/ subdir
+	nodesDir := filepath.Join(workDir, "nodes")
+	if _, err := os.Stat(nodesDir); err != nil {
+		t.Fatalf("expected nodes directory to exist: %v", err)
+	}
 }
 
 func TestRunGraphUsesExplicitArtifactDir(t *testing.T) {
@@ -1036,6 +1148,7 @@ func TestRunGraphUsesExplicitArtifactDir(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		ArtifactDir:  explicitDir,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -1085,6 +1198,7 @@ func TestEngineHandlerPanicRecoveryString(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -1130,6 +1244,7 @@ func TestEngineHandlerPanicRecoveryError(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -1177,6 +1292,7 @@ func TestEngineHandlerPanicRecoveryNil(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -1232,6 +1348,7 @@ func TestEngineHandlerPanicRecoveryTerminalNode(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -1360,6 +1477,7 @@ func TestEngineHandlerNoPanicStillWorks(t *testing.T) {
 
 	engine := NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      testBackend(),
 		DefaultRetry: RetryPolicyNone(),
 	})
 
@@ -1372,5 +1490,320 @@ func TestEngineHandlerNoPanicStillWorks(t *testing.T) {
 	}
 	if len(result.CompletedNodes) != 4 {
 		t.Errorf("expected 4 completed nodes, got %d: %v", len(result.CompletedNodes), result.CompletedNodes)
+	}
+}
+
+// TestEventStageFailed_IncludesErrorReason verifies that EventStageFailed events
+// include the failure reason in their Data map so failures are diagnosable.
+func TestEventStageFailed_IncludesErrorReason(t *testing.T) {
+	t.Run("handler error includes reason", func(t *testing.T) {
+		g := buildLinearGraph()
+		errorH := &testHandler{
+			typeName: "codergen",
+			executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+				return nil, fmt.Errorf("connection refused")
+			},
+		}
+		reg := buildTestRegistry(newSuccessHandler("start"), errorH, newSuccessHandler("exit"))
+
+		var events []EngineEvent
+		engine := NewEngine(EngineConfig{
+			Handlers:     reg,
+			Backend:      testBackend(),
+			DefaultRetry: RetryPolicyNone(),
+			EventHandler: func(evt EngineEvent) {
+				events = append(events, evt)
+			},
+		})
+
+		engine.RunGraph(context.Background(), g)
+
+		// Find the stage.failed event for node "a"
+		var failedEvt *EngineEvent
+		for i, evt := range events {
+			if evt.Type == EventStageFailed && evt.NodeID == "a" {
+				failedEvt = &events[i]
+				break
+			}
+		}
+		if failedEvt == nil {
+			t.Fatal("expected EventStageFailed for node 'a'")
+		}
+		if failedEvt.Data == nil {
+			t.Fatal("expected Data map on EventStageFailed, got nil")
+		}
+		reason, ok := failedEvt.Data["reason"]
+		if !ok {
+			t.Fatal("expected 'reason' key in Data map")
+		}
+		if !strings.Contains(reason.(string), "connection refused") {
+			t.Errorf("expected reason to contain 'connection refused', got %q", reason)
+		}
+	})
+
+	t.Run("outcome failure includes reason", func(t *testing.T) {
+		g := buildLinearGraph()
+		failH := &testHandler{
+			typeName: "codergen",
+			executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+				return &Outcome{Status: StatusFail, FailureReason: "API key expired"}, nil
+			},
+		}
+		reg := buildTestRegistry(newSuccessHandler("start"), failH, newSuccessHandler("exit"))
+
+		var events []EngineEvent
+		engine := NewEngine(EngineConfig{
+			Handlers:     reg,
+			Backend:      testBackend(),
+			DefaultRetry: RetryPolicyNone(),
+			EventHandler: func(evt EngineEvent) {
+				events = append(events, evt)
+			},
+		})
+
+		engine.RunGraph(context.Background(), g)
+
+		var failedEvt *EngineEvent
+		for i, evt := range events {
+			if evt.Type == EventStageFailed && evt.NodeID == "a" {
+				failedEvt = &events[i]
+				break
+			}
+		}
+		if failedEvt == nil {
+			t.Fatal("expected EventStageFailed for node 'a'")
+		}
+		if failedEvt.Data == nil {
+			t.Fatal("expected Data map on EventStageFailed, got nil")
+		}
+		reason, ok := failedEvt.Data["reason"]
+		if !ok {
+			t.Fatal("expected 'reason' key in Data map")
+		}
+		if !strings.Contains(reason.(string), "API key expired") {
+			t.Errorf("expected reason to contain 'API key expired', got %q", reason)
+		}
+		status, ok := failedEvt.Data["status"]
+		if !ok {
+			t.Fatal("expected 'status' key in Data map")
+		}
+		if status != string(StatusFail) {
+			t.Errorf("expected status 'fail', got %q", status)
+		}
+	})
+
+	t.Run("terminal node error includes reason", func(t *testing.T) {
+		g := &Graph{
+			Name:         "terminal_fail",
+			Nodes:        make(map[string]*Node),
+			Edges:        make([]*Edge, 0),
+			Attrs:        make(map[string]string),
+			NodeDefaults: make(map[string]string),
+			EdgeDefaults: make(map[string]string),
+		}
+		g.Nodes["start"] = &Node{ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}}
+		g.Nodes["done"] = &Node{ID: "done", Attrs: map[string]string{"shape": "Msquare"}}
+		g.Edges = append(g.Edges, &Edge{From: "start", To: "done"})
+
+		errorExitH := &testHandler{
+			typeName: "exit",
+			executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+				return nil, fmt.Errorf("cleanup failed: disk full")
+			},
+		}
+		reg := buildTestRegistry(newSuccessHandler("start"), errorExitH)
+
+		var events []EngineEvent
+		engine := NewEngine(EngineConfig{
+			Handlers:     reg,
+			Backend:      testBackend(),
+			DefaultRetry: RetryPolicyNone(),
+			EventHandler: func(evt EngineEvent) {
+				events = append(events, evt)
+			},
+		})
+
+		engine.RunGraph(context.Background(), g)
+
+		var failedEvt *EngineEvent
+		for i, evt := range events {
+			if evt.Type == EventStageFailed && evt.NodeID == "done" {
+				failedEvt = &events[i]
+				break
+			}
+		}
+		if failedEvt == nil {
+			t.Fatal("expected EventStageFailed for terminal node 'done'")
+		}
+		if failedEvt.Data == nil {
+			t.Fatal("expected Data map on EventStageFailed, got nil")
+		}
+		reason, ok := failedEvt.Data["reason"]
+		if !ok {
+			t.Fatal("expected 'reason' key in Data map")
+		}
+		if !strings.Contains(reason.(string), "disk full") {
+			t.Errorf("expected reason to contain 'disk full', got %q", reason)
+		}
+	})
+}
+
+// TestParseFailureEmitsPipelineFailed verifies that a parse error still emits
+// EventPipelineFailed so the event stream always has diagnostic info.
+func TestParseFailureEmitsPipelineFailed(t *testing.T) {
+	var events []EngineEvent
+	engine := NewEngine(EngineConfig{
+		Backend:      testBackend(),
+		DefaultRetry: RetryPolicyNone(),
+		EventHandler: func(evt EngineEvent) {
+			events = append(events, evt)
+		},
+	})
+
+	_, err := engine.Run(context.Background(), "this is not valid DOT at all {{{")
+	if err == nil {
+		t.Fatal("expected parse error")
+	}
+
+	// Should have at least a pipeline.failed event
+	var failedEvt *EngineEvent
+	for i, evt := range events {
+		if evt.Type == EventPipelineFailed {
+			failedEvt = &events[i]
+			break
+		}
+	}
+	if failedEvt == nil {
+		t.Fatal("expected EventPipelineFailed event for parse error, got zero events")
+	}
+	if failedEvt.Data == nil {
+		t.Fatal("expected Data map on EventPipelineFailed")
+	}
+	errVal, ok := failedEvt.Data["error"]
+	if !ok {
+		t.Fatal("expected 'error' key in Data map")
+	}
+	if !strings.Contains(errVal.(string), "parse") {
+		t.Errorf("expected error to mention 'parse', got %q", errVal)
+	}
+}
+
+// TestValidationFailureEmitsPipelineFailed verifies that a validation error
+// emits EventPipelineFailed so the event stream always has diagnostic info.
+func TestValidationFailureEmitsPipelineFailed(t *testing.T) {
+	// Graph with no start node (Mdiamond) will fail validation
+	g := &Graph{
+		Name:         "no_start",
+		Nodes:        make(map[string]*Node),
+		Edges:        make([]*Edge, 0),
+		Attrs:        make(map[string]string),
+		NodeDefaults: make(map[string]string),
+		EdgeDefaults: make(map[string]string),
+	}
+	g.Nodes["a"] = &Node{ID: "a", Attrs: map[string]string{"shape": "box"}}
+	g.Nodes["b"] = &Node{ID: "b", Attrs: map[string]string{"shape": "Msquare"}}
+	g.Edges = append(g.Edges, &Edge{From: "a", To: "b"})
+
+	var events []EngineEvent
+	engine := NewEngine(EngineConfig{
+		Backend:      testBackend(),
+		DefaultRetry: RetryPolicyNone(),
+		EventHandler: func(evt EngineEvent) {
+			events = append(events, evt)
+		},
+	})
+
+	_, err := engine.RunGraph(context.Background(), g)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+
+	var failedEvt *EngineEvent
+	for i, evt := range events {
+		if evt.Type == EventPipelineFailed {
+			failedEvt = &events[i]
+			break
+		}
+	}
+	if failedEvt == nil {
+		t.Fatal("expected EventPipelineFailed event for validation error, got zero events")
+	}
+	if failedEvt.Data == nil {
+		t.Fatal("expected Data map on EventPipelineFailed")
+	}
+	errVal, ok := failedEvt.Data["error"]
+	if !ok {
+		t.Fatal("expected 'error' key in Data map")
+	}
+	if !strings.Contains(errVal.(string), "validation") {
+		t.Errorf("expected error to mention 'validation', got %q", errVal)
+	}
+}
+
+// TestAgentEventTypeConstants verifies that the 5 agent-level EngineEventType
+// constants exist and have the expected string values.
+func TestAgentEventTypeConstants(t *testing.T) {
+	tests := []struct {
+		name     string
+		constant EngineEventType
+		expected string
+	}{
+		{"tool_call_start", EventAgentToolCallStart, "agent.tool_call.start"},
+		{"tool_call_end", EventAgentToolCallEnd, "agent.tool_call.end"},
+		{"llm_turn", EventAgentLLMTurn, "agent.llm_turn"},
+		{"steering", EventAgentSteering, "agent.steering"},
+		{"loop_detected", EventAgentLoopDetected, "agent.loop_detected"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if string(tt.constant) != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, string(tt.constant))
+			}
+		})
+	}
+}
+
+// TestAgentEventsEmittedThroughEngine verifies that agent event types can be
+// emitted through the engine event system and received by the event handler.
+func TestAgentEventsEmittedThroughEngine(t *testing.T) {
+	var events []EngineEvent
+	engine := NewEngine(EngineConfig{
+		Backend:      testBackend(),
+		DefaultRetry: RetryPolicyNone(),
+		EventHandler: func(evt EngineEvent) {
+			events = append(events, evt)
+		},
+	})
+
+	agentEventTypes := []EngineEventType{
+		EventAgentToolCallStart,
+		EventAgentToolCallEnd,
+		EventAgentLLMTurn,
+		EventAgentSteering,
+		EventAgentLoopDetected,
+	}
+
+	for _, evtType := range agentEventTypes {
+		engine.emitEvent(EngineEvent{
+			Type:   evtType,
+			NodeID: "test_node",
+			Data:   map[string]any{"test": true},
+		})
+	}
+
+	if len(events) != 5 {
+		t.Fatalf("expected 5 agent events, got %d", len(events))
+	}
+
+	for i, evtType := range agentEventTypes {
+		if events[i].Type != evtType {
+			t.Errorf("event[%d]: expected type %q, got %q", i, evtType, events[i].Type)
+		}
+		if events[i].NodeID != "test_node" {
+			t.Errorf("event[%d]: expected nodeID 'test_node', got %q", i, events[i].NodeID)
+		}
+		if events[i].Timestamp.IsZero() {
+			t.Errorf("event[%d]: expected non-zero timestamp", i)
+		}
 	}
 }

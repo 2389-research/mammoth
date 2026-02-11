@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389-research/makeatron/llm"
+	"github.com/2389-research/mammoth/llm"
 )
 
 func TestNewSession(t *testing.T) {

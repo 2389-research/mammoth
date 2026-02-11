@@ -5,7 +5,7 @@ package tui
 import (
 	"time"
 
-	"github.com/2389-research/makeatron/attractor"
+	"github.com/2389-research/mammoth/attractor"
 )
 
 // EngineEventMsg wraps an attractor.EngineEvent for the Bubble Tea message loop.

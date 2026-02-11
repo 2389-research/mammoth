@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/2389-research/makeatron/llm"
+	"github.com/2389-research/mammoth/llm"
 )
 
 // RegisteredTool pairs a tool definition with its execute function.

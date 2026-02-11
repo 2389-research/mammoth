@@ -5,11 +5,11 @@ package llm
 
 // ModelInfo describes a single LLM model's capabilities and metadata.
 type ModelInfo struct {
-	ID                   string   // e.g., "claude-opus-4-6"
-	Provider             string   // e.g., "anthropic"
-	DisplayName          string   // e.g., "Claude Opus 4.6"
-	ContextWindow        int      // max total tokens
-	MaxOutput            int      // max output tokens, 0 if unknown
+	ID                   string // e.g., "claude-opus-4-6"
+	Provider             string // e.g., "anthropic"
+	DisplayName          string // e.g., "Claude Opus 4.6"
+	ContextWindow        int    // max total tokens
+	MaxOutput            int    // max output tokens, 0 if unknown
 	SupportsTools        bool
 	SupportsVision       bool
 	SupportsReasoning    bool

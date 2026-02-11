@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/2389-research/makeatron/attractor"
+	"github.com/2389-research/mammoth/attractor"
 )
 
 // Status color constants used for node fill colors in status overlay rendering.

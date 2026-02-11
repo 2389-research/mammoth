@@ -51,7 +51,7 @@ type RunIndexEntry struct {
 // It maps run IDs to their metadata for fast enumeration and filtering.
 type RunIndex struct {
 	Runs    map[string]RunIndexEntry `json:"runs"`
-	Updated time.Time               `json:"updated"`
+	Updated time.Time                `json:"updated"`
 }
 
 // RetentionConfig specifies how long and how many runs to retain.

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389-research/makeatron/llm"
+	"github.com/2389-research/mammoth/llm"
 )
 
 // subagentTestAdapter implements llm.ProviderAdapter with pre-configured responses.
@@ -49,9 +49,9 @@ func (a *subagentTestAdapter) Close() error { return nil }
 
 // subagentTestEnv implements ExecutionEnvironment for subagent testing.
 type subagentTestEnv struct {
-	workDir  string
-	files    map[string]string
-	mu       sync.Mutex
+	workDir string
+	files   map[string]string
+	mu      sync.Mutex
 }
 
 func newSubagentTestEnv() *subagentTestEnv {

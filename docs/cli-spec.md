@@ -1,6 +1,6 @@
-# Makeatron CLI Specification
+# Mammoth CLI Specification
 
-This document describes the command-line interface for `makeatron`, the pipeline runner for Attractor DOT-based workflows. It covers all commands, flags, output formats, exit codes, and error behaviors as implemented in `cmd/makeatron/main.go`.
+This document describes the command-line interface for `mammoth`, the pipeline runner for Attractor DOT-based workflows. It covers all commands, flags, output formats, exit codes, and error behaviors as implemented in `cmd/mammoth/main.go`.
 
 ---
 
@@ -25,23 +25,23 @@ This document describes the command-line interface for `makeatron`, the pipeline
 ## 1. Synopsis
 
 ```
-makeatron [options] <pipeline.dot>
+mammoth [options] <pipeline.dot>
 ```
 
-`makeatron` reads an Attractor pipeline definition written in DOT syntax and either executes it, validates it, or serves it over HTTP. The pipeline file is a positional argument (the first non-flag argument).
+`mammoth` reads an Attractor pipeline definition written in DOT syntax and either executes it, validates it, or serves it over HTTP. The pipeline file is a positional argument (the first non-flag argument).
 
 ---
 
 ## 2. Modes of Operation
 
-Makeatron has four mutually exclusive modes, selected by flags:
+Mammoth has four mutually exclusive modes, selected by flags:
 
 | Mode       | Trigger                            | Description                                      |
 |------------|------------------------------------|--------------------------------------------------|
-| **Run**    | `makeatron <pipeline.dot>`         | Parse, validate, and execute the pipeline         |
-| **Validate** | `makeatron --validate <pipeline.dot>` | Parse and validate without executing          |
-| **Server** | `makeatron --server`               | Start an HTTP server for pipeline management      |
-| **Version** | `makeatron --version`             | Print version string and exit                     |
+| **Run**    | `mammoth <pipeline.dot>`         | Parse, validate, and execute the pipeline         |
+| **Validate** | `mammoth --validate <pipeline.dot>` | Parse and validate without executing          |
+| **Server** | `mammoth --server`               | Start an HTTP server for pipeline management      |
+| **Version** | `mammoth --version`             | Print version string and exit                     |
 
 ### 2.1 Run Mode (default)
 
@@ -59,7 +59,7 @@ Starts an HTTP server on the configured port (default `2389`). The server expose
 
 ### 2.4 Version Mode
 
-Prints `makeatron <version>` to stdout and exits with code 0. The version defaults to `"dev"` at compile time and can be overridden via `-ldflags` at build time.
+Prints `mammoth <version>` to stdout and exits with code 0. The version defaults to `"dev"` at compile time and can be overridden via `-ldflags` at build time.
 
 ---
 
@@ -110,7 +110,7 @@ Pipeline is valid.
 
 **Version mode:**
 ```
-makeatron dev
+mammoth dev
 ```
 
 ### 4.2 Stderr
@@ -182,7 +182,7 @@ error: <description>
 
 Written to stderr. Examples of error descriptions:
 
-- `pipeline file required (use makeatron <pipeline.dot>)` -- no pipeline file provided in non-server mode
+- `pipeline file required (use mammoth <pipeline.dot>)` -- no pipeline file provided in non-server mode
 - `open /path/to/file.dot: no such file or directory` -- file not found
 - `parse error: <details>` -- DOT syntax error
 - `validation failed: pipeline validation failed with N error(s)` -- validation errors during run mode
@@ -193,7 +193,7 @@ Written to stderr. Examples of error descriptions:
 
 ## 7. Signal Handling
 
-In both run mode and server mode, `makeatron` listens for `SIGINT` (Ctrl-C) and `SIGTERM`. On receipt:
+In both run mode and server mode, `mammoth` listens for `SIGINT` (Ctrl-C) and `SIGTERM`. On receipt:
 
 1. Prints `\nInterrupted, shutting down...` to stderr
 2. Cancels the `context.Context` passed to the engine or HTTP server
@@ -236,7 +236,7 @@ Individual nodes can override the default via `max_retries` attribute in the DOT
 
 ## 10. HTTP Server API
 
-When started with `--server`, makeatron exposes the following REST endpoints. All responses use `Content-Type: application/json`.
+When started with `--server`, mammoth exposes the following REST endpoints. All responses use `Content-Type: application/json`.
 
 ### 10.1 Submit Pipeline
 
@@ -431,7 +431,7 @@ When `--verbose` is enabled, the following engine event types are printed to std
 ### 12.1 Run a pipeline
 
 ```bash
-makeatron pipeline.dot
+mammoth pipeline.dot
 ```
 
 Output (stdout):
@@ -444,7 +444,7 @@ Final status: success
 ### 12.2 Run with verbose output and aggressive retry
 
 ```bash
-makeatron --verbose --retry aggressive pipeline.dot
+mammoth --verbose --retry aggressive pipeline.dot
 ```
 
 Output (stderr, verbose events):
@@ -470,7 +470,7 @@ Final status: success
 ### 12.3 Validate a pipeline
 
 ```bash
-makeatron --validate pipeline.dot
+mammoth --validate pipeline.dot
 ```
 
 Output (stdout, valid):
@@ -488,7 +488,7 @@ Validation failed.
 ### 12.4 Run with checkpointing
 
 ```bash
-makeatron --checkpoint-dir /tmp/checkpoints --artifact-dir /tmp/artifacts pipeline.dot
+mammoth --checkpoint-dir /tmp/checkpoints --artifact-dir /tmp/artifacts pipeline.dot
 ```
 
 Checkpoint files are written to `/tmp/checkpoints` as `checkpoint_<node_id>_<timestamp>.json` after each node completes.
@@ -496,7 +496,7 @@ Checkpoint files are written to `/tmp/checkpoints` as `checkpoint_<node_id>_<tim
 ### 12.5 Start the HTTP server
 
 ```bash
-makeatron --server --port 2389 --verbose
+mammoth --server --port 2389 --verbose
 ```
 
 Output (stderr):
@@ -537,12 +537,12 @@ Response:
 ### 12.8 Print version
 
 ```bash
-makeatron --version
+mammoth --version
 ```
 
 Output (stdout):
 ```
-makeatron dev
+mammoth dev
 ```
 
 ### 12.9 Stream pipeline events
@@ -571,12 +571,12 @@ data: {"status":"completed"}
 ### 12.10 Missing pipeline file
 
 ```bash
-makeatron
+mammoth
 ```
 
 Output (stderr):
 ```
-error: pipeline file required (use makeatron <pipeline.dot>)
+error: pipeline file required (use mammoth <pipeline.dot>)
 ```
 
 Exit code: `1`
@@ -603,7 +603,7 @@ The following capabilities are not currently implemented but would be natural ex
 
 8. **Short flags** -- Single-character aliases like `-v` for `--verbose`, `-p` for `--port`, etc.
 
-9. **Subcommand style** -- Restructure as `makeatron run`, `makeatron validate`, `makeatron server` subcommands instead of flag-based mode selection.
+9. **Subcommand style** -- Restructure as `mammoth run`, `mammoth validate`, `mammoth server` subcommands instead of flag-based mode selection.
 
 10. **`--quiet` flag** -- Suppress all non-essential output, complement to `--verbose`.
 

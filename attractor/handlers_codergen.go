@@ -1,5 +1,5 @@
 // ABOUTME: Codergen (LLM coding agent) handler for the attractor pipeline runner.
-// ABOUTME: Delegates to a CodergenBackend for actual LLM execution; falls back to stub when backend is nil.
+// ABOUTME: Delegates to a CodergenBackend for actual LLM execution; returns error when backend is nil.
 package attractor
 
 import (
@@ -11,11 +11,20 @@ import (
 // CodergenHandler handles LLM-powered coding task nodes (shape=box).
 // This is the default handler for nodes without an explicit type.
 // When Backend is set, it delegates to the agent loop for real LLM execution.
-// When Backend is nil, it falls back to stub behavior for testing.
+// When Backend is nil, it returns StatusFail with a configuration error.
 type CodergenHandler struct {
-	// Backend is the agent execution backend. When nil, the handler uses
-	// stub behavior that records prompt/config without calling an LLM.
+	// Backend is the agent execution backend. When nil, the handler
+	// returns StatusFail indicating no LLM backend is configured.
 	Backend CodergenBackend
+
+	// BaseURL is the default API base URL for the LLM provider. Set by the
+	// engine during backend wiring. Can be overridden per-node via base_url attr.
+	BaseURL string
+
+	// EventHandler receives agent-level observability events bridged from the
+	// agent session into the engine event system. Set by the engine during
+	// backend wiring.
+	EventHandler func(EngineEvent)
 }
 
 // Type returns the handler type string "codergen".
@@ -53,9 +62,12 @@ func (h *CodergenHandler) Execute(ctx context.Context, node *Node, pctx *Context
 	llmModel := attrs["llm_model"]
 	llmProvider := attrs["llm_provider"]
 
-	// If no backend is configured, fall back to stub behavior
+	// No backend means no LLM — this is a hard error, not a stub.
 	if h.Backend == nil {
-		return h.executeStub(node.ID, prompt, label, llmModel, llmProvider)
+		return &Outcome{
+			Status:        StatusFail,
+			FailureReason: "no LLM backend configured: set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY",
+		}, nil
 	}
 
 	// Build agent run configuration
@@ -90,15 +102,22 @@ func (h *CodergenHandler) Execute(ctx context.Context, node *Node, pctx *Context
 		workDir = store.BaseDir()
 	}
 
+	baseURL := attrs["base_url"]
+	if baseURL == "" {
+		baseURL = h.BaseURL
+	}
+
 	config := AgentRunConfig{
 		Prompt:       prompt,
 		Model:        llmModel,
 		Provider:     llmProvider,
+		BaseURL:      baseURL,
 		WorkDir:      workDir,
 		Goal:         goal,
 		NodeID:       node.ID,
 		MaxTurns:     maxTurns,
 		FidelityMode: fidelityMode,
+		EventHandler: h.EventHandler,
 	}
 
 	// Run the agent
@@ -127,6 +146,12 @@ func (h *CodergenHandler) Execute(ctx context.Context, node *Node, pctx *Context
 	}
 	updates["codergen.tool_calls"] = result.ToolCalls
 	updates["codergen.tokens_used"] = result.TokensUsed
+	updates["codergen.turn_count"] = result.TurnCount
+	updates["codergen.input_tokens"] = result.Usage.InputTokens
+	updates["codergen.output_tokens"] = result.Usage.OutputTokens
+	updates["codergen.reasoning_tokens"] = result.Usage.ReasoningTokens
+	updates["codergen.cache_read_tokens"] = result.Usage.CacheReadTokens
+	updates["codergen.cache_write_tokens"] = result.Usage.CacheWriteTokens
 
 	// Store agent output as an artifact
 	if result.Output != "" {
@@ -147,30 +172,7 @@ func (h *CodergenHandler) Execute(ctx context.Context, node *Node, pctx *Context
 
 	return &Outcome{
 		Status:         StatusSuccess,
-		Notes:          fmt.Sprintf("Stage completed: %s (tools: %d, tokens: %d)", label, result.ToolCalls, result.TokensUsed),
-		ContextUpdates: updates,
-	}, nil
-}
-
-// executeStub is the fallback behavior when no backend is configured.
-// It records the prompt and configuration in the outcome without calling an LLM.
-func (h *CodergenHandler) executeStub(nodeID, prompt, label, llmModel, llmProvider string) (*Outcome, error) {
-	updates := map[string]any{
-		"last_stage": nodeID,
-	}
-
-	if llmModel != "" {
-		updates["codergen.model"] = llmModel
-	}
-	if llmProvider != "" {
-		updates["codergen.provider"] = llmProvider
-	}
-
-	updates["codergen.prompt"] = prompt
-
-	return &Outcome{
-		Status:         StatusSuccess,
-		Notes:          "Stage completed (stub): " + label,
+		Notes:          fmt.Sprintf("Stage completed: %s (tools: %d, tokens: %d [in:%d out:%d])", label, result.ToolCalls, result.TokensUsed, result.Usage.InputTokens, result.Usage.OutputTokens),
 		ContextUpdates: updates,
 	}, nil
 }

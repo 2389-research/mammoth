@@ -11,8 +11,8 @@ func TestGetModelInfoByExactID(t *testing.T) {
 	catalog := DefaultCatalog()
 
 	tests := []struct {
-		id          string
-		wantDisplay string
+		id           string
+		wantDisplay  string
 		wantProvider string
 	}{
 		{"claude-opus-4-6", "Claude Opus 4.6", "anthropic"},

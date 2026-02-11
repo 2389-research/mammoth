@@ -70,8 +70,8 @@ func TestStylesheetApplication(t *testing.T) {
 .code { llm_model: claude-opus-4-6; }`,
 		},
 		Nodes: map[string]*Node{
-			"plain":  {ID: "plain", Attrs: map[string]string{"prompt": "do stuff"}},
-			"coder":  {ID: "coder", Attrs: map[string]string{"class": "code", "prompt": "write code"}},
+			"plain": {ID: "plain", Attrs: map[string]string{"prompt": "do stuff"}},
+			"coder": {ID: "coder", Attrs: map[string]string{"class": "code", "prompt": "write code"}},
 		},
 	}
 

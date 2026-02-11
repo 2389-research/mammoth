@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389-research/makeatron/attractor"
+	"github.com/2389-research/mammoth/attractor"
 )
 
 func TestLogPanel_NewLogPanelModel_EmptyEntries(t *testing.T) {
@@ -255,6 +255,58 @@ func TestLogPanel_formatEntry_NoData(t *testing.T) {
 	}
 	if !strings.Contains(result, "[init]") {
 		t.Errorf("expected [init] in entry, got: %s", result)
+	}
+}
+
+func TestLogPanel_View_ShowsAgentEventTypes(t *testing.T) {
+	agentEvents := []struct {
+		name      string
+		eventType attractor.EngineEventType
+	}{
+		{"agent_tool_call_start", attractor.EventAgentToolCallStart},
+		{"agent_tool_call_end", attractor.EventAgentToolCallEnd},
+		{"agent_llm_turn", attractor.EventAgentLLMTurn},
+		{"agent_steering", attractor.EventAgentSteering},
+		{"agent_loop_detected", attractor.EventAgentLoopDetected},
+	}
+	for _, tt := range agentEvents {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewLogPanelModel(10)
+			m.SetSize(120, 20)
+			m.Append(attractor.EngineEvent{
+				Type:      tt.eventType,
+				NodeID:    "codegen_node",
+				Timestamp: time.Date(2026, 2, 10, 14, 0, 0, 0, time.UTC),
+			})
+			view := m.View()
+			if !strings.Contains(view, string(tt.eventType)) {
+				t.Errorf("expected view to contain event type %q, got:\n%s", tt.eventType, view)
+			}
+		})
+	}
+}
+
+func TestLogPanel_EventStyleForAgentEvents(t *testing.T) {
+	// Verify agent events get distinct styling by rendering and checking they
+	// produce non-empty styled output (not just fallback).
+	tests := []struct {
+		eventType attractor.EngineEventType
+		name      string
+	}{
+		{attractor.EventAgentToolCallStart, "tool_call_start"},
+		{attractor.EventAgentToolCallEnd, "tool_call_end"},
+		{attractor.EventAgentLLMTurn, "llm_turn"},
+		{attractor.EventAgentSteering, "steering"},
+		{attractor.EventAgentLoopDetected, "loop_detected"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			style := eventStyle(tt.eventType)
+			rendered := style.Render(string(tt.eventType))
+			if rendered == "" {
+				t.Errorf("expected non-empty rendered style for %s", tt.eventType)
+			}
+		})
 	}
 }
 

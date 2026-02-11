@@ -1,0 +1,43 @@
+<!-- ABOUTME: Base HTML template for the HTMX blog. -->
+<!-- ABOUTME: Provides the page shell, navigation, HTMX CDN link, and flash message container. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Blog{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+    <header>
+        <nav>
+            <a href="/" class="site-title" hx-get="/" hx-target="#main-content" hx-push-url="true">mammoth blog</a>
+            <a href="/posts/new" class="btn btn-primary" hx-get="/posts/new" hx-target="#main-content" hx-push-url="true">New Post</a>
+        </nav>
+    </header>
+
+    <div id="flash-messages"></div>
+
+    <main id="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <p>Built with Flask + HTMX. No JavaScript was harmed in the making of this blog.</p>
+    </footer>
+
+    <script>
+        // Auto-dismiss flash messages after 4 seconds
+        document.body.addEventListener("htmx:afterSwap", function() {
+            var flashes = document.querySelectorAll('.flash');
+            flashes.forEach(function(flash) {
+                setTimeout(function() {
+                    flash.style.opacity = '0';
+                    setTimeout(function() { flash.remove(); }, 300);
+                }, 4000);
+            });
+        });
+    </script>
+</body>
+</html>

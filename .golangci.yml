@@ -1,4 +1,4 @@
-# ABOUTME: golangci-lint configuration for makeatron.
+# ABOUTME: golangci-lint configuration for mammoth.
 # ABOUTME: Enables core linters with sensible defaults, avoids noisy rules.
 
 run:

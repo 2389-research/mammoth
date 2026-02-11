@@ -177,7 +177,7 @@ func (h *ManagerLoopHandler) executeSupervisionLoop(
 				Status:        StatusFail,
 				FailureReason: fmt.Sprintf("observe failed at iteration %d: %v", i, err),
 				ContextUpdates: map[string]any{
-					"last_stage":                  node.ID,
+					"last_stage":                   node.ID,
 					"manager.iterations_completed": iterationsCompleted,
 					"manager.steers_applied":       steersApplied,
 				},
@@ -192,7 +192,7 @@ func (h *ManagerLoopHandler) executeSupervisionLoop(
 				Status:        StatusFail,
 				FailureReason: fmt.Sprintf("guard failed at iteration %d: %v", i, err),
 				ContextUpdates: map[string]any{
-					"last_stage":                  node.ID,
+					"last_stage":                   node.ID,
 					"manager.iterations_completed": iterationsCompleted,
 					"manager.steers_applied":       steersApplied,
 				},
@@ -207,7 +207,7 @@ func (h *ManagerLoopHandler) executeSupervisionLoop(
 					Status:        StatusFail,
 					FailureReason: fmt.Sprintf("steer failed at iteration %d: %v", i, err),
 					ContextUpdates: map[string]any{
-						"last_stage":                  node.ID,
+						"last_stage":                   node.ID,
 						"manager.iterations_completed": iterationsCompleted,
 						"manager.steers_applied":       steersApplied,
 					},
@@ -220,7 +220,7 @@ func (h *ManagerLoopHandler) executeSupervisionLoop(
 	}
 
 	updates := map[string]any{
-		"last_stage":                  node.ID,
+		"last_stage":                   node.ID,
 		"manager.iterations_completed": iterationsCompleted,
 		"manager.steers_applied":       steersApplied,
 		"manager.last_observation":     lastObservation,

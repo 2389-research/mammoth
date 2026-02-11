@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/2389-research/makeatron/llm"
+	"github.com/2389-research/mammoth/llm"
 )
 
 func TestNewToolRegistry(t *testing.T) {

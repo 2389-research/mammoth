@@ -404,10 +404,10 @@ func TestSummarizeEvents(t *testing.T) {
 	expectedByType := map[EngineEventType]int{
 		EventPipelineStarted:   1,
 		EventPipelineCompleted: 1,
-		EventStageStarted:     2,
-		EventStageCompleted:   2,
-		EventStageRetrying:    1,
-		EventCheckpointSaved:  1,
+		EventStageStarted:      2,
+		EventStageCompleted:    2,
+		EventStageRetrying:     1,
+		EventCheckpointSaved:   1,
 	}
 	for evtType, expectedCount := range expectedByType {
 		if summary.ByType[evtType] != expectedCount {

@@ -74,6 +74,7 @@ func TestLoopRestartEdgeTriggers(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -130,6 +131,7 @@ func TestLoopRestartFreshContext(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -178,6 +180,7 @@ func TestLoopRestartMaxRestartsLimit(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:       &fakeBackend{},
 		Handlers:      reg,
 		DefaultRetry:  RetryPolicyNone(),
 		RestartConfig: &RestartConfig{MaxRestarts: 3},
@@ -233,6 +236,7 @@ func TestLoopRestartFalseDoesNotTrigger(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -258,6 +262,7 @@ func TestLoopRestartAbsentDoesNotTrigger(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -282,6 +287,7 @@ func TestLoopRestartCheckpointSavedBeforeRestart(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:       &fakeBackend{},
 		Handlers:      reg,
 		DefaultRetry:  RetryPolicyNone(),
 		CheckpointDir: cpDir,
@@ -325,6 +331,7 @@ func TestLoopRestartContextCancellationDuringRestart(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -393,6 +400,7 @@ func TestLoopRestartGraphAttrsPreservedAcrossRestart(t *testing.T) {
 	reg := buildTestRegistry(startH, codergenH, exitH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})

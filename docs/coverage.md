@@ -12,7 +12,7 @@ and a maintenance strategy.
 | `attractor` | 87.3% | 85% |
 | `agent` | 82.3% | 80% |
 | `llm` | 82.1% | 80% |
-| `cmd/makeatron` | 68.6% | 65% |
+| `cmd/mammoth` | 68.6% | 65% |
 | **Total** | **84.6%** | **80%** |
 
 Thresholds are set 2-3 points below current coverage to prevent regressions while
@@ -127,7 +127,7 @@ are pipeline-breaking bugs waiting to happen.
 | `TextPromptResult.Response` | `generate.go:75` |
 | Many error type `Error`/`Unwrap`/`As` methods | `errors.go` (various) |
 
-### cmd/makeatron package
+### cmd/mammoth package
 | Function | File |
 |----------|------|
 | `main` | `main.go:33` |

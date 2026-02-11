@@ -1027,7 +1027,7 @@ func TestOpenAIProviderOptions(t *testing.T) {
 		Messages: []Message{UserMessage("Hello")},
 		ProviderOptions: map[string]any{
 			"openai": map[string]any{
-				"store":               true,
+				"store":                true,
 				"previous_response_id": "resp_prev",
 			},
 		},

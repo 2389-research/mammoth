@@ -1,0 +1,23 @@
+<!-- ABOUTME: Delete confirmation partial displayed before removing a post. -->
+<!-- ABOUTME: Provides confirm/cancel buttons, with confirm triggering an HTMX DELETE request. -->
+{% extends "base.html" %}
+
+{% block title %}Delete "{{ post.title }}"? - Blog{% endblock %}
+
+{% block content %}
+<div class="confirm-delete">
+    <h1>Delete this post?</h1>
+    <p>You are about to delete <strong>"{{ post.title }}"</strong>. This cannot be undone.</p>
+
+    <div class="confirm-actions">
+        <button class="btn btn-danger"
+                hx-delete="/posts/{{ post.id }}"
+                hx-target="#main-content">Yes, delete it</button>
+        <a href="/posts/{{ post.id }}"
+           class="btn btn-secondary"
+           hx-get="/posts/{{ post.id }}"
+           hx-target="#main-content"
+           hx-push-url="true">Cancel</a>
+    </div>
+</div>
+{% endblock %}

@@ -57,10 +57,10 @@ func TestGraphOutgoingEdges(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		nodeID   string
-		wantLen  int
-		wantTos  []string
+		name    string
+		nodeID  string
+		wantLen int
+		wantTos []string
 	}{
 		{"node with two outgoing", "A", 2, []string{"B", "C"}},
 		{"node with one outgoing", "B", 1, []string{"C"}},

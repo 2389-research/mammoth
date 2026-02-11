@@ -149,8 +149,8 @@ func TestSelectEdgeSingleUnconditionalEdge(t *testing.T) {
 func TestSelectEdgeConditionMatchingTakesPriority(t *testing.T) {
 	g := &Graph{
 		Nodes: map[string]*Node{
-			"a":    {ID: "a", Attrs: map[string]string{}},
-			"cond": {ID: "cond", Attrs: map[string]string{}},
+			"a":      {ID: "a", Attrs: map[string]string{}},
+			"cond":   {ID: "cond", Attrs: map[string]string{}},
 			"uncond": {ID: "uncond", Attrs: map[string]string{}},
 		},
 		Edges: []*Edge{

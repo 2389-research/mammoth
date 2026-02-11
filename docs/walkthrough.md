@@ -1,12 +1,12 @@
 # End-to-End Walkthrough
 
-This guide walks through writing, validating, and running makeatron pipelines from scratch. By the end, you'll understand the full workflow: writing DOT pipelines, configuring models, running them, interpreting output, and using advanced features like human gates and stylesheets.
+This guide walks through writing, validating, and running mammoth pipelines from scratch. By the end, you'll understand the full workflow: writing DOT pipelines, configuring models, running them, interpreting output, and using advanced features like human gates and stylesheets.
 
 ## Prerequisites
 
-1. Build makeatron:
+1. Build mammoth:
    ```bash
-   go build -o makeatron ./cmd/makeatron/
+   go build -o mammoth ./cmd/mammoth/
    ```
 
 2. Set at least one API key:
@@ -46,7 +46,7 @@ Nodes without an explicit `shape` default to `box` (codergen handler).
 Always validate before running:
 
 ```bash
-./makeatron -validate my_first.dot
+./mammoth -validate my_first.dot
 ```
 
 Expected output:
@@ -65,7 +65,7 @@ Validation failed.
 ### Run It
 
 ```bash
-./makeatron -verbose my_first.dot
+./mammoth -verbose my_first.dot
 ```
 
 The `-verbose` flag shows stage transitions:
@@ -88,7 +88,7 @@ Final status: success
 
 ## Understanding the Output
 
-When a pipeline completes, makeatron prints:
+When a pipeline completes, mammoth prints:
 
 - **Completed nodes**: The ordered list of nodes that executed successfully.
 - **Final status**: The outcome of the last node (`success`, `fail`, `partial_success`).
@@ -132,8 +132,8 @@ Key concepts:
 Run and validate:
 
 ```bash
-./makeatron -validate branching.dot
-./makeatron -verbose branching.dot
+./mammoth -validate branching.dot
+./mammoth -verbose branching.dot
 ```
 
 ## Adding Human Gates
@@ -175,7 +175,7 @@ Key concepts:
 In CLI mode, the `ConsoleInterviewer` reads from stdin:
 
 ```bash
-./makeatron human_review.dot
+./mammoth human_review.dot
 ```
 
 Output:
@@ -193,7 +193,7 @@ In server mode, human gates produce pending questions at the REST API:
 
 ```bash
 # Start server
-./makeatron -server -port 2389
+./mammoth -server -port 2389
 
 # Submit pipeline
 curl -X POST http://localhost:2389/pipelines -d @human_review.dot
@@ -326,14 +326,14 @@ implement [goal_gate=true, retry_target="plan"]
 
 ## Working with the Example Pipelines
 
-Makeatron ships with several example pipelines in the `examples/` directory:
+Mammoth ships with several example pipelines in the `examples/` directory:
 
 ### examples/simple.dot
 
 Minimal linear pipeline: start -> run tests -> report -> exit.
 
 ```bash
-./makeatron -verbose examples/simple.dot
+./mammoth -verbose examples/simple.dot
 ```
 
 ### examples/branching.dot
@@ -341,7 +341,7 @@ Minimal linear pipeline: start -> run tests -> report -> exit.
 Conditional branching with a retry loop: plan -> implement -> validate -> gate -> (exit or retry).
 
 ```bash
-./makeatron -verbose examples/branching.dot
+./mammoth -verbose examples/branching.dot
 ```
 
 ### examples/human_gate.dot
@@ -349,7 +349,7 @@ Conditional branching with a retry loop: plan -> implement -> validate -> gate -
 Human-in-the-loop code review with approve/fix cycle.
 
 ```bash
-./makeatron examples/human_gate.dot
+./mammoth examples/human_gate.dot
 ```
 
 ### examples/goal_gate.dot
@@ -357,7 +357,7 @@ Human-in-the-loop code review with approve/fix cycle.
 Goal gate enforcement: implement must succeed before pipeline completion.
 
 ```bash
-./makeatron -verbose -retry standard examples/goal_gate.dot
+./mammoth -verbose -retry standard examples/goal_gate.dot
 ```
 
 ### examples/full_pipeline.dot
@@ -365,7 +365,7 @@ Goal gate enforcement: implement must succeed before pipeline completion.
 Full-featured pipeline exercising stylesheets, goal gates, conditional branching, and human review.
 
 ```bash
-./makeatron -verbose examples/full_pipeline.dot
+./mammoth -verbose examples/full_pipeline.dot
 ```
 
 ### examples/plan_implement_review.dot
@@ -373,7 +373,7 @@ Full-featured pipeline exercising stylesheets, goal gates, conditional branching
 Plan-implement-review cycle with goal gates and conditional routing.
 
 ```bash
-./makeatron -verbose examples/plan_implement_review.dot
+./mammoth -verbose examples/plan_implement_review.dot
 ```
 
 ### examples/build_pong.dot
@@ -381,7 +381,7 @@ Plan-implement-review cycle with goal gates and conditional routing.
 Builds a complete Pong TUI game. Multi-phase: plan, scaffold, implement, compile, review, polish.
 
 ```bash
-./makeatron -verbose -retry standard -checkpoint-dir ./checkpoints examples/build_pong.dot
+./mammoth -verbose -retry standard -checkpoint-dir ./checkpoints examples/build_pong.dot
 ```
 
 ### examples/build_htmx_blog.dot
@@ -389,7 +389,7 @@ Builds a complete Pong TUI game. Multi-phase: plan, scaffold, implement, compile
 Builds an HTMX blog platform with Flask. Multi-phase with frontend and backend tracks.
 
 ```bash
-./makeatron -verbose -retry standard examples/build_htmx_blog.dot
+./mammoth -verbose -retry standard examples/build_htmx_blog.dot
 ```
 
 ## Checkpointing for Long Pipelines
@@ -397,7 +397,7 @@ Builds an HTMX blog platform with Flask. Multi-phase with frontend and backend t
 For pipelines that take a long time, enable checkpointing to recover from crashes:
 
 ```bash
-./makeatron -checkpoint-dir ./checkpoints -verbose examples/build_pong.dot
+./mammoth -checkpoint-dir ./checkpoints -verbose examples/build_pong.dot
 ```
 
 Checkpoints are saved after each node completes. If the process crashes, you can examine the checkpoint files:
@@ -423,17 +423,17 @@ export OPENAI_API_KEY="sk-..."
 vim my_pipeline.dot
 
 # 3. Validate
-./makeatron -validate my_pipeline.dot
+./mammoth -validate my_pipeline.dot
 
 # 4. Run with verbose output and checkpointing
-./makeatron -verbose \
+./mammoth -verbose \
   -retry standard \
   -checkpoint-dir ./checkpoints \
   -artifact-dir ./artifacts \
   my_pipeline.dot
 
 # 5. Or run via HTTP server for web-based human interaction
-./makeatron -server -port 2389 -verbose -retry standard
+./mammoth -server -port 2389 -verbose -retry standard
 ```
 
 ## Next Steps

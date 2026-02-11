@@ -1,6 +1,6 @@
 # Quickstart
 
-Get a makeatron pipeline running in under five minutes.
+Get a mammoth pipeline running in under five minutes.
 
 ## Prerequisites
 
@@ -19,29 +19,29 @@ Get a makeatron pipeline running in under five minutes.
 From source:
 
 ```bash
-go install github.com/2389-research/makeatron/cmd/makeatron@latest
+go install github.com/2389-research/mammoth/cmd/mammoth@latest
 ```
 
 Or clone and build locally:
 
 ```bash
-git clone https://github.com/2389-research/makeatron.git
-cd makeatron
-go build -o makeatron ./cmd/makeatron/
+git clone https://github.com/2389-research/mammoth.git
+cd mammoth
+go build -o mammoth ./cmd/mammoth/
 ```
 
 Verify the binary works:
 
 ```bash
-makeatron -version
+mammoth -version
 ```
 
 ## Run Your First Pipeline
 
-Makeatron ships with example pipelines in `examples/`. Start with the simplest one:
+Mammoth ships with example pipelines in `examples/`. Start with the simplest one:
 
 ```bash
-makeatron -verbose examples/simple.dot
+mammoth -verbose examples/simple.dot
 ```
 
 This runs a linear pipeline: **Start -> Run Tests -> Report -> Exit**.
@@ -76,7 +76,7 @@ Final status: success
 Check a pipeline for errors without running it:
 
 ```bash
-makeatron -validate examples/goal_gate.dot
+mammoth -validate examples/goal_gate.dot
 ```
 
 Output on success:
@@ -103,7 +103,7 @@ Some pipelines include human gate nodes (`shape=hexagon`) that pause and wait fo
 Run the human gate example directly:
 
 ```bash
-makeatron examples/human_gate.dot
+mammoth examples/human_gate.dot
 ```
 
 When the pipeline reaches the gate, it prompts you:
@@ -122,7 +122,7 @@ Type your choice (e.g. `A`) and press Enter. The pipeline continues along the se
 Start the server:
 
 ```bash
-makeatron -server -port 2389
+mammoth -server -port 2389
 ```
 
 Submit a pipeline:
@@ -157,7 +157,7 @@ curl http://localhost:2389/pipelines/<pipeline-id>
 The server exposes a REST API for submitting and managing pipelines:
 
 ```bash
-makeatron -server -port 2389 -verbose -retry standard
+mammoth -server -port 2389 -verbose -retry standard
 ```
 
 Key endpoints:

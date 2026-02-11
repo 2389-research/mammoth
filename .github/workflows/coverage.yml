@@ -1,4 +1,4 @@
-# ABOUTME: Coverage threshold workflow for makeatron - runs check-coverage.sh on push/PR.
+# ABOUTME: Coverage threshold workflow for mammoth - runs check-coverage.sh on push/PR.
 # ABOUTME: Fails the build if any package drops below its configured coverage threshold.
 
 name: Coverage

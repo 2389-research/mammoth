@@ -34,11 +34,11 @@ type LiveState struct {
 // ProgressLogger writes engine events to an append-only NDJSON file and maintains
 // a live.json snapshot reflecting current pipeline state.
 type ProgressLogger struct {
-	dir        string
-	file       *os.File
-	state      LiveState
-	mu         sync.Mutex
-	closed     bool
+	dir         string
+	file        *os.File
+	state       LiveState
+	mu          sync.Mutex
+	closed      bool
 	WriteErrors int // count of write errors encountered (for diagnostics)
 }
 

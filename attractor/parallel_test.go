@@ -677,6 +677,7 @@ func TestEngineParallelIntegration(t *testing.T) {
 	reg.Register(faninH)
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})

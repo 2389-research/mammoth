@@ -12,10 +12,10 @@ import (
 // steeringTestEnv is a real implementation of ExecutionEnvironment for steering tests.
 // It stores files in-memory and allows injecting command results for git operations.
 type steeringTestEnv struct {
-	files       map[string]string
-	workDir     string
-	platform    string
-	osVersion   string
+	files          map[string]string
+	workDir        string
+	platform       string
+	osVersion      string
 	commandResults map[string]*ExecResult
 }
 
@@ -86,9 +86,9 @@ func (e *steeringTestEnv) Glob(pattern, path string) ([]string, error) {
 
 func (e *steeringTestEnv) Initialize() error        { return nil }
 func (e *steeringTestEnv) Cleanup() error           { return nil }
-func (e *steeringTestEnv) WorkingDirectory() string  { return e.workDir }
-func (e *steeringTestEnv) Platform() string          { return e.platform }
-func (e *steeringTestEnv) OSVersion() string         { return e.osVersion }
+func (e *steeringTestEnv) WorkingDirectory() string { return e.workDir }
+func (e *steeringTestEnv) Platform() string         { return e.platform }
+func (e *steeringTestEnv) OSVersion() string        { return e.osVersion }
 
 // --- BuildGitContext Tests ---
 
@@ -223,10 +223,10 @@ func TestBuildToolDescriptions(t *testing.T) {
 
 func TestFilterProjectDocs_Anthropic(t *testing.T) {
 	docs := map[string]string{
-		"AGENTS.md":  "# Agent instructions",
-		"CLAUDE.md":  "# Claude-specific rules",
-		"GEMINI.md":  "# Gemini-specific rules",
-		"README.md":  "# Project readme",
+		"AGENTS.md":    "# Agent instructions",
+		"CLAUDE.md":    "# Claude-specific rules",
+		"GEMINI.md":    "# Gemini-specific rules",
+		"README.md":    "# Project readme",
 		".cursorrules": "cursor rules here",
 	}
 
@@ -283,10 +283,10 @@ func TestFilterProjectDocs_OpenAI(t *testing.T) {
 
 func TestFilterProjectDocs_Gemini(t *testing.T) {
 	docs := map[string]string{
-		"AGENTS.md":  "# Agent instructions",
-		"CLAUDE.md":  "# Claude-specific rules",
-		"GEMINI.md":  "# Gemini-specific rules",
-		"README.md":  "# Project readme",
+		"AGENTS.md":    "# Agent instructions",
+		"CLAUDE.md":    "# Claude-specific rules",
+		"GEMINI.md":    "# Gemini-specific rules",
+		"README.md":    "# Project readme",
 		".cursorrules": "cursor rules here",
 	}
 

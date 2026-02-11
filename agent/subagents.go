@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/2389-research/makeatron/llm"
+	"github.com/2389-research/mammoth/llm"
 	"github.com/google/uuid"
 )
 

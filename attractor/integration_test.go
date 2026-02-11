@@ -357,6 +357,7 @@ func TestIntegrationToolNode(t *testing.T) {
 	}`
 
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		DefaultRetry: RetryPolicyNone(),
 	})
 

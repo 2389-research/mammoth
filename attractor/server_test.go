@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -60,6 +62,7 @@ func newServerTestEngine() *Engine {
 	)
 	return NewEngine(EngineConfig{
 		Handlers:     reg,
+		Backend:      &fakeBackend{},
 		DefaultRetry: RetryPolicyNone(),
 	})
 }
@@ -203,6 +206,7 @@ func TestPostCancelPipeline(t *testing.T) {
 		&serverTestHandler{typeName: "exit"},
 	)
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -261,6 +265,7 @@ func TestGetPipelineContext(t *testing.T) {
 		&serverTestHandler{typeName: "exit"},
 	)
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -385,47 +390,60 @@ func TestPostPipelinesInvalidDOT(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	// Post invalid DOT source
+	// Post invalid DOT source — should be rejected immediately with 400
 	resp, err := http.Post(ts.URL+"/pipelines", "text/plain", strings.NewReader("this is not valid DOT"))
 	if err != nil {
 		t.Fatalf("POST /pipelines failed: %v", err)
 	}
 	defer resp.Body.Close()
 
-	// The server should still accept it (returns 202) -- the error shows up in status
-	// OR it could return a 400 if it validates eagerly. Let's check.
-	// Since Run() is async, the server accepts and starts; error appears in status.
-	if resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("expected 202 Accepted (async execution), got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for invalid DOT, got %d", resp.StatusCode)
 	}
 
-	var submitResult struct {
-		ID string `json:"id"`
+	var errResp struct {
+		Error string `json:"error"`
 	}
-	json.NewDecoder(resp.Body).Decode(&submitResult)
+	json.NewDecoder(resp.Body).Decode(&errResp)
 
-	// Wait for pipeline to fail
-	deadline := time.Now().Add(5 * time.Second)
-	var status PipelineStatus
-	for time.Now().Before(deadline) {
-		resp, err = http.Get(ts.URL + "/pipelines/" + submitResult.ID)
-		if err != nil {
-			t.Fatalf("GET /pipelines/{id} failed: %v", err)
-		}
-		json.NewDecoder(resp.Body).Decode(&status)
-		resp.Body.Close()
+	if errResp.Error == "" {
+		t.Error("expected error message for invalid DOT")
+	}
+	if !strings.Contains(errResp.Error, "parse") {
+		t.Errorf("expected error to mention 'parse', got %q", errResp.Error)
+	}
+}
 
-		if status.Status == "failed" || status.Status == "completed" {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
+// TestPostPipelinesNoStartNode tests that a graph without a start node (Mdiamond)
+// is rejected at submission time with a validation error.
+func TestPostPipelinesNoStartNode(t *testing.T) {
+	engine := newServerTestEngine()
+	srv := NewPipelineServer(engine)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Valid DOT syntax but no start node (Mdiamond)
+	source := `digraph test { a -> b; b [shape=Msquare] }`
+	resp, err := http.Post(ts.URL+"/pipelines", "text/plain", strings.NewReader(source))
+	if err != nil {
+		t.Fatalf("POST /pipelines failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for missing start node, got %d", resp.StatusCode)
 	}
 
-	if status.Status != "failed" {
-		t.Errorf("expected status 'failed' for invalid DOT, got %q", status.Status)
+	var errResp struct {
+		Error string `json:"error"`
 	}
-	if status.Error == "" {
-		t.Error("expected error message for invalid DOT pipeline")
+	json.NewDecoder(resp.Body).Decode(&errResp)
+
+	if errResp.Error == "" {
+		t.Error("expected error message for missing start node")
+	}
+	if !strings.Contains(errResp.Error, "validation") {
+		t.Errorf("expected error to mention 'validation', got %q", errResp.Error)
 	}
 }
 
@@ -464,6 +482,7 @@ func TestGetPipelineQuestions(t *testing.T) {
 		&serverTestHandler{typeName: "exit"},
 	)
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -553,6 +572,7 @@ func TestPostAnswerToQuestion(t *testing.T) {
 		&serverTestHandler{typeName: "exit"},
 	)
 	engine := NewEngine(EngineConfig{
+		Backend:      &fakeBackend{},
 		Handlers:     reg,
 		DefaultRetry: RetryPolicyNone(),
 	})
@@ -1425,5 +1445,84 @@ func TestGetPipelineGraphNoFuncsConfigured(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), "digraph") {
 		t.Errorf("expected DOT content with digraph, got:\n%s", string(body))
+	}
+}
+
+func TestPipelineCreatesRunDirWithPipelineID(t *testing.T) {
+	artifactsBase := t.TempDir()
+
+	reg := buildServerTestRegistry(
+		&serverTestHandler{typeName: "start"},
+		&serverTestHandler{typeName: "codergen"},
+		&serverTestHandler{typeName: "exit"},
+	)
+	engine := NewEngine(EngineConfig{
+		Backend:          &fakeBackend{},
+		Handlers:         reg,
+		DefaultRetry:     RetryPolicyNone(),
+		ArtifactsBaseDir: artifactsBase,
+	})
+
+	srv := NewPipelineServer(engine)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Submit a pipeline
+	resp, err := http.Post(ts.URL+"/pipelines", "text/plain", strings.NewReader(simpleDOTSource()))
+	if err != nil {
+		t.Fatalf("POST /pipelines failed: %v", err)
+	}
+	var result struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	resp.Body.Close()
+
+	if result.ID == "" {
+		t.Fatal("expected non-empty pipeline ID")
+	}
+
+	// Wait for pipeline to complete
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err = http.Get(ts.URL + "/pipelines/" + result.ID)
+		if err != nil {
+			break
+		}
+		var status PipelineStatus
+		json.NewDecoder(resp.Body).Decode(&status)
+		resp.Body.Close()
+		if status.Status == "completed" || status.Status == "failed" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Verify the run directory was created under artifactsBase/<pipelineID>
+	runDir := filepath.Join(artifactsBase, result.ID)
+	info, err := os.Stat(runDir)
+	if err != nil {
+		t.Fatalf("expected run directory %q to exist: %v", runDir, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("expected %q to be a directory", runDir)
+	}
+
+	// Verify nodes subdirectory exists
+	nodesDir := filepath.Join(runDir, "nodes")
+	info, err = os.Stat(nodesDir)
+	if err != nil {
+		t.Fatalf("expected nodes dir %q to exist: %v", nodesDir, err)
+	}
+	if !info.IsDir() {
+		t.Fatal("expected nodes dir to be a directory")
+	}
+
+	// Verify the PipelineRun has the artifact dir set
+	srv.mu.RLock()
+	run := srv.pipelines[result.ID]
+	srv.mu.RUnlock()
+	if run.ArtifactDir != runDir {
+		t.Errorf("expected run.ArtifactDir=%q, got %q", runDir, run.ArtifactDir)
 	}
 }

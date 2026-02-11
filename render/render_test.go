@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/2389-research/makeatron/attractor"
+	"github.com/2389-research/mammoth/attractor"
 )
 
 // buildTestGraph constructs a simple graph for testing DOT serialization.

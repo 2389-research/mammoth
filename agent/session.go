@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/2389-research/makeatron/llm"
+	"github.com/2389-research/mammoth/llm"
 	"github.com/google/uuid"
 )
 
@@ -70,7 +70,7 @@ type UserTurn struct {
 	Timestamp time.Time
 }
 
-func (t UserTurn) TurnType() string        { return "user" }
+func (t UserTurn) TurnType() string         { return "user" }
 func (t UserTurn) TurnTimestamp() time.Time { return t.Timestamp }
 
 // AssistantTurn represents the model's response, optionally including tool calls.
@@ -83,7 +83,7 @@ type AssistantTurn struct {
 	Timestamp  time.Time
 }
 
-func (t AssistantTurn) TurnType() string        { return "assistant" }
+func (t AssistantTurn) TurnType() string         { return "assistant" }
 func (t AssistantTurn) TurnTimestamp() time.Time { return t.Timestamp }
 
 // ToolResultsTurn holds results from executing one or more tool calls.
@@ -92,7 +92,7 @@ type ToolResultsTurn struct {
 	Timestamp time.Time
 }
 
-func (t ToolResultsTurn) TurnType() string        { return "tool_results" }
+func (t ToolResultsTurn) TurnType() string         { return "tool_results" }
 func (t ToolResultsTurn) TurnTimestamp() time.Time { return t.Timestamp }
 
 // SystemTurn represents a system-level message in the conversation.
@@ -101,7 +101,7 @@ type SystemTurn struct {
 	Timestamp time.Time
 }
 
-func (t SystemTurn) TurnType() string        { return "system" }
+func (t SystemTurn) TurnType() string         { return "system" }
 func (t SystemTurn) TurnTimestamp() time.Time { return t.Timestamp }
 
 // SteeringTurn represents an injected steering message from the host application.
@@ -110,7 +110,7 @@ type SteeringTurn struct {
 	Timestamp time.Time
 }
 
-func (t SteeringTurn) TurnType() string        { return "steering" }
+func (t SteeringTurn) TurnType() string         { return "steering" }
 func (t SteeringTurn) TurnTimestamp() time.Time { return t.Timestamp }
 
 // Session is the central orchestrator for the coding agent loop.

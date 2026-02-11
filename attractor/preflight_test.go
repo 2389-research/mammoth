@@ -386,9 +386,9 @@ func TestHasCodergenNodes(t *testing.T) {
 			name: "component is parallel not codergen",
 			graph: &Graph{
 				Nodes: map[string]*Node{
-					"start":   {ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}},
-					"par":     {ID: "par", Attrs: map[string]string{"shape": "component"}},
-					"end":     {ID: "end", Attrs: map[string]string{"shape": "Msquare"}},
+					"start": {ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}},
+					"par":   {ID: "par", Attrs: map[string]string{"shape": "component"}},
+					"end":   {ID: "end", Attrs: map[string]string{"shape": "Msquare"}},
 				},
 			},
 			want: false,

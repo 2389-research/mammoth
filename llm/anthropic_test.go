@@ -62,9 +62,9 @@ func TestAnthropicRequestTranslation(t *testing.T) {
 		Messages: []Message{
 			UserMessage("Hello"),
 		},
-		Temperature: &temp,
-		TopP:        &topP,
-		MaxTokens:   IntPtr(1000),
+		Temperature:   &temp,
+		TopP:          &topP,
+		MaxTokens:     IntPtr(1000),
 		StopSequences: []string{"STOP"},
 	}
 

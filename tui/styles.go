@@ -29,6 +29,11 @@ var (
 	LogSuccessStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	LogRetryStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 
+	// Agent event colors
+	LogAgentToolStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))
+	LogAgentTurnStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("117"))
+	LogAgentSteeringStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("180"))
+
 	// Status bar
 	StatusBarStyle = lipgloss.NewStyle().
 			Background(lipgloss.Color("236")).
