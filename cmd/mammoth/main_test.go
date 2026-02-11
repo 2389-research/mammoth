@@ -86,6 +86,36 @@ func TestParseFlagsDefaults(t *testing.T) {
 	if cfg.pipelineFile != "pipeline.dot" {
 		t.Errorf("expected pipelineFile=pipeline.dot, got %q", cfg.pipelineFile)
 	}
+	if cfg.fresh {
+		t.Error("expected fresh=false by default")
+	}
+}
+
+func TestParseFlagsFresh(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"mammoth", "-fresh", "pipeline.dot"}
+	cfg := parseFlags()
+
+	if !cfg.fresh {
+		t.Error("expected fresh=true with -fresh flag")
+	}
+	if cfg.pipelineFile != "pipeline.dot" {
+		t.Errorf("expected pipelineFile=pipeline.dot, got %q", cfg.pipelineFile)
+	}
+}
+
+func TestParseFlagsFreshDefaultFalse(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"mammoth", "pipeline.dot"}
+	cfg := parseFlags()
+
+	if cfg.fresh {
+		t.Error("expected fresh=false by default")
+	}
 }
 
 func TestParseFlagsServer(t *testing.T) {
@@ -681,5 +711,119 @@ func TestBuildPipelineServerGraphEndpointReturnsDOT(t *testing.T) {
 	body := graphRec.Body.String()
 	if !strings.Contains(body, "digraph") {
 		t.Errorf("expected DOT output from graph endpoint, got: %s", body)
+	}
+}
+
+// --- Auto-resume tests ---
+
+func TestRunPipelineCreatesAutoCheckpoint(t *testing.T) {
+	dotFile := writeTempDOT(t, validDOT)
+	dataDir := t.TempDir()
+
+	cfg := config{
+		pipelineFile: dotFile,
+		retryPolicy:  "none",
+		dataDir:      dataDir,
+	}
+	exitCode := runPipeline(cfg)
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+
+	// Verify a checkpoint.json was created in some run dir
+	runsDir := dataDir + "/runs"
+	entries, err := os.ReadDir(runsDir)
+	if err != nil {
+		t.Fatalf("failed to read runs dir: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one run directory")
+	}
+
+	found := false
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		cpPath := runsDir + "/" + entry.Name() + "/checkpoint.json"
+		if _, err := os.Stat(cpPath); err == nil {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected checkpoint.json in run directory for auto-resume")
+	}
+}
+
+func TestRunPipelineStoresSourceHash(t *testing.T) {
+	dotFile := writeTempDOT(t, validDOT)
+	dataDir := t.TempDir()
+
+	cfg := config{
+		pipelineFile: dotFile,
+		retryPolicy:  "none",
+		dataDir:      dataDir,
+	}
+	exitCode := runPipeline(cfg)
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+
+	// Read the run state and verify it has a source hash
+	runsDir := dataDir + "/runs"
+	store, err := attractor.NewFSRunStateStore(runsDir)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	runs, err := store.List()
+	if err != nil {
+		t.Fatalf("failed to list runs: %v", err)
+	}
+	if len(runs) == 0 {
+		t.Fatal("expected at least one run")
+	}
+
+	expectedHash := attractor.SourceHash(validDOT)
+	if runs[0].SourceHash != expectedHash {
+		t.Errorf("SourceHash mismatch: got %q, want %q", runs[0].SourceHash, expectedHash)
+	}
+}
+
+func TestRunPipelineFreshSkipsResume(t *testing.T) {
+	dotFile := writeTempDOT(t, validDOT)
+	dataDir := t.TempDir()
+
+	// Run once to create a stored run
+	cfg := config{
+		pipelineFile: dotFile,
+		retryPolicy:  "none",
+		dataDir:      dataDir,
+	}
+	exitCode := runPipeline(cfg)
+	if exitCode != 0 {
+		t.Fatalf("first run: expected exit code 0, got %d", exitCode)
+	}
+
+	// Run again with --fresh flag — should create a new run, not resume
+	cfg.fresh = true
+	exitCode = runPipeline(cfg)
+	if exitCode != 0 {
+		t.Fatalf("second run with --fresh: expected exit code 0, got %d", exitCode)
+	}
+
+	// Should have two run directories now
+	runsDir := dataDir + "/runs"
+	store, err := attractor.NewFSRunStateStore(runsDir)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	runs, err := store.List()
+	if err != nil {
+		t.Fatalf("failed to list runs: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Errorf("expected 2 runs (fresh created a new one), got %d", len(runs))
 	}
 }

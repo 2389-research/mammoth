@@ -60,6 +60,15 @@ func WaitForHumanGateCmd(requestCh <-chan gateRequest) tea.Cmd {
 	}
 }
 
+// ResumeFromCheckpointCmd returns a tea.Cmd that resumes engine execution from a checkpoint.
+// When the pipeline completes (or fails), it sends a PipelineResultMsg.
+func ResumeFromCheckpointCmd(ctx context.Context, engine *attractor.Engine, graph *attractor.Graph, checkpointPath string) tea.Cmd {
+	return func() tea.Msg {
+		result, err := engine.ResumeFromCheckpoint(ctx, graph, checkpointPath)
+		return PipelineResultMsg{Result: result, Err: err}
+	}
+}
+
 // TickCmd returns a tea.Cmd that sends a TickMsg after the given interval.
 // Used for spinner animation and periodic UI refreshes.
 func TickCmd(interval time.Duration) tea.Cmd {

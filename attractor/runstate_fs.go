@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ type runManifest struct {
 	ID             string   `json:"id"`
 	PipelineFile   string   `json:"pipeline_file"`
 	Status         string   `json:"status"`
+	SourceHash     string   `json:"source_hash,omitempty"`
 	StartedAt      string   `json:"started_at"`
 	CompletedAt    *string  `json:"completed_at,omitempty"`
 	CurrentNode    string   `json:"current_node"`
@@ -137,6 +139,7 @@ func (s *FSRunStateStore) getUnlocked(id string) (*RunState, error) {
 		PipelineFile:   manifest.PipelineFile,
 		Status:         manifest.Status,
 		Source:         source,
+		SourceHash:     manifest.SourceHash,
 		CurrentNode:    manifest.CurrentNode,
 		CompletedNodes: manifest.CompletedNodes,
 		Context:        ctx,
@@ -213,6 +216,72 @@ func (s *FSRunStateStore) List() ([]*RunState, error) {
 	return results, nil
 }
 
+// FindResumable returns the most recent non-completed run whose SourceHash
+// matches the given hash AND has a checkpoint.json file in its run directory.
+// Returns nil if no matching run is found.
+func (s *FSRunStateStore) FindResumable(sourceHash string) (*RunState, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	entries, err := os.ReadDir(s.baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("read base dir: %w", err)
+	}
+
+	type candidate struct {
+		state     *RunState
+		startedAt time.Time
+	}
+	var candidates []candidate
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		state, err := s.getUnlocked(entry.Name())
+		if err != nil {
+			continue
+		}
+
+		// Must match hash, not be completed, and have a checkpoint
+		if state.SourceHash != sourceHash {
+			continue
+		}
+		if state.Status == "completed" {
+			continue
+		}
+
+		cpPath := filepath.Join(s.baseDir, state.ID, "checkpoint.json")
+		if _, err := os.Stat(cpPath); os.IsNotExist(err) {
+			continue
+		}
+
+		candidates = append(candidates, candidate{state: state, startedAt: state.StartedAt})
+	}
+
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	// Sort by StartedAt descending (most recent first)
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].startedAt.After(candidates[j].startedAt)
+	})
+
+	return candidates[0].state, nil
+}
+
+// CheckpointPath returns the path to the checkpoint.json file for a given run ID.
+func (s *FSRunStateStore) CheckpointPath(runID string) string {
+	return filepath.Join(s.baseDir, runID, "checkpoint.json")
+}
+
+// RunDir returns the base directory path for a given run ID.
+func (s *FSRunStateStore) RunDir(runID string) string {
+	return filepath.Join(s.baseDir, runID)
+}
+
 // AddEvent appends an EngineEvent to the run's events.jsonl file.
 // Returns an error if the run does not exist.
 func (s *FSRunStateStore) AddEvent(id string, event EngineEvent) error {
@@ -249,6 +318,7 @@ func (s *FSRunStateStore) writeManifest(runDir string, state *RunState) error {
 		ID:             state.ID,
 		PipelineFile:   state.PipelineFile,
 		Status:         state.Status,
+		SourceHash:     state.SourceHash,
 		StartedAt:      state.StartedAt.Format(timeFormat),
 		CurrentNode:    state.CurrentNode,
 		CompletedNodes: state.CompletedNodes,

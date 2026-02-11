@@ -46,18 +46,19 @@ type EngineEvent struct {
 
 // EngineConfig holds configuration for the pipeline execution engine.
 type EngineConfig struct {
-	CheckpointDir    string            // directory for checkpoint files (empty = no checkpoints)
-	ArtifactDir      string            // directory for artifact storage (empty = use ArtifactsBaseDir/<RunID>)
-	ArtifactsBaseDir string            // base directory for run directories (default = "./artifacts")
-	RunID            string            // run identifier for the artifact subdirectory (empty = auto-generated)
-	Transforms       []Transform       // transforms to apply (nil = DefaultTransforms)
-	ExtraLintRules   []LintRule        // additional validation rules
-	DefaultRetry     RetryPolicy       // default retry policy for nodes
-	Handlers         *HandlerRegistry  // nil = DefaultHandlerRegistry
-	EventHandler     func(EngineEvent) // optional event callback
-	Backend          CodergenBackend   // backend for codergen nodes (nil = stub behavior)
-	BaseURL          string            // default API base URL for codergen nodes (overridable per-node)
-	RestartConfig    *RestartConfig    // loop restart configuration (nil = DefaultRestartConfig)
+	CheckpointDir      string            // directory for checkpoint files (empty = no checkpoints)
+	AutoCheckpointPath string            // path to overwrite with latest checkpoint after each node (empty = disabled)
+	ArtifactDir        string            // directory for artifact storage (empty = use ArtifactsBaseDir/<RunID>)
+	ArtifactsBaseDir   string            // base directory for run directories (default = "./artifacts")
+	RunID              string            // run identifier for the artifact subdirectory (empty = auto-generated)
+	Transforms         []Transform       // transforms to apply (nil = DefaultTransforms)
+	ExtraLintRules     []LintRule        // additional validation rules
+	DefaultRetry       RetryPolicy       // default retry policy for nodes
+	Handlers           *HandlerRegistry  // nil = DefaultHandlerRegistry
+	EventHandler       func(EngineEvent) // optional event callback
+	Backend            CodergenBackend   // backend for codergen nodes (nil = stub behavior)
+	BaseURL            string            // default API base URL for codergen nodes (overridable per-node)
+	RestartConfig      *RestartConfig    // loop restart configuration (nil = DefaultRestartConfig)
 }
 
 // NodeHandlerUnwrapper allows handler wrappers to expose their inner handler.
@@ -547,6 +548,16 @@ func (e *Engine) executeGraph(
 				pctx.AppendLog(fmt.Sprintf("warning: failed to save checkpoint: %v", saveErr))
 			} else {
 				e.emitEvent(EngineEvent{Type: EventCheckpointSaved, NodeID: node.ID})
+			}
+		}
+
+		// Step 5b: Save auto-checkpoint (single overwriting file for auto-resume)
+		// Only save on success so the checkpoint represents the last known good state.
+		// On resume, the engine will re-execute from the node after the checkpoint.
+		if e.config.AutoCheckpointPath != "" && (outcome.Status == StatusSuccess || outcome.Status == StatusPartialSuccess) {
+			cp := NewCheckpoint(pctx, node.ID, completedNodes, nodeRetries)
+			if saveErr := cp.Save(e.config.AutoCheckpointPath); saveErr != nil {
+				pctx.AppendLog(fmt.Sprintf("warning: failed to save auto-checkpoint: %v", saveErr))
 			}
 		}
 

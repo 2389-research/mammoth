@@ -507,6 +507,73 @@ func TestEngineRunGraphCheckpointSaving(t *testing.T) {
 	}
 }
 
+func TestEngineAutoCheckpointPathSavesOverwriting(t *testing.T) {
+	g := buildLinearGraph()
+	cpDir := t.TempDir()
+	cpPath := filepath.Join(cpDir, "checkpoint.json")
+
+	startH := newSuccessHandler("start")
+	codergenH := newSuccessHandler("codergen")
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, codergenH, exitH)
+
+	engine := NewEngine(EngineConfig{
+		Handlers:           reg,
+		Backend:            testBackend(),
+		DefaultRetry:       RetryPolicyNone(),
+		AutoCheckpointPath: cpPath,
+	})
+
+	_, err := engine.RunGraph(context.Background(), g)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The auto-checkpoint should exist as a single file (overwritten)
+	cp, err := LoadCheckpoint(cpPath)
+	if err != nil {
+		t.Fatalf("failed to load auto-checkpoint: %v", err)
+	}
+	if cp.CurrentNode == "" {
+		t.Error("auto-checkpoint has empty current node")
+	}
+
+	// Should be the last non-terminal node that completed
+	if len(cp.CompletedNodes) == 0 {
+		t.Error("auto-checkpoint has no completed nodes")
+	}
+}
+
+func TestEngineAutoCheckpointPathIndependentOfCheckpointDir(t *testing.T) {
+	g := buildLinearGraph()
+
+	autoCpDir := t.TempDir()
+	autoCpPath := filepath.Join(autoCpDir, "checkpoint.json")
+
+	startH := newSuccessHandler("start")
+	codergenH := newSuccessHandler("codergen")
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, codergenH, exitH)
+
+	engine := NewEngine(EngineConfig{
+		Handlers:           reg,
+		Backend:            testBackend(),
+		DefaultRetry:       RetryPolicyNone(),
+		AutoCheckpointPath: autoCpPath,
+		// No CheckpointDir set
+	})
+
+	_, err := engine.RunGraph(context.Background(), g)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Auto-checkpoint should exist even without CheckpointDir
+	if _, err := os.Stat(autoCpPath); err != nil {
+		t.Errorf("auto-checkpoint file should exist: %v", err)
+	}
+}
+
 func TestEngineRunGraphNoStartNode(t *testing.T) {
 	g := &Graph{
 		Name:         "no_start",

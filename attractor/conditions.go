@@ -34,7 +34,7 @@ func evaluateClause(clause string, outcome *Outcome, ctx *Context) bool {
 		key := strings.TrimSpace(clause[:idx])
 		literal := strings.TrimSpace(clause[idx+2:])
 		resolved := resolveKey(key, outcome, ctx)
-		return resolved != literal
+		return !strings.EqualFold(resolved, literal)
 	}
 
 	// Try =
@@ -42,7 +42,7 @@ func evaluateClause(clause string, outcome *Outcome, ctx *Context) bool {
 		key := strings.TrimSpace(clause[:idx])
 		literal := strings.TrimSpace(clause[idx+1:])
 		resolved := resolveKey(key, outcome, ctx)
-		return resolved == literal
+		return strings.EqualFold(resolved, literal)
 	}
 
 	// No operator found -- clause is malformed, treat as false

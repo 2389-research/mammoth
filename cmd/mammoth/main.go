@@ -29,6 +29,7 @@ type config struct {
 	port          int
 	validateOnly  bool
 	tuiMode       bool
+	fresh         bool
 	checkpointDir string
 	artifactDir   string
 	dataDir       string
@@ -66,6 +67,7 @@ func parseFlags() config {
 	fs.StringVar(&cfg.retryPolicy, "retry", "none", "Default retry policy: none, standard, aggressive, linear, patient")
 	fs.StringVar(&cfg.baseURL, "base-url", "", "Custom API base URL for the LLM provider")
 	fs.BoolVar(&cfg.tuiMode, "tui", false, "Run with interactive terminal UI")
+	fs.BoolVar(&cfg.fresh, "fresh", false, "Force a fresh run, skip auto-resume")
 	fs.BoolVar(&cfg.verbose, "verbose", false, "Verbose output")
 	fs.BoolVar(&cfg.showVersion, "version", false, "Print version and exit")
 
@@ -118,13 +120,31 @@ func run(cfg config) int {
 	return runPipeline(cfg)
 }
 
-// runPipeline reads a DOT file and executes the pipeline through the engine.
+// runPipeline reads a DOT file and executes the pipeline. When a TTY is
+// available, it uses an inline Bubble Tea progress display. Otherwise it
+// falls back to direct execution with optional verbose event logging.
+//
+// Supports auto-resume: if the same DOT file was previously run and failed,
+// the pipeline automatically resumes from the last checkpoint. Use -fresh
+// to force a new run.
 func runPipeline(cfg config) int {
 	source, err := os.ReadFile(cfg.pipelineFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
+
+	// Parse the graph so we can display the node list in the inline TUI.
+	graph, err := attractor.Parse(string(source))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+	transforms := attractor.DefaultTransforms()
+	graph = attractor.ApplyTransforms(graph, transforms...)
+
+	// Compute content hash for auto-resume matching
+	sourceHash := attractor.SourceHash(string(source))
 
 	// Resolve data directory for persistent state
 	dataDir, err := resolveDataDir(cfg.dataDir)
@@ -142,52 +162,151 @@ func runPipeline(cfg config) int {
 		}
 	}
 
-	// Generate a run ID for tracking
-	runID, err := attractor.GenerateRunID()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return 1
+	// Auto-resume: check for a previous failed/interrupted run with the same source hash
+	if store != nil && !cfg.fresh {
+		resumeState, findErr := store.FindResumable(sourceHash)
+		if findErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not check for resumable runs: %v\n", findErr)
+		}
+		if resumeState != nil {
+			return runPipelineResume(cfg, graph, store, resumeState, string(source), sourceHash)
+		}
 	}
+
+	return runPipelineFresh(cfg, graph, store, string(source), sourceHash)
+}
+
+// runPipelineResume resumes a previously failed/interrupted pipeline run from its checkpoint.
+func runPipelineResume(
+	cfg config,
+	graph *attractor.Graph,
+	store *attractor.FSRunStateStore,
+	resumeState *attractor.RunState,
+	source string,
+	sourceHash string,
+) int {
+	cpPath := store.CheckpointPath(resumeState.ID)
 
 	engineCfg := attractor.EngineConfig{
-		CheckpointDir: cfg.checkpointDir,
-		ArtifactDir:   cfg.artifactDir,
-		DefaultRetry:  retryPolicyFromName(cfg.retryPolicy),
-		Handlers:      attractor.DefaultHandlerRegistry(),
-		Backend:       detectBackend(cfg.verbose),
-		BaseURL:       cfg.baseURL,
-		RunID:         runID,
-	}
-
-	if cfg.verbose {
-		engineCfg.EventHandler = verboseEventHandler
+		CheckpointDir:      cfg.checkpointDir,
+		AutoCheckpointPath: cpPath,
+		ArtifactDir:        cfg.artifactDir,
+		DefaultRetry:       retryPolicyFromName(cfg.retryPolicy),
+		Handlers:           attractor.DefaultHandlerRegistry(),
+		Backend:            detectBackend(cfg.verbose),
+		BaseURL:            cfg.baseURL,
+		RunID:              resumeState.ID,
 	}
 
 	engine := attractor.NewEngine(engineCfg)
 
-	// Wire CLI interviewer for human gate nodes
-	wireInterviewer(engine)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// Persist initial run state
-	startTime := time.Now()
-	if store != nil {
-		initialState := &attractor.RunState{
-			ID:             runID,
-			PipelineFile:   cfg.pipelineFile,
-			Status:         "running",
-			Source:         string(source),
-			StartedAt:      startTime,
-			CompletedNodes: []string{},
-			Context:        map[string]any{},
-			Events:         []attractor.EngineEvent{},
-		}
-		if err := store.Create(initialState); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not persist initial state: %v\n", err)
-		}
+	// Update the existing run state to "running"
+	resumeState.Status = "running"
+	if err := store.Update(resumeState); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not update run state: %v\n", err)
 	}
 
-	// Set up context with signal handling for graceful cancellation.
-	ctx, cancel := context.WithCancel(context.Background())
+	var result *attractor.RunResult
+	var runErr error
+
+	if isTerminal() {
+		result, runErr = runPipelineResumeWithStream(cfg, graph, engine, ctx, cpPath, resumeState)
+	} else {
+		result, runErr = runPipelineResumeDirect(cfg, engine, ctx, graph, cpPath)
+	}
+
+	// Persist final run state
+	now := time.Now()
+	resumeState.CompletedAt = &now
+	resumeState.SourceHash = sourceHash
+	if runErr != nil {
+		resumeState.Status = "failed"
+		resumeState.Error = runErr.Error()
+	} else {
+		resumeState.Status = "completed"
+		if result != nil {
+			resumeState.CompletedNodes = result.CompletedNodes
+			if result.Context != nil {
+				resumeState.Context = result.Context.Snapshot()
+			}
+		}
+	}
+	if err := store.Update(resumeState); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not persist final state: %v\n", err)
+	}
+
+	if runErr != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", runErr)
+		return 1
+	}
+
+	return 0
+}
+
+// runPipelineResumeWithStream resumes pipeline execution using the inline Bubble Tea display.
+func runPipelineResumeWithStream(
+	cfg config,
+	graph *attractor.Graph,
+	engine *attractor.Engine,
+	ctx context.Context,
+	cpPath string,
+	resumeState *attractor.RunState,
+) (*attractor.RunResult, error) {
+	// Load checkpoint to find which node we're resuming from
+	cp, err := attractor.LoadCheckpoint(cpPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load checkpoint: %w", err)
+	}
+
+	resumeInfo := &tui.ResumeInfo{
+		ResumedFrom:   cp.CurrentNode,
+		PreviousNodes: cp.CompletedNodes,
+	}
+
+	model := tui.NewStreamModel(graph, engine, cfg.pipelineFile, ctx, cfg.verbose, tui.WithResumeInfo(resumeInfo))
+
+	p := tea.NewProgram(model)
+
+	bridge := tui.NewEventBridge(p.Send)
+	engine.SetEventHandler(bridge.HandleEvent)
+
+	tui.WireHumanGate(engine, model.HumanGate())
+
+	// Replace the pipeline command with a resume command
+	model.SetResumeCmd(func() tea.Cmd {
+		return tui.ResumeFromCheckpointCmd(ctx, engine, graph, cpPath)
+	})
+
+	if _, err := p.Run(); err != nil {
+		return nil, err
+	}
+
+	select {
+	case pipelineResult := <-model.ResultCh():
+		return pipelineResult.Result, pipelineResult.Err
+	default:
+		return nil, context.Canceled
+	}
+}
+
+// runPipelineResumeDirect resumes pipeline execution with direct output (no TUI).
+func runPipelineResumeDirect(
+	cfg config,
+	engine *attractor.Engine,
+	ctx context.Context,
+	graph *attractor.Graph,
+	cpPath string,
+) (*attractor.RunResult, error) {
+	if cfg.verbose {
+		engine.SetEventHandler(verboseEventHandler)
+	}
+
+	wireInterviewer(engine)
+
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	sigChan := make(chan os.Signal, 1)
@@ -198,7 +317,90 @@ func runPipeline(cfg config) int {
 		cancel()
 	}()
 
-	result, runErr := engine.Run(ctx, string(source))
+	fmt.Fprintf(os.Stderr, "Resuming pipeline from checkpoint...\n")
+	result, runErr := engine.ResumeFromCheckpoint(ctx, graph, cpPath)
+	signal.Stop(sigChan)
+
+	if runErr != nil {
+		return result, runErr
+	}
+
+	fmt.Printf("Pipeline completed successfully (resumed).\n")
+	fmt.Printf("Completed nodes: %v\n", result.CompletedNodes)
+	if result.FinalOutcome != nil {
+		fmt.Printf("Final status: %s\n", result.FinalOutcome.Status)
+	}
+
+	return result, nil
+}
+
+// runPipelineFresh starts a new pipeline run with auto-checkpoint enabled.
+func runPipelineFresh(
+	cfg config,
+	graph *attractor.Graph,
+	store *attractor.FSRunStateStore,
+	source string,
+	sourceHash string,
+) int {
+	// Generate a run ID for tracking
+	runID, err := attractor.GenerateRunID()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+
+	// Determine auto-checkpoint path
+	var autoCheckpointPath string
+	if store != nil {
+		autoCheckpointPath = store.CheckpointPath(runID)
+	}
+
+	engineCfg := attractor.EngineConfig{
+		CheckpointDir:      cfg.checkpointDir,
+		AutoCheckpointPath: autoCheckpointPath,
+		ArtifactDir:        cfg.artifactDir,
+		DefaultRetry:       retryPolicyFromName(cfg.retryPolicy),
+		Handlers:           attractor.DefaultHandlerRegistry(),
+		Backend:            detectBackend(cfg.verbose),
+		BaseURL:            cfg.baseURL,
+		RunID:              runID,
+	}
+
+	engine := attractor.NewEngine(engineCfg)
+
+	// Create a cancellable context.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Persist initial run state
+	startTime := time.Now()
+	if store != nil {
+		initialState := &attractor.RunState{
+			ID:             runID,
+			PipelineFile:   cfg.pipelineFile,
+			Status:         "running",
+			Source:         source,
+			SourceHash:     sourceHash,
+			StartedAt:      startTime,
+			CompletedNodes: []string{},
+			Context:        map[string]any{},
+			Events:         []attractor.EngineEvent{},
+		}
+		if err := store.Create(initialState); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not persist initial state: %v\n", err)
+		}
+	}
+
+	// Choose between inline streaming TUI (interactive) and direct execution
+	// (non-interactive: tests, CI, piped output).
+	var result *attractor.RunResult
+	var runErr error
+
+	if isTerminal() {
+		result, runErr = runPipelineWithStream(cfg, graph, engine, ctx, source)
+	} else {
+		result, runErr = runPipelineDirect(cfg, engine, ctx, source)
+	}
 
 	// Persist final run state
 	if store != nil {
@@ -208,7 +410,8 @@ func runPipeline(cfg config) int {
 			PipelineFile: cfg.pipelineFile,
 			StartedAt:    startTime,
 			CompletedAt:  &now,
-			Source:       string(source),
+			Source:       source,
+			SourceHash:   sourceHash,
 			Context:      map[string]any{},
 			Events:       []attractor.EngineEvent{},
 		}
@@ -234,14 +437,91 @@ func runPipeline(cfg config) int {
 		return 1
 	}
 
-	// Print results to stdout.
+	return 0
+}
+
+// runPipelineWithStream executes the pipeline using the inline Bubble Tea
+// streaming progress display. Returns the pipeline result and error.
+func runPipelineWithStream(
+	cfg config,
+	graph *attractor.Graph,
+	engine *attractor.Engine,
+	ctx context.Context,
+	source string,
+) (*attractor.RunResult, error) {
+	model := tui.NewStreamModel(graph, engine, cfg.pipelineFile, ctx, cfg.verbose)
+
+	p := tea.NewProgram(model)
+
+	bridge := tui.NewEventBridge(p.Send)
+	engine.SetEventHandler(bridge.HandleEvent)
+
+	tui.WireHumanGate(engine, model.HumanGate())
+
+	if _, err := p.Run(); err != nil {
+		return nil, err
+	}
+
+	// Read the pipeline result from the model's channel.
+	select {
+	case pipelineResult := <-model.ResultCh():
+		return pipelineResult.Result, pipelineResult.Err
+	default:
+		return nil, context.Canceled
+	}
+}
+
+// runPipelineDirect executes the pipeline with simple signal handling and
+// optional verbose logging (used when no TTY is available).
+func runPipelineDirect(
+	cfg config,
+	engine *attractor.Engine,
+	ctx context.Context,
+	source string,
+) (*attractor.RunResult, error) {
+	if cfg.verbose {
+		engine.SetEventHandler(verboseEventHandler)
+	}
+
+	// Wire CLI interviewer for human gate nodes
+	wireInterviewer(engine)
+
+	// Set up signal handling for graceful cancellation.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Fprintln(os.Stderr, "\nInterrupted, shutting down...")
+		cancel()
+	}()
+
+	result, runErr := engine.Run(ctx, source)
+	signal.Stop(sigChan)
+
+	if runErr != nil {
+		return result, runErr
+	}
+
 	fmt.Printf("Pipeline completed successfully.\n")
 	fmt.Printf("Completed nodes: %v\n", result.CompletedNodes)
 	if result.FinalOutcome != nil {
 		fmt.Printf("Final status: %s\n", result.FinalOutcome.Status)
 	}
 
-	return 0
+	return result, nil
+}
+
+// isTerminal returns true if stdout is connected to a terminal (TTY).
+// Returns false in tests, CI, or when output is piped.
+func isTerminal() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
 }
 
 // runPipelineWithTUI reads a DOT file and executes the pipeline through the

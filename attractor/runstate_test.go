@@ -638,3 +638,244 @@ func TestRunStateSourceOmittedWhenEmpty(t *testing.T) {
 		t.Errorf("expected empty Source, got %q", got.Source)
 	}
 }
+
+// --- SourceHash persistence tests ---
+
+func TestRunStateSourceHashPersistedInManifest(t *testing.T) {
+	store := newTestStore(t)
+	state := newTestRunState(t)
+	state.Source = `digraph test { start -> finish }`
+	state.SourceHash = SourceHash(state.Source)
+
+	if err := store.Create(state); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	got, err := store.Get(state.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+
+	if got.SourceHash != state.SourceHash {
+		t.Errorf("SourceHash mismatch: got %q, want %q", got.SourceHash, state.SourceHash)
+	}
+}
+
+func TestRunStateSourceHashEmptyWhenNotSet(t *testing.T) {
+	store := newTestStore(t)
+	state := newTestRunState(t)
+
+	if err := store.Create(state); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	got, err := store.Get(state.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+
+	if got.SourceHash != "" {
+		t.Errorf("expected empty SourceHash, got %q", got.SourceHash)
+	}
+}
+
+func TestRunStateSourceHashPreservedOnUpdate(t *testing.T) {
+	store := newTestStore(t)
+	state := newTestRunState(t)
+	state.SourceHash = "abc123def456"
+
+	if err := store.Create(state); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	state.Status = "completed"
+	if err := store.Update(state); err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	got, err := store.Get(state.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+
+	if got.SourceHash != "abc123def456" {
+		t.Errorf("SourceHash mismatch after update: got %q, want %q", got.SourceHash, "abc123def456")
+	}
+}
+
+// --- FindResumable tests ---
+
+func TestFindResumableReturnsNilWhenNoRuns(t *testing.T) {
+	store := newTestStore(t)
+
+	got, err := store.FindResumable("somehash")
+	if err != nil {
+		t.Fatalf("FindResumable failed: %v", err)
+	}
+	if got != nil {
+		t.Error("expected nil for empty store")
+	}
+}
+
+func TestFindResumableMatchesSourceHash(t *testing.T) {
+	store := newTestStore(t)
+
+	// Create a failed run with a checkpoint
+	state := newTestRunState(t)
+	state.Status = "failed"
+	state.SourceHash = "matchinghash"
+
+	if err := store.Create(state); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	// Write a checkpoint.json file in the run dir
+	cpPath := filepath.Join(store.baseDir, state.ID, "checkpoint.json")
+	if err := os.WriteFile(cpPath, []byte(`{"current_node":"build"}`), 0644); err != nil {
+		t.Fatalf("write checkpoint failed: %v", err)
+	}
+
+	got, err := store.FindResumable("matchinghash")
+	if err != nil {
+		t.Fatalf("FindResumable failed: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected a resumable run, got nil")
+	}
+	if got.ID != state.ID {
+		t.Errorf("ID mismatch: got %q, want %q", got.ID, state.ID)
+	}
+}
+
+func TestFindResumableIgnoresCompletedRuns(t *testing.T) {
+	store := newTestStore(t)
+
+	state := newTestRunState(t)
+	state.Status = "completed"
+	state.SourceHash = "somehash"
+
+	if err := store.Create(state); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	cpPath := filepath.Join(store.baseDir, state.ID, "checkpoint.json")
+	if err := os.WriteFile(cpPath, []byte(`{"current_node":"done"}`), 0644); err != nil {
+		t.Fatalf("write checkpoint failed: %v", err)
+	}
+
+	got, err := store.FindResumable("somehash")
+	if err != nil {
+		t.Fatalf("FindResumable failed: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for completed run, got ID=%q", got.ID)
+	}
+}
+
+func TestFindResumableIgnoresRunsWithoutCheckpoint(t *testing.T) {
+	store := newTestStore(t)
+
+	state := newTestRunState(t)
+	state.Status = "failed"
+	state.SourceHash = "somehash"
+
+	if err := store.Create(state); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	// No checkpoint.json written
+
+	got, err := store.FindResumable("somehash")
+	if err != nil {
+		t.Fatalf("FindResumable failed: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for run without checkpoint, got ID=%q", got.ID)
+	}
+}
+
+func TestFindResumableIgnoresDifferentHash(t *testing.T) {
+	store := newTestStore(t)
+
+	state := newTestRunState(t)
+	state.Status = "failed"
+	state.SourceHash = "hash_alpha"
+
+	if err := store.Create(state); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	cpPath := filepath.Join(store.baseDir, state.ID, "checkpoint.json")
+	if err := os.WriteFile(cpPath, []byte(`{"current_node":"build"}`), 0644); err != nil {
+		t.Fatalf("write checkpoint failed: %v", err)
+	}
+
+	got, err := store.FindResumable("hash_beta")
+	if err != nil {
+		t.Fatalf("FindResumable failed: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for different hash, got ID=%q", got.ID)
+	}
+}
+
+func TestFindResumableReturnsMostRecent(t *testing.T) {
+	store := newTestStore(t)
+
+	// Create two failed runs with same hash, different timestamps
+	older := newTestRunState(t)
+	older.Status = "failed"
+	older.SourceHash = "samehash"
+	older.StartedAt = time.Now().Add(-10 * time.Minute)
+
+	newer := newTestRunState(t)
+	newer.Status = "failed"
+	newer.SourceHash = "samehash"
+	newer.StartedAt = time.Now().Add(-1 * time.Minute)
+
+	for _, s := range []*RunState{older, newer} {
+		if err := store.Create(s); err != nil {
+			t.Fatalf("Create failed: %v", err)
+		}
+		cpPath := filepath.Join(store.baseDir, s.ID, "checkpoint.json")
+		if err := os.WriteFile(cpPath, []byte(`{"current_node":"build"}`), 0644); err != nil {
+			t.Fatalf("write checkpoint failed: %v", err)
+		}
+	}
+
+	got, err := store.FindResumable("samehash")
+	if err != nil {
+		t.Fatalf("FindResumable failed: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected a resumable run, got nil")
+	}
+	if got.ID != newer.ID {
+		t.Errorf("expected most recent run %q, got %q", newer.ID, got.ID)
+	}
+}
+
+func TestFindResumableMatchesRunningStatus(t *testing.T) {
+	store := newTestStore(t)
+
+	state := newTestRunState(t)
+	state.Status = "running"
+	state.SourceHash = "runninghash"
+
+	if err := store.Create(state); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	cpPath := filepath.Join(store.baseDir, state.ID, "checkpoint.json")
+	if err := os.WriteFile(cpPath, []byte(`{"current_node":"build"}`), 0644); err != nil {
+		t.Fatalf("write checkpoint failed: %v", err)
+	}
+
+	got, err := store.FindResumable("runninghash")
+	if err != nil {
+		t.Fatalf("FindResumable failed: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected a resumable run for running status, got nil")
+	}
+}

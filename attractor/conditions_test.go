@@ -92,6 +92,68 @@ func TestEvaluateCondition_MissingContextKey(t *testing.T) {
 	}
 }
 
+func TestEvaluateCondition_CaseInsensitive(t *testing.T) {
+	tests := []struct {
+		name      string
+		condition string
+		outcome   *Outcome
+		want      bool
+	}{
+		{
+			name:      "uppercase SUCCESS matches lowercase status",
+			condition: "outcome = SUCCESS",
+			outcome:   &Outcome{Status: StatusSuccess},
+			want:      true,
+		},
+		{
+			name:      "uppercase FAIL matches lowercase status",
+			condition: "outcome = FAIL",
+			outcome:   &Outcome{Status: StatusFail},
+			want:      true,
+		},
+		{
+			name:      "mixed case Success matches lowercase status",
+			condition: "outcome = Success",
+			outcome:   &Outcome{Status: StatusSuccess},
+			want:      true,
+		},
+		{
+			name:      "lowercase still works",
+			condition: "outcome = success",
+			outcome:   &Outcome{Status: StatusSuccess},
+			want:      true,
+		},
+		{
+			name:      "uppercase SUCCESS does not match fail status",
+			condition: "outcome = SUCCESS",
+			outcome:   &Outcome{Status: StatusFail},
+			want:      false,
+		},
+		{
+			name:      "not-equals case insensitive",
+			condition: "outcome != SUCCESS",
+			outcome:   &Outcome{Status: StatusSuccess},
+			want:      false,
+		},
+		{
+			name:      "not-equals case insensitive true case",
+			condition: "outcome != FAIL",
+			outcome:   &Outcome{Status: StatusSuccess},
+			want:      true,
+		},
+	}
+
+	ctx := NewContext()
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := EvaluateCondition(tc.condition, tc.outcome, ctx)
+			if got != tc.want {
+				t.Errorf("EvaluateCondition(%q) = %v, want %v", tc.condition, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestResolveKey_Outcome(t *testing.T) {
 	outcome := &Outcome{Status: StatusPartialSuccess}
 	ctx := NewContext()
