@@ -16,12 +16,42 @@ Mammoth is three layers, bottom-up:
 
 Supporting packages: `render/` (DOT→SVG/PNG), `tui/` (Bubble Tea terminal UI), `cmd/mammoth/` (CLI).
 
+## Install
+
+### Homebrew (macOS/Linux)
+
+```bash
+brew install 2389-research/tap/mammoth
+```
+
+### Go
+
+```bash
+go install github.com/2389-research/mammoth/cmd/mammoth@latest
+```
+
+### Download binary
+
+Pre-built binaries for macOS and Linux (amd64/arm64) are available on the [releases page](https://github.com/2389-research/mammoth/releases/latest).
+
+```bash
+# Example: Linux amd64
+curl -sL https://github.com/2389-research/mammoth/releases/latest/download/mammoth_0.1.0_Linux_x86_64.tar.gz | tar xz
+sudo mv mammoth /usr/local/bin/
+```
+
+### Build from source
+
+```bash
+git clone https://github.com/2389-research/mammoth.git
+cd mammoth
+make build
+# Binary is at ./bin/mammoth
+```
+
 ## Quick Start
 
 ```bash
-# Install
-go install github.com/2389-research/mammoth/cmd/mammoth@latest
-
 # Set an API key (at least one required)
 export ANTHROPIC_API_KEY="sk-ant-..."
 # or: export OPENAI_API_KEY="sk-..."
@@ -44,14 +74,14 @@ mammoth run --tui pipeline.dot
 mammoth -server -port 8080
 ```
 
-## Build & Test
+## Testing
 
 ```bash
-# Build from source
-go build -o mammoth ./cmd/mammoth/
-
-# Run all tests (1,433 tests)
+# Run all tests (1,400+ tests)
 go test ./...
+
+# Run with race detector
+make test-race
 
 # Run with coverage
 go test ./... -coverprofile=coverage.out
@@ -79,4 +109,8 @@ Browse the full docs hub at [`docs/index.html`](docs/index.html).
 
 ## License
 
-License not yet specified.
+MIT License. See [LICENSE](LICENSE) for details.
+
+---
+
+Built by [2389 Research, Inc.](https://2389.ai) | [hello@2389.ai](mailto:hello@2389.ai)
