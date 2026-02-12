@@ -104,6 +104,13 @@ func (h *CodergenHandler) Execute(ctx context.Context, node *Node, pctx *Context
 
 	baseURL := attrs["base_url"]
 	if baseURL == "" {
+		if val := pctx.Get("base_url"); val != nil {
+			if s, ok := val.(string); ok {
+				baseURL = s
+			}
+		}
+	}
+	if baseURL == "" {
 		baseURL = h.BaseURL
 	}
 

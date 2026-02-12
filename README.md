@@ -41,7 +41,7 @@ mammoth validate pipeline.dot
 mammoth run --tui pipeline.dot
 
 # Start the HTTP server
-mammoth serve --addr :8080
+mammoth -server -port 8080
 ```
 
 ## Build & Test
@@ -50,7 +50,7 @@ mammoth serve --addr :8080
 # Build from source
 go build -o mammoth ./cmd/mammoth/
 
-# Run all tests (1,578 tests)
+# Run all tests (1,433 tests)
 go test ./...
 
 # Run with coverage
@@ -75,8 +75,8 @@ Browse the full docs hub at [`docs/index.html`](docs/index.html).
 
 ## Spec Parity
 
-191/193 Attractor spec requirements implemented. See the [parity matrix](docs/parity-matrix.md) for details.
+192/196 Attractor spec requirements implemented (3 partial, 1 missing). See the [parity matrix](docs/parity-matrix.md) for details.
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+License not yet specified.

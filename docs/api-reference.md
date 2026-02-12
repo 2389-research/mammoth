@@ -879,28 +879,36 @@ Non-blocking event delivery via buffered channels (buffer size 64). Events are d
 
 ```go
 type EngineConfig struct {
-    CheckpointDir  string
-    ArtifactDir    string
-    Transforms     []Transform
-    ExtraLintRules []LintRule
-    DefaultRetry   RetryPolicy
-    Handlers       *HandlerRegistry
-    EventHandler   func(EngineEvent)
-    Backend        CodergenBackend
-    RestartConfig  *RestartConfig
+    CheckpointDir      string
+    AutoCheckpointPath string
+    ArtifactDir        string
+    ArtifactsBaseDir   string
+    RunID              string
+    Transforms         []Transform
+    ExtraLintRules     []LintRule
+    DefaultRetry       RetryPolicy
+    Handlers           *HandlerRegistry
+    EventHandler       func(EngineEvent)
+    Backend            CodergenBackend
+    BaseURL            string
+    RestartConfig      *RestartConfig
 }
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `CheckpointDir` | `string` | `""` (disabled) | Directory for checkpoint files. Empty disables checkpointing. |
-| `ArtifactDir` | `string` | `""` (temp dir) | Directory for artifact storage. Empty uses a temporary directory. |
+| `AutoCheckpointPath` | `string` | `""` (disabled) | Path to overwrite with latest checkpoint after each node. Empty disables. |
+| `ArtifactDir` | `string` | `""` (temp dir) | Directory for artifact storage. Empty uses `ArtifactsBaseDir/<RunID>`. |
+| `ArtifactsBaseDir` | `string` | `"./artifacts"` | Base directory for run artifact subdirectories. |
+| `RunID` | `string` | auto-generated | Run identifier for the artifact subdirectory. Empty auto-generates a UUID. |
 | `Transforms` | `[]Transform` | `DefaultTransforms()` | AST transforms applied between parsing and validation. |
 | `ExtraLintRules` | `[]LintRule` | `nil` | Additional validation rules appended to built-in rules. |
 | `DefaultRetry` | `RetryPolicy` | `{MaxAttempts: 1}` | Default retry policy for nodes without per-node overrides. |
 | `Handlers` | `*HandlerRegistry` | `DefaultHandlerRegistry()` | Handler registry. Nil uses the default with all 9 built-in handlers. |
 | `EventHandler` | `func(EngineEvent)` | `nil` | Callback for engine lifecycle events. |
-| `Backend` | `CodergenBackend` | `nil` (stub mode) | Backend for codergen nodes. Nil means codergen nodes use stub behavior. |
+| `Backend` | `CodergenBackend` | `nil` | Backend for codergen nodes. Nil means codergen nodes return `StatusFail`. |
+| `BaseURL` | `string` | `""` | Default API base URL for codergen nodes (overridable per-node). |
 | `RestartConfig` | `*RestartConfig` | `DefaultRestartConfig()` | Loop restart configuration. Default allows 5 restarts. |
 
 ### SessionConfig
@@ -1001,20 +1009,26 @@ Abstracts the LLM agent execution so that `CodergenHandler` does not depend dire
 
 ```go
 type AgentRunConfig struct {
-    Prompt   string  // instructions for the LLM
-    Model    string  // model ID (e.g., "claude-sonnet-4-5")
-    Provider string  // provider name ("anthropic", "openai", "gemini")
-    WorkDir  string  // working directory
-    Goal     string  // pipeline-level goal
-    NodeID   string  // pipeline node identifier
-    MaxTurns int     // max agent loop turns (0 = default 20)
+    Prompt       string            // instructions for the LLM
+    Model        string            // model ID (e.g., "claude-sonnet-4-5")
+    Provider     string            // provider name ("anthropic", "openai", "gemini")
+    BaseURL      string            // custom API base URL (overrides provider default)
+    WorkDir      string            // working directory
+    Goal         string            // pipeline-level goal
+    NodeID       string            // pipeline node identifier
+    MaxTurns     int               // max agent loop turns (0 = default 20)
+    FidelityMode string            // fidelity mode ("full", "compact", "truncate", "summary:*")
+    EventHandler func(EngineEvent) // engine event callback for agent-level observability
 }
 
 type AgentRunResult struct {
-    Output     string  // final text output
-    ToolCalls  int     // total tool calls made
-    TokensUsed int     // total tokens consumed
-    Success    bool    // whether the agent completed without errors
+    Output      string          // final text output
+    ToolCalls   int             // total tool calls made
+    TokensUsed  int             // total tokens consumed
+    Success     bool            // whether the agent completed without errors
+    ToolCallLog []ToolCallEntry // individual tool call details
+    TurnCount   int             // LLM call rounds
+    Usage       TokenUsage      // granular per-category token breakdown
 }
 ```
 
@@ -1158,6 +1172,7 @@ type EngineEventType string
 | `EventStageCompleted` | `"stage.completed"` | A node handler completed successfully. `NodeID` is set. |
 | `EventStageFailed` | `"stage.failed"` | A node handler failed. `NodeID` is set. |
 | `EventStageRetrying` | `"stage.retrying"` | A node is being retried. `Data["attempt"]` contains the attempt number. |
+| `EventStageStalled` | `"stage.stalled"` | A node has stalled (e.g., waiting for dependencies that cannot proceed). |
 | `EventCheckpointSaved` | `"checkpoint.saved"` | A checkpoint was saved after node completion. `NodeID` is set. |
 
 ```go
@@ -1326,10 +1341,13 @@ Maps an HTTP status code to the appropriate error type. Unknown status codes ret
 
 ```go
 type Graph struct {
-    ID      string
-    Nodes   []*Node
-    Edges   []*Edge
-    Attrs   map[string]string  // graph-level attributes
+    Name         string
+    Nodes        map[string]*Node
+    Edges        []*Edge
+    Attrs        map[string]string // graph-level attributes
+    NodeDefaults map[string]string // node [...] defaults
+    EdgeDefaults map[string]string // edge [...] defaults
+    Subgraphs    []*Subgraph
 }
 
 type Node struct {

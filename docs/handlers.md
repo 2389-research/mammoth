@@ -68,7 +68,7 @@ done [shape=Msquare, label="Done"]
 **Shape**: `box` (also the default for any unrecognized shape)
 **Purpose**: LLM-powered coding agent node.
 
-The CodergenHandler sends a prompt to an LLM backend and returns the result. When no backend is configured (e.g., during validation-only runs), it operates in stub mode, recording the configuration without making LLM calls.
+The CodergenHandler sends a prompt to an LLM backend and returns the result. When no backend is configured (i.e., no API key is set), the handler returns `StatusFail` with an error message indicating which API keys to set.
 
 ### Node Attributes
 

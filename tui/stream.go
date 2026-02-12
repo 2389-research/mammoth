@@ -64,6 +64,15 @@ type StreamModel struct {
 	// Agent events (verbose mode)
 	agentLines map[string][]string // nodeID → recent agent log lines
 
+	// Token and model tracking
+	nodeTokens  map[string]int    // per-node accumulated token count
+	nodeModels  map[string]string // per-node model name (from stage.completed)
+	totalTokens int               // running total across all nodes
+
+	// Tool call tracking
+	nodeToolCalls  map[string]int // per-node tool call count
+	totalToolCalls int            // running total tool calls
+
 	// Spinner
 	spinnerIdx int
 
@@ -119,7 +128,10 @@ func NewStreamModel(
 		startedAt:  make(map[string]time.Time),
 		durations:  make(map[string]time.Duration),
 		agentLines: make(map[string][]string),
-		total:      total,
+		nodeTokens:    make(map[string]int),
+		nodeModels:    make(map[string]string),
+		nodeToolCalls: make(map[string]int),
+		total:         total,
 		resultCh:   make(chan PipelineResultMsg, 1),
 	}
 
@@ -234,6 +246,11 @@ func (m StreamModel) View() string {
 		b.WriteString("\n")
 	}
 
+	// Summary block after pipeline completes
+	if m.done {
+		b.WriteString(m.renderSummary())
+	}
+
 	return b.String()
 }
 
@@ -255,6 +272,14 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 		if start, ok := m.startedAt[evt.NodeID]; ok {
 			m.durations[evt.NodeID] = time.Since(start)
 		}
+		// Capture model name from codergen.* data attached to stage.completed
+		if evt.Data != nil {
+			if model, ok := evt.Data["codergen.model"]; ok {
+				if s, ok := model.(string); ok {
+					m.nodeModels[evt.NodeID] = s
+				}
+			}
+		}
 
 	case attractor.EventStageFailed:
 		m.statuses[evt.NodeID] = NodeFailed
@@ -263,6 +288,8 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 		}
 
 	case attractor.EventAgentToolCallStart:
+		m.nodeToolCalls[evt.NodeID]++
+		m.totalToolCalls++
 		if m.verbose {
 			toolName, _ := evt.Data["tool_name"]
 			line := fmt.Sprintf("tool: %v", toolName)
@@ -278,6 +305,24 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 		}
 
 	case attractor.EventAgentLLMTurn:
+		// Accumulate tokens (always, not just verbose)
+		if evt.Data != nil {
+			turnTokens := 0
+			if inputTok, ok := evt.Data["input_tokens"]; ok {
+				turnTokens += toInt(inputTok)
+			}
+			if outputTok, ok := evt.Data["output_tokens"]; ok {
+				turnTokens += toInt(outputTok)
+			}
+			if turnTokens == 0 {
+				if tok, ok := evt.Data["tokens"]; ok {
+					turnTokens = toInt(tok)
+				}
+			}
+			m.nodeTokens[evt.NodeID] += turnTokens
+			m.totalTokens += turnTokens
+		}
+
 		if m.verbose {
 			if inputTok, ok := evt.Data["input_tokens"]; ok {
 				outputTok, _ := evt.Data["output_tokens"]
@@ -350,8 +395,12 @@ func (m StreamModel) renderNodeLine(id, label string, status NodeStatus) string 
 	switch status {
 	case NodeRunning:
 		frame := SpinnerFrames[m.spinnerIdx%len(SpinnerFrames)]
+		suffix := "  running..."
+		if tok := m.nodeTokens[id]; tok > 0 {
+			suffix = fmt.Sprintf("  running...  %s tok", formatTokenCount(tok))
+		}
 		return RunningStyle.Render(fmt.Sprintf("  %s %s", frame, label)) +
-			RunningStyle.Render("  running...")
+			RunningStyle.Render(suffix)
 
 	case NodeCompleted:
 		dur := m.durations[id]
@@ -361,8 +410,15 @@ func (m StreamModel) renderNodeLine(id, label string, status NodeStatus) string 
 				PendingStyle.Render("  (previous run)")
 		}
 		durStr := formatDuration(dur)
+		extra := ""
+		if model := m.nodeModels[id]; model != "" {
+			extra += fmt.Sprintf(" · %s", shortModelName(model))
+		}
+		if tok := m.nodeTokens[id]; tok > 0 {
+			extra += fmt.Sprintf(" · %s tok", formatTokenCount(tok))
+		}
 		return CompletedStyle.Render(fmt.Sprintf("  ✓ %s", label)) +
-			CompletedStyle.Render(fmt.Sprintf("  %s", durStr))
+			CompletedStyle.Render(fmt.Sprintf("  %s%s", durStr, extra))
 
 	case NodeFailed:
 		dur := m.durations[id]
@@ -384,17 +440,117 @@ func (m StreamModel) renderProgressLine() string {
 	elapsed := time.Since(m.pipelineStart)
 	elapsedStr := formatDuration(elapsed)
 
+	tokenSuffix := ""
+	if m.totalTokens > 0 {
+		tokenSuffix = fmt.Sprintf(" · %s tokens", formatTokenCount(m.totalTokens))
+	}
+
 	if m.done {
 		if m.err != nil {
 			return FailedStyle.Render(
 				fmt.Sprintf("  ✗ %d/%d complete · %s · FAILED: %v", m.completed, m.total, elapsedStr, m.err))
 		}
 		return CompletedStyle.Render(
-			fmt.Sprintf("  ✓ %d/%d complete · %s", m.completed, m.total, elapsedStr))
+			fmt.Sprintf("  ✓ %d/%d complete · %s%s", m.completed, m.total, elapsedStr, tokenSuffix))
 	}
 
 	return PendingStyle.Render(
-		fmt.Sprintf("  %d/%d complete · %s elapsed", m.completed, m.total, elapsedStr))
+		fmt.Sprintf("  %d/%d complete · %s elapsed%s", m.completed, m.total, elapsedStr, tokenSuffix))
+}
+
+// renderSummary renders the post-run summary block with node counts, models,
+// tokens, tool calls, and total duration.
+func (m StreamModel) renderSummary() string {
+	var b strings.Builder
+
+	// Count passed, failed, ran — exclude nodes from a previous run (duration sentinel < 0)
+	passed, failed, ran := 0, 0, 0
+	for _, id := range m.nodeOrder {
+		status := m.statuses[id]
+		switch status {
+		case NodeCompleted:
+			if m.durations[id] < 0 {
+				// Node was completed in a previous run (resume); skip
+				continue
+			}
+			passed++
+			ran++
+		case NodeFailed:
+			failed++
+			ran++
+		case NodeSkipped:
+			// skipped nodes were not run
+		default:
+			// pending nodes that never started
+		}
+	}
+
+	// Collect unique models with node counts
+	modelCounts := make(map[string]int)
+	for _, model := range m.nodeModels {
+		short := shortModelName(model)
+		modelCounts[short]++
+	}
+	var modelParts []string
+	// Sort for deterministic output
+	var modelNames []string
+	for name := range modelCounts {
+		modelNames = append(modelNames, name)
+	}
+	sort.Strings(modelNames)
+	for _, name := range modelNames {
+		count := modelCounts[name]
+		noun := "nodes"
+		if count == 1 {
+			noun = "node"
+		}
+		modelParts = append(modelParts, fmt.Sprintf("%s (%d %s)", name, count, noun))
+	}
+
+	// Duration
+	elapsed := time.Since(m.pipelineStart)
+	elapsedStr := formatDuration(elapsed)
+
+	// Separator line
+	separator := "── Summary ──────────────────────────────"
+	separatorStyle := CompletedStyle
+	if m.err != nil {
+		separatorStyle = FailedStyle
+	}
+	b.WriteString(fmt.Sprintf("\n  %s\n", separatorStyle.Render(separator)))
+
+	// Nodes line
+	b.WriteString(fmt.Sprintf("  %s    %d ran · %d passed · %d failed\n",
+		PendingStyle.Render("Nodes"),
+		ran, passed, failed))
+
+	// Models line (only if we have model data)
+	if len(modelParts) > 0 {
+		b.WriteString(fmt.Sprintf("  %s   %s\n",
+			PendingStyle.Render("Models"),
+			strings.Join(modelParts, " · ")))
+	}
+
+	// Tokens line
+	if m.totalTokens > 0 {
+		b.WriteString(fmt.Sprintf("  %s   %s total\n",
+			PendingStyle.Render("Tokens"),
+			formatTokenCount(m.totalTokens)))
+	}
+
+	// Tools line
+	if m.totalToolCalls > 0 {
+		b.WriteString(fmt.Sprintf("  %s    %d calls\n",
+			PendingStyle.Render("Tools"),
+			m.totalToolCalls))
+	}
+
+	// Duration line
+	b.WriteString(fmt.Sprintf("  %s %s\n",
+		PendingStyle.Render("Duration"),
+		elapsedStr))
+
+	return b.String()
 }
 
 // nodeLabelByID returns the display label for a node, falling back to the node ID.
@@ -464,6 +620,55 @@ func topologicalOrder(graph *attractor.Graph) []string {
 	}
 
 	return order
+}
+
+// toInt converts an interface{} value to int, handling common numeric types.
+func toInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	default:
+		return 0
+	}
+}
+
+// shortModelName extracts a short display name from a full model identifier.
+// Claude models are shortened to their tier name (sonnet, opus, haiku).
+// Other models are returned as-is.
+func shortModelName(model string) string {
+	if model == "" {
+		return ""
+	}
+	for _, tier := range []string{"opus", "sonnet", "haiku"} {
+		if strings.Contains(model, tier) {
+			return tier
+		}
+	}
+	return model
+}
+
+// formatTokenCount formats a token count with comma separators for readability.
+func formatTokenCount(n int) string {
+	if n < 0 {
+		return fmt.Sprintf("%d", n)
+	}
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+	s := fmt.Sprintf("%d", n)
+	// Insert commas from the right
+	var result []byte
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			result = append(result, ',')
+		}
+		result = append(result, byte(c))
+	}
+	return string(result)
 }
 
 // formatDuration formats a duration as a human-readable string like "0.1s" or "2.3s".

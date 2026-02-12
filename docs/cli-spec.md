@@ -75,6 +75,10 @@ All flags use the `--flag` (double-dash) convention. Single-character shorthand 
 | `--checkpoint-dir` | `string` | `""`     | Directory for checkpoint files (empty = no checkpoints) |
 | `--artifact-dir`   | `string` | `""`     | Directory for artifact storage (empty = temp dir)  |
 | `--retry`          | `string` | `"none"` | Default retry policy: `none`, `standard`, `aggressive`, `linear`, `patient` |
+| `--data-dir`       | `string` | `""`     | XDG-style data directory for persistent pipeline state |
+| `--base-url`       | `string` | `""`     | Custom API base URL for LLM providers              |
+| `--tui`            | `bool`   | `false`  | Use the Bubble Tea terminal UI for pipeline display |
+| `--fresh`          | `bool`   | `false`  | Force a fresh run, ignoring any auto-resume state  |
 | `--verbose`        | `bool`   | `false`  | Print engine lifecycle events to stderr            |
 | `--version`        | `bool`   | `false`  | Print version and exit                            |
 
@@ -145,7 +149,7 @@ The `(node: ...)` suffix is omitted when the diagnostic is not node-specific. Th
 
 **Server mode startup:**
 ```
-listening on :2389
+listening on 127.0.0.1:2389
 ```
 
 **Signal interruption:**
@@ -501,7 +505,7 @@ mammoth --server --port 2389 --verbose
 
 Output (stderr):
 ```
-listening on :2389
+listening on 127.0.0.1:2389
 ```
 
 ### 12.6 Submit a pipeline via the server

@@ -1832,6 +1832,106 @@ func TestAgentEventTypeConstants(t *testing.T) {
 
 // TestAgentEventsEmittedThroughEngine verifies that agent event types can be
 // emitted through the engine event system and received by the event handler.
+func TestEngineStageCompletedCarriesCodergenData(t *testing.T) {
+	g := buildLinearGraph()
+
+	// Handler that returns codergen.* context updates (simulating what CodergenHandler does)
+	codergenH := &testHandler{
+		typeName: "codergen",
+		executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+			return &Outcome{
+				Status: StatusSuccess,
+				ContextUpdates: map[string]any{
+					"last_stage":             node.ID,
+					"codergen.model":         "claude-sonnet-4-5",
+					"codergen.provider":      "anthropic",
+					"codergen.tokens_used":   1500,
+					"codergen.input_tokens":  1000,
+					"codergen.output_tokens": 500,
+				},
+			}, nil
+		},
+	}
+	startH := newSuccessHandler("start")
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, codergenH, exitH)
+
+	var events []EngineEvent
+	engine := NewEngine(EngineConfig{
+		Handlers:     reg,
+		Backend:      testBackend(),
+		DefaultRetry: RetryPolicyNone(),
+		EventHandler: func(evt EngineEvent) {
+			events = append(events, evt)
+		},
+	})
+
+	_, err := engine.RunGraph(context.Background(), g)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Find stage.completed events for codergen nodes (a and b)
+	for _, evt := range events {
+		if evt.Type == EventStageCompleted && (evt.NodeID == "a" || evt.NodeID == "b") {
+			if evt.Data == nil {
+				t.Errorf("EventStageCompleted for %q should have Data with codergen.* keys", evt.NodeID)
+				continue
+			}
+			if evt.Data["codergen.model"] != "claude-sonnet-4-5" {
+				t.Errorf("EventStageCompleted[%s]: expected codergen.model='claude-sonnet-4-5', got %v", evt.NodeID, evt.Data["codergen.model"])
+			}
+			if evt.Data["codergen.tokens_used"] != 1500 {
+				t.Errorf("EventStageCompleted[%s]: expected codergen.tokens_used=1500, got %v", evt.NodeID, evt.Data["codergen.tokens_used"])
+			}
+		}
+	}
+}
+
+func TestEngineStageCompletedNoDataForNonCodergen(t *testing.T) {
+	g := buildLinearGraph()
+
+	// Handler with no codergen.* keys in context updates
+	plainH := &testHandler{
+		typeName: "codergen",
+		executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+			return &Outcome{
+				Status: StatusSuccess,
+				ContextUpdates: map[string]any{
+					"last_stage": node.ID,
+				},
+			}, nil
+		},
+	}
+	startH := newSuccessHandler("start")
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, plainH, exitH)
+
+	var events []EngineEvent
+	engine := NewEngine(EngineConfig{
+		Handlers:     reg,
+		Backend:      testBackend(),
+		DefaultRetry: RetryPolicyNone(),
+		EventHandler: func(evt EngineEvent) {
+			events = append(events, evt)
+		},
+	})
+
+	_, err := engine.RunGraph(context.Background(), g)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// stage.completed events for non-codergen outcomes should have empty data
+	for _, evt := range events {
+		if evt.Type == EventStageCompleted && (evt.NodeID == "a" || evt.NodeID == "b") {
+			if len(evt.Data) > 0 {
+				t.Errorf("EventStageCompleted for %q should have empty Data when no codergen.* keys, got %v", evt.NodeID, evt.Data)
+			}
+		}
+	}
+}
+
 func TestAgentEventsEmittedThroughEngine(t *testing.T) {
 	var events []EngineEvent
 	engine := NewEngine(EngineConfig{

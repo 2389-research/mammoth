@@ -670,6 +670,68 @@ func TestCodergenHandlerNodeBaseURLOverridesDefault(t *testing.T) {
 	}
 }
 
+func TestCodergenHandlerBaseURLFallsBackToGraphAttr(t *testing.T) {
+	var receivedConfig AgentRunConfig
+	backend := &fakeBackend{
+		runAgentFn: func(ctx context.Context, config AgentRunConfig) (*AgentRunResult, error) {
+			receivedConfig = config
+			return &AgentRunResult{Success: true}, nil
+		},
+	}
+
+	h := &CodergenHandler{Backend: backend}
+
+	node := &Node{
+		ID:    "codegen_graph_baseurl",
+		Attrs: map[string]string{"shape": "box", "prompt": "test"},
+	}
+	pctx := NewContext()
+	pctx.Set("base_url", "https://graph-level.api.example.com")
+	store := NewArtifactStore(t.TempDir())
+
+	_, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if receivedConfig.BaseURL != "https://graph-level.api.example.com" {
+		t.Errorf("expected graph-level base_url, got %q", receivedConfig.BaseURL)
+	}
+}
+
+func TestCodergenHandlerNodeBaseURLOverridesGraphAttr(t *testing.T) {
+	var receivedConfig AgentRunConfig
+	backend := &fakeBackend{
+		runAgentFn: func(ctx context.Context, config AgentRunConfig) (*AgentRunResult, error) {
+			receivedConfig = config
+			return &AgentRunResult{Success: true}, nil
+		},
+	}
+
+	h := &CodergenHandler{Backend: backend}
+
+	node := &Node{
+		ID: "codegen_node_over_graph",
+		Attrs: map[string]string{
+			"shape":    "box",
+			"prompt":   "test",
+			"base_url": "https://node-level.api.example.com",
+		},
+	}
+	pctx := NewContext()
+	pctx.Set("base_url", "https://graph-level.api.example.com")
+	store := NewArtifactStore(t.TempDir())
+
+	_, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if receivedConfig.BaseURL != "https://node-level.api.example.com" {
+		t.Errorf("expected node-level base_url to win, got %q", receivedConfig.BaseURL)
+	}
+}
+
 func TestEngineWiresBaseURLToCodergenHandler(t *testing.T) {
 	var receivedConfig AgentRunConfig
 	backend := &stubCodergenBackend{

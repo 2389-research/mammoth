@@ -4,6 +4,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -752,6 +753,466 @@ func TestStreamModelResumeInfoNilOption(t *testing.T) {
 	view := m.View()
 	if strings.Contains(view, "resuming from") {
 		t.Error("expected no resume header when ResumeInfo is nil")
+	}
+}
+
+func TestStreamModelAccumulatesTokensFromLLMTurn(t *testing.T) {
+	m := testStreamModel() // non-verbose
+
+	// Start a node
+	started := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventStageStarted,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+		},
+	}
+	updated, _ := m.Update(started)
+	m = updated.(StreamModel)
+
+	// Send an LLM turn event
+	llmEvt := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventAgentLLMTurn,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+			Data:      map[string]any{"input_tokens": 1000, "output_tokens": 500},
+		},
+	}
+	updated, _ = m.Update(llmEvt)
+	m = updated.(StreamModel)
+
+	if m.nodeTokens["build"] != 1500 {
+		t.Errorf("expected nodeTokens[build]=1500, got %d", m.nodeTokens["build"])
+	}
+	if m.totalTokens != 1500 {
+		t.Errorf("expected totalTokens=1500, got %d", m.totalTokens)
+	}
+
+	// Send another LLM turn
+	llmEvt2 := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventAgentLLMTurn,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+			Data:      map[string]any{"input_tokens": 800, "output_tokens": 200},
+		},
+	}
+	updated, _ = m.Update(llmEvt2)
+	m = updated.(StreamModel)
+
+	if m.nodeTokens["build"] != 2500 {
+		t.Errorf("expected nodeTokens[build]=2500, got %d", m.nodeTokens["build"])
+	}
+	if m.totalTokens != 2500 {
+		t.Errorf("expected totalTokens=2500, got %d", m.totalTokens)
+	}
+}
+
+func TestStreamModelCapturesModelFromStageCompleted(t *testing.T) {
+	m := testStreamModel()
+
+	// Start then complete a node with codergen.model data
+	started := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventStageStarted,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+		},
+	}
+	updated, _ := m.Update(started)
+	m = updated.(StreamModel)
+
+	completed := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventStageCompleted,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+			Data: map[string]any{
+				"codergen.model":      "claude-sonnet-4-5-20250929",
+				"codergen.tokens_used": 5000,
+			},
+		},
+	}
+	updated, _ = m.Update(completed)
+	m = updated.(StreamModel)
+
+	if m.nodeModels["build"] != "claude-sonnet-4-5-20250929" {
+		t.Errorf("expected nodeModels[build]='claude-sonnet-4-5-20250929', got %q", m.nodeModels["build"])
+	}
+}
+
+func TestStreamModelRendersTokensOnCompletedNode(t *testing.T) {
+	m := testStreamModel()
+
+	// Start, accumulate tokens, complete
+	started := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventStageStarted,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+		},
+	}
+	updated, _ := m.Update(started)
+	m = updated.(StreamModel)
+
+	llmEvt := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventAgentLLMTurn,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+			Data:      map[string]any{"input_tokens": 10000, "output_tokens": 2340},
+		},
+	}
+	updated, _ = m.Update(llmEvt)
+	m = updated.(StreamModel)
+
+	completed := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventStageCompleted,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+			Data: map[string]any{
+				"codergen.model": "claude-sonnet-4-5-20250929",
+			},
+		},
+	}
+	updated, _ = m.Update(completed)
+	m = updated.(StreamModel)
+
+	view := m.View()
+	if !strings.Contains(view, "12,340 tok") {
+		t.Errorf("completed node should show '12,340 tok', got:\n%s", view)
+	}
+	if !strings.Contains(view, "sonnet") {
+		t.Errorf("completed node should show 'sonnet' model name, got:\n%s", view)
+	}
+}
+
+func TestStreamModelRendersTokensInProgressLine(t *testing.T) {
+	m := testStreamModel()
+	m.pipelineStart = time.Now().Add(-5 * time.Second)
+
+	// Complete a node with tokens
+	started := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventStageStarted,
+			NodeID:    "start",
+			Timestamp: time.Now(),
+		},
+	}
+	updated, _ := m.Update(started)
+	m = updated.(StreamModel)
+
+	llmEvt := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventAgentLLMTurn,
+			NodeID:    "start",
+			Timestamp: time.Now(),
+			Data:      map[string]any{"input_tokens": 20000, "output_tokens": 5050},
+		},
+	}
+	updated, _ = m.Update(llmEvt)
+	m = updated.(StreamModel)
+
+	completed := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventStageCompleted,
+			NodeID:    "start",
+			Timestamp: time.Now(),
+		},
+	}
+	updated, _ = m.Update(completed)
+	m = updated.(StreamModel)
+
+	view := m.View()
+	if !strings.Contains(view, "25,050 tokens") {
+		t.Errorf("progress line should show '25,050 tokens', got:\n%s", view)
+	}
+}
+
+func TestStreamModelRendersTokensOnRunningNode(t *testing.T) {
+	m := testStreamModel()
+
+	// Start node and send token data
+	started := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventStageStarted,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+		},
+	}
+	updated, _ := m.Update(started)
+	m = updated.(StreamModel)
+
+	llmEvt := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventAgentLLMTurn,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+			Data:      map[string]any{"input_tokens": 3500, "output_tokens": 1000},
+		},
+	}
+	updated, _ = m.Update(llmEvt)
+	m = updated.(StreamModel)
+
+	view := m.View()
+	if !strings.Contains(view, "4,500 tok") {
+		t.Errorf("running node should show '4,500 tok', got:\n%s", view)
+	}
+}
+
+func TestFormatTokenCount(t *testing.T) {
+	tests := []struct {
+		input    int
+		expected string
+	}{
+		{0, "0"},
+		{1, "1"},
+		{999, "999"},
+		{1000, "1,000"},
+		{12340, "12,340"},
+		{100000, "100,000"},
+		{1000000, "1,000,000"},
+		{-1, "-1"},
+		{-5000, "-5000"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%d", tt.input), func(t *testing.T) {
+			got := formatTokenCount(tt.input)
+			if got != tt.expected {
+				t.Errorf("formatTokenCount(%d) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestShortModelName(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"claude-sonnet-4-5-20250929", "sonnet"},
+		{"claude-opus-4-6", "opus"},
+		{"claude-haiku-4-5-20251001", "haiku"},
+		{"gpt-4o", "gpt-4o"},
+		{"gpt-4o-mini", "gpt-4o-mini"},
+		{"gemini-2.0-flash", "gemini-2.0-flash"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := shortModelName(tt.input)
+			if got != tt.expected {
+				t.Errorf("shortModelName(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestStreamModelTracksTotalToolCalls(t *testing.T) {
+	m := testStreamModel() // non-verbose
+
+	// Start a node
+	started := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventStageStarted,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+		},
+	}
+	updated, _ := m.Update(started)
+	m = updated.(StreamModel)
+
+	// Send tool call events — should count even in non-verbose mode
+	for i := 0; i < 5; i++ {
+		toolEvt := EngineEventMsg{
+			Event: attractor.EngineEvent{
+				Type:      attractor.EventAgentToolCallStart,
+				NodeID:    "build",
+				Timestamp: time.Now(),
+				Data:      map[string]any{"tool_name": "read_file"},
+			},
+		}
+		updated, _ = m.Update(toolEvt)
+		m = updated.(StreamModel)
+	}
+
+	if m.totalToolCalls != 5 {
+		t.Errorf("expected totalToolCalls=5, got %d", m.totalToolCalls)
+	}
+	if m.nodeToolCalls["build"] != 5 {
+		t.Errorf("expected nodeToolCalls[build]=5, got %d", m.nodeToolCalls["build"])
+	}
+}
+
+func TestStreamModelSummaryShownWhenDone(t *testing.T) {
+	m := testStreamModel()
+	m.done = true
+	m.completed = 4
+	m.pipelineStart = time.Now().Add(-30 * time.Second)
+	m.totalTokens = 12000
+	m.totalToolCalls = 10
+
+	// Mark all nodes completed
+	for _, id := range m.nodeOrder {
+		m.statuses[id] = NodeCompleted
+		m.durations[id] = 5 * time.Second
+	}
+
+	view := m.View()
+
+	if !strings.Contains(view, "Summary") {
+		t.Errorf("done view should contain 'Summary' section, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Nodes") {
+		t.Errorf("done view should contain 'Nodes' line, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Duration") {
+		t.Errorf("done view should contain 'Duration' line, got:\n%s", view)
+	}
+}
+
+func TestStreamModelSummaryShowsModelsUsed(t *testing.T) {
+	m := testStreamModel()
+	m.done = true
+	m.completed = 4
+	m.pipelineStart = time.Now().Add(-30 * time.Second)
+
+	// Set different models for different nodes
+	m.nodeModels["build"] = "claude-sonnet-4-5-20250929"
+	m.nodeModels["test"] = "claude-opus-4-6"
+
+	// Mark nodes completed
+	for _, id := range m.nodeOrder {
+		m.statuses[id] = NodeCompleted
+		m.durations[id] = 5 * time.Second
+	}
+
+	view := m.View()
+
+	if !strings.Contains(view, "sonnet") {
+		t.Errorf("summary should show 'sonnet' model, got:\n%s", view)
+	}
+	if !strings.Contains(view, "opus") {
+		t.Errorf("summary should show 'opus' model, got:\n%s", view)
+	}
+}
+
+func TestStreamModelSummaryShowsNodeCounts(t *testing.T) {
+	m := testStreamModel()
+	m.done = true
+	m.completed = 3
+	m.pipelineStart = time.Now().Add(-30 * time.Second)
+
+	// Mix of completed and failed
+	m.statuses["start"] = NodeCompleted
+	m.statuses["build"] = NodeCompleted
+	m.statuses["test"] = NodeFailed
+	m.statuses["done"] = NodeCompleted
+
+	for _, id := range m.nodeOrder {
+		m.durations[id] = 5 * time.Second
+	}
+
+	view := m.View()
+
+	if !strings.Contains(view, "3 passed") {
+		t.Errorf("summary should show '3 passed', got:\n%s", view)
+	}
+	if !strings.Contains(view, "1 failed") {
+		t.Errorf("summary should show '1 failed', got:\n%s", view)
+	}
+}
+
+func TestStreamModelSummaryShowsToolCalls(t *testing.T) {
+	m := testStreamModel()
+	m.done = true
+	m.completed = 4
+	m.pipelineStart = time.Now().Add(-30 * time.Second)
+	m.totalToolCalls = 42
+
+	for _, id := range m.nodeOrder {
+		m.statuses[id] = NodeCompleted
+		m.durations[id] = 5 * time.Second
+	}
+
+	view := m.View()
+
+	if !strings.Contains(view, "42 calls") {
+		t.Errorf("summary should show '42 calls', got:\n%s", view)
+	}
+}
+
+func TestStreamModelSummaryMinimalNoTokensNoTools(t *testing.T) {
+	m := testStreamModel()
+	m.done = true
+	m.completed = 4
+	m.pipelineStart = time.Now().Add(-30 * time.Second)
+	// No tokens, no tool calls, no models
+
+	for _, id := range m.nodeOrder {
+		m.statuses[id] = NodeCompleted
+		m.durations[id] = 5 * time.Second
+	}
+
+	view := m.View()
+
+	// Summary should appear
+	if !strings.Contains(view, "Summary") {
+		t.Errorf("minimal summary should still appear, got:\n%s", view)
+	}
+	// Tokens and Tools lines should be suppressed
+	if strings.Contains(view, "Tokens") {
+		t.Errorf("summary should not show Tokens line when totalTokens=0, got:\n%s", view)
+	}
+	if strings.Contains(view, "Tools") {
+		t.Errorf("summary should not show Tools line when totalToolCalls=0, got:\n%s", view)
+	}
+	// Duration and Nodes should still appear
+	if !strings.Contains(view, "Duration") {
+		t.Errorf("summary should always show Duration, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Nodes") {
+		t.Errorf("summary should always show Nodes, got:\n%s", view)
+	}
+}
+
+func TestStreamModelSummaryResumePreviousNodesExcluded(t *testing.T) {
+	m := testStreamModelWithResume()
+	// "start" is pre-completed from previous run (duration = -1)
+	// Complete remaining nodes in this session
+	for _, id := range []string{"build", "test", "done"} {
+		m.statuses[id] = NodeCompleted
+		m.durations[id] = 5 * time.Second
+	}
+	m.completed = 4 // 1 from resume + 3 from this run
+	m.done = true
+	m.pipelineStart = time.Now().Add(-30 * time.Second)
+
+	view := m.View()
+
+	// Summary should say 3 ran (not 4), since "start" was a previous run
+	if !strings.Contains(view, "3 ran") {
+		t.Errorf("summary should show '3 ran' (excluding resumed node), got:\n%s", view)
+	}
+	if !strings.Contains(view, "3 passed") {
+		t.Errorf("summary should show '3 passed' (excluding resumed node), got:\n%s", view)
+	}
+}
+
+func TestStreamModelSummaryNotShownWhileRunning(t *testing.T) {
+	m := testStreamModel()
+	m.done = false
+	m.pipelineStart = time.Now().Add(-30 * time.Second)
+	m.totalToolCalls = 10
+
+	view := m.View()
+
+	if strings.Contains(view, "Summary") {
+		t.Errorf("summary should NOT appear while running, got:\n%s", view)
 	}
 }
 

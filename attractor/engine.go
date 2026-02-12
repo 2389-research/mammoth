@@ -437,7 +437,15 @@ func (e *Engine) executeGraph(
 				if outcome.ContextUpdates != nil {
 					pctx.ApplyUpdates(outcome.ContextUpdates)
 				}
-				e.emitEvent(EngineEvent{Type: EventStageCompleted, NodeID: node.ID})
+				termStageData := map[string]any{}
+				if outcome.ContextUpdates != nil {
+					for k, v := range outcome.ContextUpdates {
+						if strings.HasPrefix(k, "codergen.") {
+							termStageData[k] = v
+						}
+					}
+				}
+				e.emitEvent(EngineEvent{Type: EventStageCompleted, NodeID: node.ID, Data: termStageData})
 				finalOutcome = outcome
 			}
 
@@ -485,7 +493,15 @@ func (e *Engine) executeGraph(
 		nodeOutcomes[node.ID] = outcome
 
 		if outcome.Status == StatusSuccess || outcome.Status == StatusPartialSuccess {
-			e.emitEvent(EngineEvent{Type: EventStageCompleted, NodeID: node.ID})
+			stageData := map[string]any{}
+			if outcome.ContextUpdates != nil {
+				for k, v := range outcome.ContextUpdates {
+					if strings.HasPrefix(k, "codergen.") {
+						stageData[k] = v
+					}
+				}
+			}
+			e.emitEvent(EngineEvent{Type: EventStageCompleted, NodeID: node.ID, Data: stageData})
 		} else {
 			failData := map[string]any{"status": string(outcome.Status)}
 			if outcome.FailureReason != "" {
