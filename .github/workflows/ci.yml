@@ -1,89 +1,88 @@
-# ABOUTME: Main CI workflow for mammoth - runs vet, build, tests, and coverage on push/PR.
-# ABOUTME: Uses Go module/build caching and uploads test results, coverage, and binary as artifacts.
-
-# Cache strategy:
-#   - Go modules (GOMODCACHE): Cached by actions/setup-go via `cache: true`.
-#     Keyed on go.sum, shared across jobs. Avoids re-downloading deps on every run.
-#   - Go build cache (GOCACHE): Cached by actions/setup-go via `cache: true`.
-#     Stores compiled packages, speeds up incremental builds and test runs.
-#   - golangci-lint cache: Handled separately in lint.yml by golangci-lint-action.
-
+# ABOUTME: GitHub Actions CI workflow for mammoth
+# ABOUTME: Runs tests, linting, and builds on push and PR to main
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
-    branches: [main]
-
-permissions:
-  contents: read
+    branches: [ main ]
 
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
+      - name: Check out code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Setup Go
+      - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Vet
-        run: go vet ./...
+      - name: Download dependencies
+        run: go mod download
 
-      - name: Build
-        run: go build ./...
+      - name: Run tests with race detector
+        run: make test-race
 
-      - name: Test
+      - name: Run tests with coverage
         run: |
-          go test ./... -count=1 -race -v -json > test-results.json 2>&1 || true
-          go test ./... -count=1 -race
+          go test -count=1 -coverprofile=coverage.out ./...
 
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
         with:
-          name: test-results
-          path: test-results.json
-          retention-days: 14
+          file: ./coverage.out
+          flags: unittests
+          fail_ci_if_error: false
 
-      - name: Coverage
-        run: go test ./... -coverprofile=coverage.out
-
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage.out
-          retention-days: 14
-
-  build-binary:
-    name: Build Binary
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
+      - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Setup Go
+      - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Build mammoth binary
-        run: go build -o mammoth ./cmd/mammoth
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.7.2
+          args: --timeout=10m
+          verify: false
 
-      - name: Upload binary
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build binary
+        run: make build
+
+      - name: Verify binary
+        run: ./bin/mammoth --help
+
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mammoth-binary
-          path: mammoth
-          retention-days: 14
+          name: mammoth-linux-amd64
+          path: bin/mammoth
+          retention-days: 7
