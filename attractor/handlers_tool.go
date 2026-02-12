@@ -80,6 +80,14 @@ func (h *ToolHandler) Execute(ctx context.Context, node *Node, pctx *Context, st
 	// Set process group so we can kill the entire tree on timeout
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
+	// When context expires, kill the entire process group (not just the main process).
+	// This ensures child processes spawned by the shell are also terminated.
+	cmd.Cancel = func() error {
+		killProcessGroup(cmd)
+		return cmd.Process.Kill()
+	}
+	cmd.WaitDelay = 3 * time.Second
+
 	// Set working directory
 	if workDir, ok := attrs["working_dir"]; ok && workDir != "" {
 		if _, err := os.Stat(workDir); err != nil {
