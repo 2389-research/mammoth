@@ -244,9 +244,26 @@ func (m AppModel) handleTick(_ TickMsg) (tea.Model, tea.Cmd) {
 	return m, TickCmd(100 * time.Millisecond)
 }
 
-// handleHumanGateRequest activates the human gate dialog.
+// handleHumanGateRequest activates the human gate dialog with optional node context.
 func (m AppModel) handleHumanGateRequest(msg HumanGateRequestMsg) (tea.Model, tea.Cmd) {
 	m.humanGate.SetActive(msg.Question, msg.Options)
+	if msg.NodeID != "" {
+		label := msg.NodeID
+		position := ""
+		if m.graph.graph != nil {
+			if node := m.graph.graph.FindNode(msg.NodeID); node != nil {
+				label = nodeLabel(node)
+			}
+			nodeIDs := m.graph.graph.NodeIDs()
+			for i, id := range nodeIDs {
+				if id == msg.NodeID {
+					position = fmt.Sprintf("step %d/%d", i+1, len(nodeIDs))
+					break
+				}
+			}
+		}
+		m.humanGate.SetNodeContext(msg.NodeID, label, position)
+	}
 	return m, nil
 }
 

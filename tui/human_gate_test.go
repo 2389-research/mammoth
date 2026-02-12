@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/2389-research/mammoth/attractor"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -338,5 +339,108 @@ func TestHumanGateModelSetActiveWithEmptyOptions(t *testing.T) {
 	}
 	if len(m.options) != 0 {
 		t.Errorf("expected empty options, got %v", m.options)
+	}
+}
+
+// --- Node context tests ---
+
+func TestHumanGateViewWithNodeContext(t *testing.T) {
+	m := NewHumanGateModel()
+	m.SetActive("Approve deployment?", []string{"yes", "no"})
+	m.SetNodeContext("deploy", "Deploy", "step 4/6")
+
+	view := m.View()
+
+	if !strings.Contains(view, "Deploy") {
+		t.Errorf("expected view to contain node label 'Deploy', got:\n%s", view)
+	}
+	if !strings.Contains(view, "step 4/6") {
+		t.Errorf("expected view to contain position 'step 4/6', got:\n%s", view)
+	}
+	if !strings.Contains(view, "Approve deployment?") {
+		t.Errorf("expected view to contain question, got:\n%s", view)
+	}
+}
+
+func TestHumanGateViewWithPartialContext(t *testing.T) {
+	m := NewHumanGateModel()
+	m.SetActive("Approve?", []string{"yes", "no"})
+	m.SetNodeContext("deploy", "Deploy", "")
+
+	view := m.View()
+
+	if !strings.Contains(view, "Deploy") {
+		t.Errorf("expected view to contain node label 'Deploy', got:\n%s", view)
+	}
+	// Should not show position when empty
+	if strings.Contains(view, "step") {
+		t.Errorf("expected no position info when position is empty, got:\n%s", view)
+	}
+}
+
+func TestHumanGateViewWithoutContext(t *testing.T) {
+	m := NewHumanGateModel()
+	m.SetActive("Approve?", []string{"yes", "no"})
+	// No SetNodeContext call — graceful degradation
+
+	view := m.View()
+
+	// Should show question without context header (no ⬡ line)
+	if strings.Contains(view, "⬡") {
+		t.Errorf("expected no context header when nodeID is empty, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Approve?") {
+		t.Errorf("expected view to contain question, got:\n%s", view)
+	}
+}
+
+func TestHumanGateAskExtractsNodeID(t *testing.T) {
+	m := NewHumanGateModel()
+
+	ctx := attractor.WithNodeID(context.Background(), "review_gate")
+
+	// Start Ask in a goroutine (it blocks)
+	go func() {
+		_, _ = m.Ask(ctx, "Continue?", []string{"yes", "no"})
+	}()
+
+	// Read the request from the channel
+	select {
+	case req := <-m.requestCh:
+		if req.question != "Continue?" {
+			t.Errorf("expected question %q, got %q", "Continue?", req.question)
+		}
+		if req.nodeID != "review_gate" {
+			t.Errorf("expected nodeID %q, got %q", "review_gate", req.nodeID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for request on requestCh")
+	}
+
+	// Unblock Ask by sending a response
+	m.responseCh <- gateResponse{answer: "yes"}
+}
+
+func TestHumanGateSubmitClearsNodeContext(t *testing.T) {
+	m := NewHumanGateModel()
+	m.SetActive("Question?", nil)
+	m.SetNodeContext("deploy", "Deploy", "step 1/3")
+	m.textInput.SetValue("yes")
+
+	// Consume the response so Submit doesn't block
+	go func() {
+		<-m.responseCh
+	}()
+
+	m.Submit()
+
+	if m.nodeID != "" {
+		t.Errorf("expected nodeID to be cleared after Submit, got %q", m.nodeID)
+	}
+	if m.nodeLabel != "" {
+		t.Errorf("expected nodeLabel to be cleared after Submit, got %q", m.nodeLabel)
+	}
+	if m.position != "" {
+		t.Errorf("expected position to be cleared after Submit, got %q", m.position)
 	}
 }

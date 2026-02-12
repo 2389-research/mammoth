@@ -1216,6 +1216,71 @@ func TestStreamModelSummaryNotShownWhileRunning(t *testing.T) {
 	}
 }
 
+func TestStreamModelNodeIndexByID(t *testing.T) {
+	m := testStreamModel()
+
+	// "start" should be first in topo order
+	idx := m.nodeIndexByID("start")
+	if idx < 0 {
+		t.Fatal("expected start to be in nodeOrder")
+	}
+
+	// "done" should be last
+	idxDone := m.nodeIndexByID("done")
+	if idxDone < idx {
+		t.Error("expected done after start in topo order")
+	}
+
+	// Non-existent node returns -1
+	idxMissing := m.nodeIndexByID("nonexistent")
+	if idxMissing != -1 {
+		t.Errorf("expected -1 for missing node, got %d", idxMissing)
+	}
+}
+
+func TestStreamModelHumanGatePassesContext(t *testing.T) {
+	// Create a graph with a human gate node
+	g := &attractor.Graph{
+		Name: "gate_context_test",
+		Nodes: map[string]*attractor.Node{
+			"start":  {ID: "start", Attrs: map[string]string{"shape": "Mdiamond", "label": "Start"}},
+			"deploy": {ID: "deploy", Attrs: map[string]string{"shape": "hexagon", "label": "Deploy"}},
+			"done":   {ID: "done", Attrs: map[string]string{"shape": "Msquare", "label": "Done"}},
+		},
+		Edges: []*attractor.Edge{
+			{From: "start", To: "deploy"},
+			{From: "deploy", To: "done"},
+		},
+	}
+	engine := attractor.NewEngine(attractor.EngineConfig{
+		DefaultRetry: attractor.RetryPolicyNone(),
+	})
+	m := NewStreamModel(g, engine, "test.dot", context.Background(), false)
+
+	// Simulate receiving a HumanGateRequestMsg with a NodeID
+	msg := HumanGateRequestMsg{
+		Question: "Approve deployment?",
+		Options:  []string{"yes", "no"},
+		NodeID:   "deploy",
+	}
+
+	updated, _ := m.Update(msg)
+	m = updated.(StreamModel)
+
+	if !m.humanGate.IsActive() {
+		t.Fatal("expected human gate to be active")
+	}
+
+	// The view should show context (label + position)
+	view := m.humanGate.View()
+	if !strings.Contains(view, "Deploy") {
+		t.Errorf("expected human gate view to show node label 'Deploy', got:\n%s", view)
+	}
+	if !strings.Contains(view, "step") {
+		t.Errorf("expected human gate view to show step position, got:\n%s", view)
+	}
+}
+
 func TestStreamModelSetResumeCmd(t *testing.T) {
 	m := testStreamModel()
 	called := false

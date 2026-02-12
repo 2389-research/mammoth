@@ -325,6 +325,70 @@ func TestQuestionStructFields(t *testing.T) {
 	}
 }
 
+// --- WithNodeID / NodeIDFromContext Tests ---
+
+func TestWithNodeID(t *testing.T) {
+	ctx := context.Background()
+	ctx = WithNodeID(ctx, "deploy")
+
+	got := NodeIDFromContext(ctx)
+	if got != "deploy" {
+		t.Errorf("expected 'deploy', got %q", got)
+	}
+}
+
+func TestNodeIDFromContext_Missing(t *testing.T) {
+	ctx := context.Background()
+	got := NodeIDFromContext(ctx)
+	if got != "" {
+		t.Errorf("expected empty string for bare context, got %q", got)
+	}
+}
+
+func TestNodeIDFromContext_WrongType(t *testing.T) {
+	// Stuff a non-string value under the same key type — should return ""
+	ctx := context.WithValue(context.Background(), nodeContextKey{}, 42)
+	got := NodeIDFromContext(ctx)
+	if got != "" {
+		t.Errorf("expected empty string for non-string value, got %q", got)
+	}
+}
+
+func TestConsoleInterviewerShowsNodeContext(t *testing.T) {
+	input := strings.NewReader("yes\n")
+	output := &bytes.Buffer{}
+	iv := NewConsoleInterviewerWithIO(input, output)
+
+	ctx := WithNodeID(context.Background(), "deploy")
+	answer, err := iv.Ask(ctx, "Approve deployment?", []string{"yes", "no"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if answer != "yes" {
+		t.Errorf("expected 'yes', got %q", answer)
+	}
+	if !strings.Contains(output.String(), "[Node: deploy]") {
+		t.Errorf("expected output to contain '[Node: deploy]', got %q", output.String())
+	}
+}
+
+func TestConsoleInterviewerNoNodeContext(t *testing.T) {
+	input := strings.NewReader("yes\n")
+	output := &bytes.Buffer{}
+	iv := NewConsoleInterviewerWithIO(input, output)
+
+	answer, err := iv.Ask(context.Background(), "Approve?", []string{"yes", "no"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if answer != "yes" {
+		t.Errorf("expected 'yes', got %q", answer)
+	}
+	if strings.Contains(output.String(), "[Node:") {
+		t.Errorf("expected no '[Node:' header when node ID is empty, got %q", output.String())
+	}
+}
+
 // slowReader is a reader that blocks forever (for testing context cancellation)
 type slowReader struct{}
 

@@ -15,6 +15,7 @@ import (
 type gateRequest struct {
 	question string
 	options  []string
+	nodeID   string // originating pipeline node ID (may be empty)
 }
 
 // EventBridge wraps a tea.Program's Send method for injecting engine events
@@ -56,6 +57,7 @@ func WaitForHumanGateCmd(requestCh <-chan gateRequest) tea.Cmd {
 		return HumanGateRequestMsg{
 			Question: req.question,
 			Options:  req.options,
+			NodeID:   req.nodeID,
 		}
 	}
 }

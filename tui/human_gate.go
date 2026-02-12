@@ -33,6 +33,11 @@ type HumanGateModel struct {
 	active     bool
 	requestCh  chan gateRequest
 	responseCh chan gateResponse
+
+	// Node context fields for displaying which pipeline node triggered the gate
+	nodeID    string // originating node ID
+	nodeLabel string // human-readable label (set by StreamModel)
+	position  string // e.g. "step 4/6" (set by StreamModel)
 }
 
 // NewHumanGateModel creates a HumanGateModel with initialized channels and text input.
@@ -61,6 +66,7 @@ func (m *HumanGateModel) Ask(ctx context.Context, question string, options []str
 	req := gateRequest{
 		question: question,
 		options:  options,
+		nodeID:   attractor.NodeIDFromContext(ctx),
 	}
 
 	// Send request, respecting context cancellation
@@ -95,6 +101,15 @@ func (m *HumanGateModel) SetActive(question string, options []string) {
 	m.textInput.Focus()
 }
 
+// SetNodeContext attaches pipeline node context for display in the gate dialog.
+// Call this after SetActive to add the context header showing which node
+// triggered the gate and where it is in the pipeline.
+func (m *HumanGateModel) SetNodeContext(nodeID, nodeLabel, position string) {
+	m.nodeID = nodeID
+	m.nodeLabel = nodeLabel
+	m.position = position
+}
+
 // Submit sends the current text input value as the response on responseCh,
 // then deactivates the dialog and clears the input. Called from the TUI
 // message loop when the user presses Enter.
@@ -104,6 +119,9 @@ func (m *HumanGateModel) Submit() {
 	m.active = false
 	m.question = ""
 	m.options = nil
+	m.nodeID = ""
+	m.nodeLabel = ""
+	m.position = ""
 	m.textInput.Reset()
 	m.textInput.Blur()
 }
@@ -131,6 +149,15 @@ func (m HumanGateModel) View() string {
 	}
 
 	var b strings.Builder
+
+	// Node context header (when available)
+	if m.nodeLabel != "" {
+		if m.position != "" {
+			b.WriteString(fmt.Sprintf("⬡ %s — waiting for input (%s)\n\n", m.nodeLabel, m.position))
+		} else {
+			b.WriteString(fmt.Sprintf("⬡ %s — waiting for input\n\n", m.nodeLabel))
+		}
+	}
 
 	// Question header
 	b.WriteString(fmt.Sprintf("[?] %s\n", m.question))

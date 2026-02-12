@@ -18,6 +18,27 @@ type Interviewer interface {
 	Ask(ctx context.Context, question string, options []string) (string, error)
 }
 
+// nodeContextKey is the context key for attaching the originating node ID
+// to an Ask context. This lets Interviewer implementations display which
+// pipeline node triggered a human gate without changing the Interviewer
+// interface signature.
+type nodeContextKey struct{}
+
+// WithNodeID attaches a pipeline node ID to the context.
+// The node ID can later be extracted with NodeIDFromContext.
+func WithNodeID(ctx context.Context, nodeID string) context.Context {
+	return context.WithValue(ctx, nodeContextKey{}, nodeID)
+}
+
+// NodeIDFromContext extracts the pipeline node ID from the context.
+// Returns an empty string when no node ID is present.
+func NodeIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(nodeContextKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
 // Question represents a structured question for human review.
 type Question struct {
 	ID       string
@@ -177,6 +198,11 @@ func NewConsoleInterviewerWithIO(r io.Reader, w io.Writer) *ConsoleInterviewer {
 func (c *ConsoleInterviewer) Ask(ctx context.Context, question string, options []string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
+	}
+
+	// Print node context header when a node ID is attached to the context
+	if nodeID := NodeIDFromContext(ctx); nodeID != "" {
+		fmt.Fprintf(c.writer, "[Node: %s]\n", nodeID)
 	}
 
 	// Print the question

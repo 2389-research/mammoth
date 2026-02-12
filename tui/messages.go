@@ -28,6 +28,7 @@ type TickMsg struct {
 type HumanGateRequestMsg struct {
 	Question string
 	Options  []string
+	NodeID   string // originating pipeline node ID (may be empty)
 }
 
 // HumanGateResponseMsg carries the user's response back to the engine.

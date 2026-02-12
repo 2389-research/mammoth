@@ -328,6 +328,31 @@ func TestAppModelUpdateHumanGateRequest(t *testing.T) {
 	}
 }
 
+func TestAppModelUpdateHumanGateRequestWithNodeContext(t *testing.T) {
+	m := testAppModel()
+	msg := HumanGateRequestMsg{
+		Question: "Deploy to production?",
+		Options:  []string{"yes", "no"},
+		NodeID:   "build",
+	}
+
+	updated, _ := m.Update(msg)
+	m = updated.(AppModel)
+
+	if !m.humanGate.IsActive() {
+		t.Error("human gate should be active after HumanGateRequestMsg")
+	}
+	if m.humanGate.nodeID != "build" {
+		t.Errorf("expected nodeID 'build', got %q", m.humanGate.nodeID)
+	}
+	if m.humanGate.nodeLabel != "Build" {
+		t.Errorf("expected nodeLabel 'Build', got %q", m.humanGate.nodeLabel)
+	}
+	if m.humanGate.position == "" {
+		t.Error("expected position to be set")
+	}
+}
+
 func TestAppModelUpdateHumanGateSubmit(t *testing.T) {
 	m := testAppModel()
 

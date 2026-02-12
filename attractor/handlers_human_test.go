@@ -441,6 +441,49 @@ func TestHumanHandler_TimeoutDefaultChoiceMatchesByAccelerator(t *testing.T) {
 	}
 }
 
+// --- Node ID injection into context ---
+
+// spyInterviewer captures the context passed to Ask so we can inspect it.
+type spyInterviewer struct {
+	capturedCtx context.Context
+	answer      string
+}
+
+func (s *spyInterviewer) Ask(ctx context.Context, question string, options []string) (string, error) {
+	s.capturedCtx = ctx
+	return s.answer, nil
+}
+
+func TestHumanHandlerInjectsNodeIDInContext(t *testing.T) {
+	spy := &spyInterviewer{answer: "[Y] Yes"}
+	h := &WaitForHumanHandler{Interviewer: spy}
+
+	g := newTestGraph()
+	node := addNode(g, "deploy_gate", map[string]string{
+		"shape": "hexagon",
+		"label": "Approve deployment?",
+	})
+	addNode(g, "deploy", map[string]string{})
+	addEdge(g, "deploy_gate", "deploy", map[string]string{"label": "[Y] Yes"})
+
+	pctx := newContextWithGraph(g)
+	store := NewArtifactStore(t.TempDir())
+
+	outcome, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if outcome.Status != StatusSuccess {
+		t.Errorf("expected success, got %v (reason: %s)", outcome.Status, outcome.FailureReason)
+	}
+
+	// Verify the node ID was injected into the context passed to Ask
+	nodeID := NodeIDFromContext(spy.capturedCtx)
+	if nodeID != "deploy_gate" {
+		t.Errorf("expected node ID 'deploy_gate' in context, got %q", nodeID)
+	}
+}
+
 // --- Interviewer error with timeout configured ---
 
 func TestHumanHandler_InterviewerErrorWithTimeout_ReturnsFailure(t *testing.T) {

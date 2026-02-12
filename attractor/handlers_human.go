@@ -107,11 +107,12 @@ func (h *WaitForHumanHandler) Execute(ctx context.Context, node *Node, pctx *Con
 		question = "Select an option:"
 	}
 
-	// Build the context for the interviewer call, applying timeout if configured
-	askCtx := ctx
+	// Build the context for the interviewer call, attaching node ID and
+	// applying timeout if configured
+	askCtx := WithNodeID(ctx, node.ID)
 	var cancelTimeout context.CancelFunc
 	if hasTimeout {
-		askCtx, cancelTimeout = context.WithTimeout(ctx, timeout)
+		askCtx, cancelTimeout = context.WithTimeout(askCtx, timeout)
 		defer cancelTimeout()
 	}
 

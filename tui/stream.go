@@ -195,6 +195,14 @@ func (m StreamModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case HumanGateRequestMsg:
 		m.humanGate.SetActive(msg.Question, msg.Options)
+		if msg.NodeID != "" {
+			label := m.nodeLabelByID(msg.NodeID)
+			position := ""
+			if idx := m.nodeIndexByID(msg.NodeID); idx >= 0 {
+				position = fmt.Sprintf("step %d/%d", idx+1, len(m.nodeOrder))
+			}
+			m.humanGate.SetNodeContext(msg.NodeID, label, position)
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -563,6 +571,17 @@ func (m StreamModel) nodeLabelByID(id string) string {
 		return id
 	}
 	return nodeLabel(node)
+}
+
+// nodeIndexByID returns the zero-based index of a node in the topological display order.
+// Returns -1 if the node is not found.
+func (m StreamModel) nodeIndexByID(id string) int {
+	for i, n := range m.nodeOrder {
+		if n == id {
+			return i
+		}
+	}
+	return -1
 }
 
 // appendAgentLine adds a verbose agent log line for a node, keeping a bounded buffer.
