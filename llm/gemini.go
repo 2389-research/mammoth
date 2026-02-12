@@ -153,7 +153,7 @@ func (a *GeminiAdapter) buildRequestBody(req Request) map[string]any {
 			}
 			if tool.Parameters != nil {
 				var params any
-				json.Unmarshal(tool.Parameters, &params)
+				_ = json.Unmarshal(tool.Parameters, &params)
 				decl["parameters"] = params
 			}
 			funcDecls = append(funcDecls, decl)
@@ -295,7 +295,7 @@ func (a *GeminiAdapter) translateContentPart(role Role, cp ContentPart) map[stri
 		}
 		var args any
 		if cp.ToolCall.Arguments != nil {
-			json.Unmarshal(cp.ToolCall.Arguments, &args)
+			_ = json.Unmarshal(cp.ToolCall.Arguments, &args)
 		}
 		return map[string]any{
 			"functionCall": map[string]any{
@@ -554,7 +554,6 @@ func (a *GeminiAdapter) processSSEStream(ctx context.Context, body io.ReadCloser
 			if candidate.FinishReason != "" {
 				if textStarted {
 					ch <- StreamEvent{Type: StreamTextEnd}
-					textStarted = false
 				}
 
 				hasToolCalls := false

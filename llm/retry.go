@@ -128,10 +128,6 @@ func Retry(ctx context.Context, policy RetryPolicy, fn func() error) error {
 // applyRetryAfter checks if the error carries a RetryAfter value and returns the
 // greater of the calculated delay and the RetryAfter duration.
 func applyRetryAfter(err error, calculatedDelay time.Duration) time.Duration {
-	type retryAfterProvider interface {
-		retryAfterSeconds() *float64
-	}
-
 	// Check for ProviderError-based types that carry RetryAfter
 	if pe, ok := extractProviderError(err); ok && pe.RetryAfter != nil {
 		retryAfterDuration := time.Duration(*pe.RetryAfter * float64(time.Second))

@@ -56,10 +56,10 @@ type StreamModel struct {
 	humanGate HumanGateModel
 
 	// Node tracking
-	nodeOrder []string                   // topological order for display
-	statuses  map[string]NodeStatus      // per-node execution state
-	startedAt map[string]time.Time       // per-node start time
-	durations map[string]time.Duration   // per-node elapsed duration
+	nodeOrder []string                 // topological order for display
+	statuses  map[string]NodeStatus    // per-node execution state
+	startedAt map[string]time.Time     // per-node start time
+	durations map[string]time.Duration // per-node elapsed duration
 
 	// Agent events (verbose mode)
 	agentLines map[string][]string // nodeID → recent agent log lines
@@ -85,7 +85,7 @@ type StreamModel struct {
 	resultCh      chan PipelineResultMsg // captures result for caller
 
 	// Resume state
-	resumeInfo *ResumeInfo // non-nil when resuming from a previous run
+	resumeInfo *ResumeInfo    // non-nil when resuming from a previous run
 	resumeCmd  func() tea.Cmd // override pipeline command for resume
 
 	width int
@@ -116,23 +116,23 @@ func NewStreamModel(
 	}
 
 	m := StreamModel{
-		graph:      graph,
-		engine:     engine,
-		source:     source,
-		ctx:        ctx,
-		cancel:     cancel,
-		verbose:    verbose,
-		humanGate:  NewHumanGateModel(),
-		nodeOrder:  nodeOrder,
-		statuses:   statuses,
-		startedAt:  make(map[string]time.Time),
-		durations:  make(map[string]time.Duration),
-		agentLines: make(map[string][]string),
+		graph:         graph,
+		engine:        engine,
+		source:        source,
+		ctx:           ctx,
+		cancel:        cancel,
+		verbose:       verbose,
+		humanGate:     NewHumanGateModel(),
+		nodeOrder:     nodeOrder,
+		statuses:      statuses,
+		startedAt:     make(map[string]time.Time),
+		durations:     make(map[string]time.Duration),
+		agentLines:    make(map[string][]string),
 		nodeTokens:    make(map[string]int),
 		nodeModels:    make(map[string]string),
 		nodeToolCalls: make(map[string]int),
 		total:         total,
-		resultCh:   make(chan PipelineResultMsg, 1),
+		resultCh:      make(chan PipelineResultMsg, 1),
 	}
 
 	for _, opt := range opts {
@@ -299,15 +299,15 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 		m.nodeToolCalls[evt.NodeID]++
 		m.totalToolCalls++
 		if m.verbose {
-			toolName, _ := evt.Data["tool_name"]
+			toolName := evt.Data["tool_name"]
 			line := fmt.Sprintf("tool: %v", toolName)
 			m.appendAgentLine(evt.NodeID, line)
 		}
 
 	case attractor.EventAgentToolCallEnd:
 		if m.verbose {
-			toolName, _ := evt.Data["tool_name"]
-			durMs, _ := evt.Data["duration_ms"]
+			toolName := evt.Data["tool_name"]
+			durMs := evt.Data["duration_ms"]
 			line := fmt.Sprintf("tool: %v done (%vms)", toolName, durMs)
 			m.appendAgentLine(evt.NodeID, line)
 		}
@@ -333,11 +333,11 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 
 		if m.verbose {
 			if inputTok, ok := evt.Data["input_tokens"]; ok {
-				outputTok, _ := evt.Data["output_tokens"]
+				outputTok := evt.Data["output_tokens"]
 				line := fmt.Sprintf("llm turn (in:%v out:%v)", inputTok, outputTok)
 				m.appendAgentLine(evt.NodeID, line)
 			} else {
-				tokens, _ := evt.Data["tokens"]
+				tokens := evt.Data["tokens"]
 				line := fmt.Sprintf("llm turn (%v tokens)", tokens)
 				m.appendAgentLine(evt.NodeID, line)
 			}
@@ -345,7 +345,7 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 
 	case attractor.EventAgentSteering:
 		if m.verbose {
-			msg, _ := evt.Data["message"]
+			msg := evt.Data["message"]
 			line := fmt.Sprintf("steering: %v", msg)
 			m.appendAgentLine(evt.NodeID, line)
 		}

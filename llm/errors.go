@@ -81,7 +81,7 @@ func (e *AuthenticationError) As(target any) bool {
 		*t = &e.ProviderError
 		return true
 	case **SDKError:
-		*t = &e.ProviderError.SDKError
+		*t = &e.SDKError
 		return true
 	default:
 		return false
@@ -103,7 +103,7 @@ func (e *AccessDeniedError) As(target any) bool {
 		*t = &e.ProviderError
 		return true
 	case **SDKError:
-		*t = &e.ProviderError.SDKError
+		*t = &e.SDKError
 		return true
 	default:
 		return false
@@ -125,7 +125,7 @@ func (e *NotFoundError) As(target any) bool {
 		*t = &e.ProviderError
 		return true
 	case **SDKError:
-		*t = &e.ProviderError.SDKError
+		*t = &e.SDKError
 		return true
 	default:
 		return false
@@ -147,7 +147,7 @@ func (e *InvalidRequestError) As(target any) bool {
 		*t = &e.ProviderError
 		return true
 	case **SDKError:
-		*t = &e.ProviderError.SDKError
+		*t = &e.SDKError
 		return true
 	default:
 		return false
@@ -169,7 +169,7 @@ func (e *RateLimitError) As(target any) bool {
 		*t = &e.ProviderError
 		return true
 	case **SDKError:
-		*t = &e.ProviderError.SDKError
+		*t = &e.SDKError
 		return true
 	default:
 		return false
@@ -191,7 +191,7 @@ func (e *ServerError) As(target any) bool {
 		*t = &e.ProviderError
 		return true
 	case **SDKError:
-		*t = &e.ProviderError.SDKError
+		*t = &e.SDKError
 		return true
 	default:
 		return false
@@ -213,7 +213,7 @@ func (e *ContentFilterError) As(target any) bool {
 		*t = &e.ProviderError
 		return true
 	case **SDKError:
-		*t = &e.ProviderError.SDKError
+		*t = &e.SDKError
 		return true
 	default:
 		return false
@@ -235,7 +235,7 @@ func (e *ContextLengthError) As(target any) bool {
 		*t = &e.ProviderError
 		return true
 	case **SDKError:
-		*t = &e.ProviderError.SDKError
+		*t = &e.SDKError
 		return true
 	default:
 		return false
@@ -257,7 +257,7 @@ func (e *QuotaExceededError) As(target any) bool {
 		*t = &e.ProviderError
 		return true
 	case **SDKError:
-		*t = &e.ProviderError.SDKError
+		*t = &e.SDKError
 		return true
 	default:
 		return false

@@ -146,13 +146,13 @@ func NewOpenAIProfile(model string, opts ...ProfileOption) *OpenAIProfile {
 
 	registry := NewToolRegistry()
 	// Register core tools except edit_file (OpenAI uses apply_patch instead)
-	registry.Register(NewReadFileTool())
-	registry.Register(NewWriteFileTool())
-	registry.Register(NewShellTool())
-	registry.Register(NewGrepTool())
-	registry.Register(NewGlobTool())
+	_ = registry.Register(NewReadFileTool())
+	_ = registry.Register(NewWriteFileTool())
+	_ = registry.Register(NewShellTool())
+	_ = registry.Register(NewGrepTool())
+	_ = registry.Register(NewGlobTool())
 	// Register apply_patch (OpenAI-specific)
-	registry.Register(NewApplyPatchTool())
+	_ = registry.Register(NewApplyPatchTool())
 
 	profile := &OpenAIProfile{
 		BaseProfile: BaseProfile{

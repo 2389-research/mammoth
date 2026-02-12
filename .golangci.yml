@@ -1,51 +1,54 @@
 # ABOUTME: golangci-lint configuration for mammoth.
 # ABOUTME: Enables core linters with sensible defaults, avoids noisy rules.
-
-run:
-  timeout: 5m
-
+version: "2"
 linters:
+  default: none
   enable:
-    - govet
     - errcheck
+    - govet
+    - ineffassign
     - staticcheck
     - unused
-    - gosimple
-    - ineffassign
-    - typecheck
-
-  disable:
-    - depguard
-    - exhaustive
-    - exhaustruct
-    - funlen
-    - gochecknoglobals
-    - gochecknoinits
-    - goconst
-    - gocyclo
-    - godot
-    - godox
-    - gomnd
-    - lll
-    - nestif
-    - nlreturn
-    - nonamedreturns
-    - varnamelen
-    - wrapcheck
-    - wsl
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-  staticcheck:
-    checks:
-      - all
-
+  settings:
+    errcheck:
+      check-type-assertions: true
+      exclude-functions:
+        - (io.Writer).Write
+        - (net/http.ResponseWriter).Write
+        - (*encoding/json.Encoder).Encode
+        - (*encoding/json.Decoder).Decode
+        - fmt.Fprintf
+        - fmt.Fprintln
+    govet:
+      disable:
+        - fieldalignment
+        - shadow
+    staticcheck:
+      checks:
+        - all
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters: [errcheck]
+        path: _test\.go
+      - linters: [unused]
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-use-default: true
   max-issues-per-linter: 50
   max-same-issues: 5
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

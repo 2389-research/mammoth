@@ -28,7 +28,7 @@ func TestSourceHashIsHex(t *testing.T) {
 
 	// Should only contain lowercase hex characters
 	for _, c := range hash {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			t.Errorf("hash contains non-hex character %q: %q", string(c), hash)
 			break
 		}

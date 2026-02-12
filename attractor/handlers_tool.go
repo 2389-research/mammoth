@@ -181,7 +181,7 @@ func buildNotes(stdout string, nodeID string, store *ArtifactStore) string {
 
 	// Store full output as an artifact
 	artifactID := fmt.Sprintf("%s.stdout", nodeID)
-	store.Store(artifactID, "stdout", []byte(stdout))
+	_, _ = store.Store(artifactID, "stdout", []byte(stdout))
 
 	truncated := stdout[:maxNotesBytes]
 	return truncated + fmt.Sprintf("\n\n[output truncated at 10KB; full output stored as artifact %q]", artifactID)
@@ -204,6 +204,6 @@ func killProcessGroup(cmd *exec.Cmd) {
 	}
 	pgid, err := syscall.Getpgid(cmd.Process.Pid)
 	if err == nil {
-		syscall.Kill(-pgid, syscall.SIGKILL)
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 	}
 }

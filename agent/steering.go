@@ -41,13 +41,6 @@ var universalDocFiles = []string{
 	".cursorrules",
 }
 
-// allProviderSpecificFiles lists every provider-specific file across all providers.
-var allProviderSpecificFiles = []string{
-	"CLAUDE.md",
-	"GEMINI.md",
-	".codex/instructions.md",
-}
-
 // BuildGitContext returns a git context block with branch, is_repo flag, status summary,
 // and recent commits. Uses the ExecutionEnvironment to run git commands.
 // Returns empty string if not in a git repo.

@@ -279,7 +279,7 @@ func (a *AnthropicAdapter) translateContentParts(parts []ContentPart, role strin
 				}
 				var input any
 				if len(part.ToolCall.Arguments) > 0 {
-					json.Unmarshal(part.ToolCall.Arguments, &input)
+					_ = json.Unmarshal(part.ToolCall.Arguments, &input)
 				}
 				if input == nil {
 					input = map[string]any{}
@@ -367,7 +367,7 @@ func (a *AnthropicAdapter) applyToolConfig(body map[string]any, req Request) {
 		}
 		if len(tool.Parameters) > 0 {
 			var schema any
-			json.Unmarshal(tool.Parameters, &schema)
+			_ = json.Unmarshal(tool.Parameters, &schema)
 			t["input_schema"] = schema
 		}
 		tools = append(tools, t)

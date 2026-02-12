@@ -427,8 +427,8 @@ func NewCloseAgentTool(manager *SubAgentManager) *RegisteredTool {
 
 // RegisterSubAgentTools registers all 4 subagent tools on the given registry.
 func RegisterSubAgentTools(registry *ToolRegistry, manager *SubAgentManager, profile ProviderProfile, client *llm.Client) {
-	registry.Register(NewSpawnAgentTool(manager, profile, client))
-	registry.Register(NewSendInputTool(manager))
-	registry.Register(NewWaitTool(manager))
-	registry.Register(NewCloseAgentTool(manager))
+	_ = registry.Register(NewSpawnAgentTool(manager, profile, client))
+	_ = registry.Register(NewSendInputTool(manager))
+	_ = registry.Register(NewWaitTool(manager))
+	_ = registry.Register(NewCloseAgentTool(manager))
 }

@@ -586,10 +586,8 @@ func TestStreamModelHumanGateKeyRouting(t *testing.T) {
 	updated, cmd := m.Update(keyMsg)
 	m = updated.(StreamModel)
 
-	// Should not quit
-	if cmd != nil {
-		// cmd might be a textinput blink command, which is fine
-	}
+	// cmd might be a textinput blink command, which is fine — no assertion needed
+	_ = cmd
 	if m.humanGate.IsActive() != true {
 		t.Error("human gate should remain active after typing")
 	}
@@ -829,7 +827,7 @@ func TestStreamModelCapturesModelFromStageCompleted(t *testing.T) {
 			NodeID:    "build",
 			Timestamp: time.Now(),
 			Data: map[string]any{
-				"codergen.model":      "claude-sonnet-4-5-20250929",
+				"codergen.model":       "claude-sonnet-4-5-20250929",
 				"codergen.tokens_used": 5000,
 			},
 		},

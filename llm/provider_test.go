@@ -531,7 +531,7 @@ func TestGenerateCallIDFormat(t *testing.T) {
 	// Should only contain "call_" prefix followed by hex chars and dashes
 	suffix := strings.TrimPrefix(id, "call_")
 	for _, c := range suffix {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || c == '-') {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && c != '-' {
 			t.Errorf("GenerateCallID() suffix contains unexpected char %q in %q", string(c), id)
 		}
 	}

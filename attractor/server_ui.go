@@ -102,7 +102,8 @@ func aggregateToolCalls(events []EngineEvent) []toolCallView {
 	seq := 0
 
 	for _, evt := range events {
-		if evt.Type == EventAgentToolCallStart {
+		switch evt.Type {
+		case EventAgentToolCallStart:
 			callID := fmt.Sprintf("%v", evt.Data["call_id"])
 			calls[callID] = &pending{
 				view: toolCallView{
@@ -114,7 +115,7 @@ func aggregateToolCalls(events []EngineEvent) []toolCallView {
 				order: seq,
 			}
 			seq++
-		} else if evt.Type == EventAgentToolCallEnd {
+		case EventAgentToolCallEnd:
 			callID := fmt.Sprintf("%v", evt.Data["call_id"])
 			if p, ok := calls[callID]; ok {
 				p.view.Completed = true
@@ -478,7 +479,7 @@ func (s *PipelineServer) handleDashboard(w http.ResponseWriter, r *http.Request)
 	}{
 		Pipelines: summaries,
 	}
-	templates.ExecuteTemplate(w, "dashboard.html", data)
+	_ = templates.ExecuteTemplate(w, "dashboard.html", data)
 }
 
 // handlePipelineView renders the pipeline detail page for a specific pipeline.
@@ -503,7 +504,7 @@ func (s *PipelineServer) handlePipelineView(w http.ResponseWriter, r *http.Reque
 	run.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	templates.ExecuteTemplate(w, "pipeline.html", detail)
+	_ = templates.ExecuteTemplate(w, "pipeline.html", detail)
 }
 
 // handleGraphFragment returns the SVG graph as an HTML fragment for HTMX swaps.

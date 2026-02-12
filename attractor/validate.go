@@ -61,19 +61,6 @@ var knownHandlerTypes = map[string]bool{
 
 // validFidelityModes is defined in fidelity.go as the authoritative source.
 
-// shapeToHandler maps DOT shape values to expected handler types.
-var shapeToHandler = map[string]string{
-	"Mdiamond":      "start",
-	"Msquare":       "exit",
-	"box":           "codergen",
-	"hexagon":       "wait.human",
-	"diamond":       "conditional",
-	"component":     "parallel",
-	"tripleoctagon": "parallel.fan_in",
-	"parallelogram": "tool",
-	"house":         "stack.manager_loop",
-}
-
 // builtinRules returns all built-in lint rules.
 func builtinRules() []LintRule {
 	return []LintRule{
@@ -401,7 +388,7 @@ func (r *typeKnownRule) Apply(g *Graph) []Diagnostic {
 				Severity: SeverityWarning,
 				Message:  fmt.Sprintf("node %q has unknown type %q", n.ID, typ),
 				NodeID:   n.ID,
-				Fix:      fmt.Sprintf("use a recognized handler type: start, exit, codergen, wait.human, conditional, parallel, parallel.fan_in, tool, stack.manager_loop"),
+				Fix:      "use a recognized handler type: start, exit, codergen, wait.human, conditional, parallel, parallel.fan_in, tool, stack.manager_loop",
 			})
 		}
 	}

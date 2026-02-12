@@ -232,38 +232,38 @@ func writeNode(buf *strings.Builder, node *attractor.Node, extraAttrs map[string
 	}
 
 	if len(merged) == 0 {
-		buf.WriteString(fmt.Sprintf("  %s;\n", quoteID(node.ID)))
+		fmt.Fprintf(buf, "  %s;\n", quoteID(node.ID))
 		return
 	}
 
-	buf.WriteString(fmt.Sprintf("  %s [%s]\n", quoteID(node.ID), formatAttrs(merged)))
+	fmt.Fprintf(buf, "  %s [%s]\n", quoteID(node.ID), formatAttrs(merged))
 }
 
 // writeEdge writes an edge declaration to the buffer.
 func writeEdge(buf *strings.Builder, edge *attractor.Edge) {
 	if len(edge.Attrs) == 0 {
-		buf.WriteString(fmt.Sprintf("  %s -> %s\n", quoteID(edge.From), quoteID(edge.To)))
+		fmt.Fprintf(buf, "  %s -> %s\n", quoteID(edge.From), quoteID(edge.To))
 		return
 	}
 
-	buf.WriteString(fmt.Sprintf("  %s -> %s [%s]\n", quoteID(edge.From), quoteID(edge.To), formatAttrs(edge.Attrs)))
+	fmt.Fprintf(buf, "  %s -> %s [%s]\n", quoteID(edge.From), quoteID(edge.To), formatAttrs(edge.Attrs))
 }
 
 // writeSubgraph writes a subgraph block to the buffer.
 func writeSubgraph(buf *strings.Builder, sg *attractor.Subgraph) {
-	buf.WriteString(fmt.Sprintf("  subgraph %s {\n", sg.Name))
+	fmt.Fprintf(buf, "  subgraph %s {\n", sg.Name)
 
 	// Subgraph attributes
 	writeAttrsBlock(buf, sg.Attrs, "  ")
 
 	// Node defaults within subgraph scope
 	if len(sg.NodeDefaults) > 0 {
-		buf.WriteString(fmt.Sprintf("    node [%s]\n", formatAttrs(sg.NodeDefaults)))
+		fmt.Fprintf(buf, "    node [%s]\n", formatAttrs(sg.NodeDefaults))
 	}
 
 	// Nodes in this subgraph
 	for _, nodeID := range sg.Nodes {
-		buf.WriteString(fmt.Sprintf("    %s;\n", quoteID(nodeID)))
+		fmt.Fprintf(buf, "    %s;\n", quoteID(nodeID))
 	}
 
 	buf.WriteString("  }\n")
@@ -277,7 +277,7 @@ func writeAttrsBlock(buf *strings.Builder, attrs map[string]string, indent strin
 
 	keys := sortedKeys(attrs)
 	for _, k := range keys {
-		buf.WriteString(fmt.Sprintf("  %s%s=%q\n", indent, k, attrs[k]))
+		fmt.Fprintf(buf, "  %s%s=%q\n", indent, k, attrs[k])
 	}
 }
 

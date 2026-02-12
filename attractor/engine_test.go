@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -15,7 +16,9 @@ import (
 // --- Test handler implementation ---
 
 // testHandler is a configurable NodeHandler for testing that returns preset outcomes.
+// Fields are protected by a mutex because the engine may call Execute from parallel goroutines.
 type testHandler struct {
+	mu         sync.Mutex
 	typeName   string
 	executeFn  func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error)
 	callCount  int
@@ -25,12 +28,28 @@ type testHandler struct {
 func (h *testHandler) Type() string { return h.typeName }
 
 func (h *testHandler) Execute(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+	h.mu.Lock()
 	h.callCount++
 	h.calledWith = append(h.calledWith, node)
+	h.mu.Unlock()
 	if h.executeFn != nil {
 		return h.executeFn(ctx, node, pctx, store)
 	}
 	return &Outcome{Status: StatusSuccess}, nil
+}
+
+// CallCount returns the number of times Execute was called (thread-safe).
+func (h *testHandler) CallCount() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.callCount
+}
+
+// CalledWith returns the nodes Execute was called with (thread-safe).
+func (h *testHandler) CalledWith() []*Node {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]*Node(nil), h.calledWith...)
 }
 
 // newSuccessHandler returns a testHandler that always succeeds.
@@ -143,18 +162,18 @@ func TestEngineRunGraphLinearPipeline(t *testing.T) {
 	}
 
 	// Start handler called once
-	if startH.callCount != 1 {
-		t.Errorf("expected start handler called 1 time, got %d", startH.callCount)
+	if startH.CallCount() != 1 {
+		t.Errorf("expected start handler called 1 time, got %d", startH.CallCount())
 	}
 
 	// Codergen handler called for nodes "a" and "b"
-	if codergenH.callCount != 2 {
-		t.Errorf("expected codergen handler called 2 times, got %d", codergenH.callCount)
+	if codergenH.CallCount() != 2 {
+		t.Errorf("expected codergen handler called 2 times, got %d", codergenH.CallCount())
 	}
 
 	// Exit handler called once
-	if exitH.callCount != 1 {
-		t.Errorf("expected exit handler called 1 time, got %d", exitH.callCount)
+	if exitH.CallCount() != 1 {
+		t.Errorf("expected exit handler called 1 time, got %d", exitH.CallCount())
 	}
 }
 

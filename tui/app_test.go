@@ -367,11 +367,12 @@ func TestAppModelUpdateHumanGateSubmit(t *testing.T) {
 		t.Fatal("gate should be active")
 	}
 
-	// Start a goroutine to drain the response channel so Submit doesn't block
+	// Capture channel ref before goroutine to avoid racing with m reassignment
+	responseCh := m.humanGate.responseCh
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
-		<-m.humanGate.responseCh
+		<-responseCh
 	}()
 
 	// Send enter key to submit

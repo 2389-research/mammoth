@@ -467,9 +467,7 @@ func findFanInNode(graph *Graph, branchIDs []string) *Node {
 	var queue []string
 
 	// Start with all branch starting nodes
-	for _, id := range branchIDs {
-		queue = append(queue, id)
-	}
+	queue = append(queue, branchIDs...)
 
 	for len(queue) > 0 {
 		nodeID := queue[0]

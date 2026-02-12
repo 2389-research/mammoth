@@ -32,8 +32,8 @@ type PipelineServer struct {
 	pipelines  map[string]*PipelineRun
 	mu         sync.RWMutex
 	mux        *http.ServeMux
-	eventQuery EventQuery     // optional backing store for event query endpoints
-	runStore   RunStateStore  // optional persistent store for run state
+	eventQuery EventQuery    // optional backing store for event query endpoints
+	runStore   RunStateStore // optional persistent store for run state
 
 	// ToDOT converts a Graph to DOT text. If nil, handleGetGraph uses a minimal fallback.
 	ToDOT GraphDOTFunc
@@ -827,7 +827,7 @@ func (s *PipelineServer) handleAnswerQuestion(w http.ResponseWriter, r *http.Req
 	// Extract answer from form data (HTMX) or JSON body (API)
 	var answer string
 	if isHTMX {
-		r.ParseForm()
+		_ = r.ParseForm()
 		answer = r.FormValue("answer")
 	} else {
 		var payload struct {

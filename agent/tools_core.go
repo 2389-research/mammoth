@@ -501,11 +501,11 @@ func NewApplyPatchTool() *RegisteredTool {
 
 // RegisterCoreTools registers all shared core tools with the given registry.
 func RegisterCoreTools(registry *ToolRegistry) {
-	registry.Register(NewReadFileTool())
-	registry.Register(NewWriteFileTool())
-	registry.Register(NewEditFileTool())
-	registry.Register(NewShellTool())
-	registry.Register(NewGrepTool())
-	registry.Register(NewGlobTool())
-	registry.Register(NewApplyPatchTool())
+	_ = registry.Register(NewReadFileTool())
+	_ = registry.Register(NewWriteFileTool())
+	_ = registry.Register(NewEditFileTool())
+	_ = registry.Register(NewShellTool())
+	_ = registry.Register(NewGrepTool())
+	_ = registry.Register(NewGlobTool())
+	_ = registry.Register(NewApplyPatchTool())
 }

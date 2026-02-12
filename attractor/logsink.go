@@ -68,7 +68,7 @@ func (rc RetentionConfig) PruneLoop(ctx context.Context, sink LogSink, interval 
 
 	// Run once immediately before entering the tick loop
 	if rc.MaxAge > 0 {
-		sink.Prune(rc.MaxAge)
+		_, _ = sink.Prune(rc.MaxAge)
 	}
 
 	for {
@@ -77,7 +77,7 @@ func (rc RetentionConfig) PruneLoop(ctx context.Context, sink LogSink, interval 
 			return
 		case <-ticker.C:
 			if rc.MaxAge > 0 {
-				sink.Prune(rc.MaxAge)
+				_, _ = sink.Prune(rc.MaxAge)
 			}
 		}
 	}
