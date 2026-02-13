@@ -1,0 +1,12 @@
+change_id = "61d19f1f091af4c879340cbf0f2ab420"
+type = "behavioral"
+intent = "fix(llm): address review findings in mux adapter - add ctx.Done check in stream goroutine, log unmarshal errors"
+files = [
+    ".agent/changes/c353f4274cf6f6b1ec924ec18d718705.toml",
+    "llm/mux_adapter.go",
+]
+breaking = false
+
+[invariants]
+checked = []
+status = "skipped"
