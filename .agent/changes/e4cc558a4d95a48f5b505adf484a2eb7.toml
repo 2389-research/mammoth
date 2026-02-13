@@ -1,0 +1,12 @@
+change_id = "e4cc558a4d95a48f5b505adf484a2eb7"
+type = "behavioral"
+intent = "docs: add mammoth unification implementation plan (21 tasks, 5 phases)"
+files = [
+    ".agent/changes/36ab38ac90aef3f2547a4ed5b3406340.toml",
+    "docs/plans/2026-02-13-mammoth-unification-plan.md",
+]
+breaking = false
+
+[invariants]
+checked = []
+status = "skipped"
