@@ -262,7 +262,7 @@ func writeSubgraph(buf *strings.Builder, sg *attractor.Subgraph) {
 	}
 
 	// Nodes in this subgraph
-	for _, nodeID := range sg.Nodes {
+	for _, nodeID := range sg.NodeIDs {
 		fmt.Fprintf(buf, "    %s;\n", quoteID(nodeID))
 	}
 

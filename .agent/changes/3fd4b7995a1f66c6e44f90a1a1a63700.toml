@@ -1,0 +1,9 @@
+change_id = "3fd4b7995a1f66c6e44f90a1a1a63700"
+type = "behavioral"
+intent = "feat(dot/validator): add unified lint rules from editor and runtime"
+files = [".agent/changes/366d4f1159a606072e32d77312901bab.toml"]
+breaking = false
+
+[invariants]
+checked = []
+status = "skipped"
