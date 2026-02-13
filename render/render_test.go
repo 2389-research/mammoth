@@ -419,7 +419,7 @@ func TestToDOT_SubgraphHandling(t *testing.T) {
 		Subgraphs: []*attractor.Subgraph{
 			{
 				Name:         "cluster_0",
-				Nodes:        []string{"a"},
+				NodeIDs:      []string{"a"},
 				NodeDefaults: map[string]string{"style": "filled"},
 				Attrs:        map[string]string{"label": "Group A"},
 			},
