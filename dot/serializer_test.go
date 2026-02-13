@@ -351,7 +351,7 @@ func TestSerializeAttributesSorted(t *testing.T) {
 	if alphaIdx < 0 || midIdx < 0 || zebraIdx < 0 {
 		t.Fatalf("expected all three attrs in line %q", attrLine)
 	}
-	if !(alphaIdx < midIdx && midIdx < zebraIdx) {
+	if alphaIdx >= midIdx || midIdx >= zebraIdx {
 		t.Errorf("expected attrs sorted (alpha < mid < zebra), got positions %d, %d, %d in %q",
 			alphaIdx, midIdx, zebraIdx, attrLine)
 	}

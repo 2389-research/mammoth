@@ -16,6 +16,9 @@ coverage.html
 # Workgraph internal state
 .workgraph/
 
+# agentjj internal state
+.agent/
+
 # Scratch scenario tests
 .scratch/
 

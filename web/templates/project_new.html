@@ -1,0 +1,26 @@
+{{define "content"}}
+<h1>New Project</h1>
+
+<div class="card">
+    <form method="POST" action="/projects">
+        <label for="name">Project Name</label>
+        <input type="text" id="name" name="name" placeholder="my-pipeline" required>
+
+        {{if eq .Mode "dot"}}
+            <label for="dot">DOT Pipeline Definition</label>
+            <textarea id="dot" name="dot" placeholder="digraph pipeline {&#10;    start -> process -> end&#10;}"></textarea>
+        {{else}}
+            <label for="oneliner">One-Liner</label>
+            <input type="text" id="oneliner" name="oneliner" placeholder="A pipeline that processes customer feedback">
+
+            <label for="goal">Goal</label>
+            <textarea id="goal" name="goal" placeholder="Describe what this pipeline should accomplish..."></textarea>
+        {{end}}
+
+        <div style="margin-top: 1rem;">
+            <button type="submit" class="btn">Create Project</button>
+            <a href="/" class="btn btn-outline" style="margin-left: 0.5rem;">Cancel</a>
+        </div>
+    </form>
+</div>
+{{end}}

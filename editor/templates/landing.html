@@ -1,0 +1,117 @@
+{{define "content"}}
+<div class="landing">
+    <h2>Create a new session</h2>
+    {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+
+    <div class="quick-start">
+        <h3>Quick Start Examples</h3>
+        <div class="example-buttons">
+            <form method="POST" action="/sessions" class="example-form">
+                <input type="hidden" name="dot" value="digraph simple {
+    start [shape=Mdiamond, label=&quot;Start&quot;]
+    process [shape=box, prompt=&quot;Process data&quot;, label=&quot;Process&quot;]
+    done [shape=Msquare, label=&quot;Done&quot;]
+    start -&gt; process
+    process -&gt; done
+}">
+                <button type="submit">Simple Pipeline</button>
+            </form>
+            <form method="POST" action="/sessions" class="example-form">
+                <input type="hidden" name="dot" value="digraph conditional {
+    start [shape=Mdiamond, label=&quot;Start&quot;]
+    analyze [shape=box, prompt=&quot;Analyze input&quot;, label=&quot;Analyze&quot;]
+    decide [shape=diamond, label=&quot;Decision&quot;]
+    path_a [shape=box, prompt=&quot;Handle case A&quot;, label=&quot;Path A&quot;]
+    path_b [shape=box, prompt=&quot;Handle case B&quot;, label=&quot;Path B&quot;]
+    done [shape=Msquare, label=&quot;Done&quot;]
+    start -&gt; analyze
+    analyze -&gt; decide
+    decide -&gt; path_a [label=&quot;success&quot;]
+    decide -&gt; path_b [label=&quot;fail&quot;]
+    path_a -&gt; done
+    path_b -&gt; done
+}">
+                <button type="submit">Conditional Pipeline</button>
+            </form>
+            <form method="POST" action="/sessions" class="example-form">
+                <input type="hidden" name="dot" value="digraph complex {
+    start [shape=Mdiamond, label=&quot;Start&quot;]
+    fetch [shape=box, prompt=&quot;Fetch data&quot;, label=&quot;Fetch&quot;]
+    validate [shape=diamond, label=&quot;Valid?&quot;]
+    human [shape=hexagon, label=&quot;Review&quot;]
+    process [shape=box, prompt=&quot;Process&quot;, label=&quot;Process&quot;]
+    tool [shape=parallelogram, label=&quot;External Tool&quot;]
+    done [shape=Msquare, label=&quot;Done&quot;]
+    start -&gt; fetch
+    fetch -&gt; validate
+    validate -&gt; process [label=&quot;yes&quot;]
+    validate -&gt; human [label=&quot;no&quot;]
+    human -&gt; process
+    process -&gt; tool
+    tool -&gt; done
+}">
+                <button type="submit">Complex Pipeline</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="or-divider">
+        <span>or</span>
+    </div>
+
+    <form method="POST" action="/sessions" enctype="multipart/form-data" id="upload-form">
+        <div class="form-group">
+            <label for="dot">Paste DOT source:</label>
+            <textarea name="dot" id="dot" rows="10" placeholder="digraph example { ... }"></textarea>
+        </div>
+        <div class="form-group">
+            <label for="file">Or upload a .dot file:</label>
+            <div class="file-upload-zone" id="drop-zone">
+                <input type="file" name="file" id="file" accept=".dot,.gv">
+                <div class="drop-message">
+                    <p>Click to browse or drag and drop a .dot file here</p>
+                </div>
+            </div>
+        </div>
+        <button type="submit">Create Session</button>
+    </form>
+</div>
+
+<script>
+// Drag and drop file upload
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file');
+
+dropZone.addEventListener('click', (e) => {
+    if (e.target !== fileInput) {
+        fileInput.click();
+    }
+});
+
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    dropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
+});
+
+['dragenter', 'dragover'].forEach(eventName => {
+    dropZone.addEventListener(eventName, () => {
+        dropZone.classList.add('drag-over');
+    });
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    dropZone.addEventListener(eventName, () => {
+        dropZone.classList.remove('drag-over');
+    });
+});
+
+dropZone.addEventListener('drop', (e) => {
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        fileInput.files = files;
+    }
+});
+</script>
+{{end}}

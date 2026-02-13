@@ -42,6 +42,7 @@ func printHelp(w io.Writer, ver string) {
 	fmt.Fprintln(w, "  mammoth [run] <pipeline.dot>        Run a pipeline")
 	fmt.Fprintln(w, "  mammoth -validate <pipeline.dot>    Validate without executing")
 	fmt.Fprintln(w, "  mammoth -server [-port 2389]        Start HTTP API server")
+	fmt.Fprintln(w, "  mammoth serve [--port 2389]         Start unified web UI")
 	fmt.Fprintln(w)
 
 	fmt.Fprintln(w, "Pipeline Flags:")
@@ -71,6 +72,7 @@ func printHelp(w io.Writer, ver string) {
 	fmt.Fprintln(w, "  mammoth -tui examples/build_pong.dot")
 	fmt.Fprintln(w, "  mammoth -server -port 8080")
 	fmt.Fprintln(w, "  mammoth -retry aggressive examples/full_pipeline.dot")
+	fmt.Fprintln(w, "  mammoth serve --port 3000")
 	fmt.Fprintln(w)
 
 	fmt.Fprintln(w, "Environment:")

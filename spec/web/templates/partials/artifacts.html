@@ -1,0 +1,74 @@
+{{/* ABOUTME: Artifacts panel showing generated exports (Markdown, YAML, DOT) with copy/download. */}}
+{{/* ABOUTME: Rendered as a main content tab with sub-tabs that switch between export formats. */}}
+
+<div class="artifacts-panel">
+    <div class="artifacts-header">
+        <p class="artifacts-description">Generated from current spec state. Updates when you switch to this tab.</p>
+    </div>
+
+    <div class="artifact-tabs">
+        <button class="artifact-tab active" data-target="artifact-markdown">Markdown</button>
+        <button class="artifact-tab" data-target="artifact-yaml">YAML</button>
+        <button class="artifact-tab" data-target="artifact-dot">DOT Graph</button>
+    </div>
+
+    <div class="artifact-content" id="artifact-markdown">
+        <div class="artifact-toolbar">
+            <button class="btn btn-sm btn-copy" data-copy="markdown-source">Copy</button>
+            <a href="/web/specs/{{ .SpecID }}/export/markdown" download="spec.md" class="btn btn-sm btn-download">Download</a>
+        </div>
+        <pre class="artifact-source" id="markdown-source"><code>{{ .MarkdownContent }}</code></pre>
+    </div>
+
+    <div class="artifact-content hidden" id="artifact-yaml">
+        <div class="artifact-toolbar">
+            <button class="btn btn-sm btn-copy" data-copy="yaml-source">Copy</button>
+            <a href="/web/specs/{{ .SpecID }}/export/yaml" download="spec.yaml" class="btn btn-sm btn-download">Download</a>
+        </div>
+        <pre class="artifact-source" id="yaml-source"><code>{{ .YAMLContent }}</code></pre>
+    </div>
+
+    <div class="artifact-content hidden" id="artifact-dot">
+        <div class="artifact-toolbar">
+            <button class="btn btn-sm btn-copy" data-copy="dot-source">Copy</button>
+            <a href="/web/specs/{{ .SpecID }}/export/dot" download="spec.dot" class="btn btn-sm btn-download">Download</a>
+        </div>
+        <pre class="artifact-source" id="dot-source"><code>{{ .DOTContent }}</code></pre>
+    </div>
+</div>
+
+<script>
+    // Artifact sub-tab switching and copy handlers, scoped to the panel element.
+    // Uses a data-bound guard to prevent duplicate binding on HTMX re-renders.
+    (function() {
+        var panel = document.querySelector('.artifacts-panel');
+        if (!panel || panel.dataset.bound) return;
+        panel.dataset.bound = 'true';
+
+        // Sub-tab switching
+        panel.querySelectorAll('.artifact-tab').forEach(function(tab) {
+            tab.addEventListener('click', function() {
+                panel.querySelectorAll('.artifact-tab').forEach(function(t) { t.classList.remove('active'); });
+                panel.querySelectorAll('.artifact-content').forEach(function(c) { c.classList.add('hidden'); });
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.target).classList.remove('hidden');
+            });
+        });
+
+        // Copy to clipboard with error handling
+        panel.querySelectorAll('.btn-copy').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var source = document.getElementById(btn.dataset.copy);
+                navigator.clipboard.writeText(source.textContent).then(function() {
+                    var original = btn.textContent;
+                    btn.textContent = 'Copied!';
+                    setTimeout(function() { btn.textContent = original; }, 2000);
+                }).catch(function() {
+                    var original = btn.textContent;
+                    btn.textContent = 'Copy failed';
+                    setTimeout(function() { btn.textContent = original; }, 2000);
+                });
+            });
+        });
+    })();
+</script>

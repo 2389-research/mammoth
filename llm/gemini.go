@@ -30,6 +30,9 @@ type GeminiOption func(*GeminiAdapter)
 
 // WithGeminiBaseURL sets the base URL for the Gemini API.
 // Default is "https://generativelanguage.googleapis.com".
+//
+// Deprecated: Use NewMuxAdapter with the appropriate mux/llm client instead.
+// Retained as fallback for custom base URL configurations.
 func WithGeminiBaseURL(url string) GeminiOption {
 	return func(a *GeminiAdapter) {
 		a.base.BaseURL = url
@@ -49,6 +52,9 @@ func WithGeminiTimeout(timeout AdapterTimeout) GeminiOption {
 // NewGeminiAdapter creates a GeminiAdapter with the given API key and options.
 // The BaseAdapter APIKey is set to empty so DoRequest will not add a Bearer token;
 // authentication is handled via query parameter instead.
+//
+// Deprecated: Use NewMuxAdapter with the appropriate mux/llm client instead.
+// Retained as fallback for custom base URL configurations.
 func NewGeminiAdapter(apiKey string, opts ...GeminiOption) *GeminiAdapter {
 	adapter := &GeminiAdapter{
 		apiKey:       apiKey,

@@ -1,0 +1,16 @@
+{{/* ABOUTME: Sidebar list of specs for the nav rail. */}}
+{{/* ABOUTME: Each item is an HTMX-powered link that loads the spec into the workspace. */}}
+{{ if not .Specs }}
+<p class="empty-state">No specs yet. Create one to get started.</p>
+{{ else }}
+{{ range .Specs }}
+<a class="spec-list-item"
+   hx-get="/web/specs/{{ .SpecID }}"
+   hx-target="#workspace"
+   hx-swap="innerHTML"
+   hx-push-url="/web/specs/{{ .SpecID }}">
+    <span class="spec-title">{{ .Title }}</span>
+    <span class="one-liner">{{ .OneLiner }}</span>
+</a>
+{{ end }}
+{{ end }}

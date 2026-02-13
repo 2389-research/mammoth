@@ -1,0 +1,27 @@
+{{/* ABOUTME: Single kanban card component with type badge, body, and action buttons. */}}
+{{/* ABOUTME: Supports inline edit and HTMX-powered delete with confirmation. */}}
+{{ define "card" }}
+<div class="card" data-card-id="{{ .CardID }}" data-lane="{{ .Lane }}" data-order="{{ .Order }}">
+    <span class="card-type badge-{{ .CardType }}">{{ .CardType }}</span>
+    <h4>{{ .Title }}</h4>
+    {{ if .BodyHTML }}
+    <div class="card-body">{{ .BodyHTML }}</div>
+    {{ end }}
+    <div class="card-meta">by {{ .CreatedBy }}</div>
+    <div class="card-actions">
+        <button class="btn btn-sm"
+                hx-get="/web/specs/{{ .SpecID }}/cards/{{ .CardID }}/edit"
+                hx-target="closest .card"
+                hx-swap="outerHTML">
+            Edit
+        </button>
+        <button class="btn btn-sm btn-danger"
+                hx-delete="/web/specs/{{ .SpecID }}/cards/{{ .CardID }}"
+                hx-target="closest .card"
+                hx-swap="outerHTML"
+                hx-confirm="Delete this card?">
+            Delete
+        </button>
+    </div>
+</div>
+{{ end }}

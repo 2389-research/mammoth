@@ -958,6 +958,173 @@ func TestDetectBackendClaudeCodeFallback(t *testing.T) {
 	}
 }
 
+// --- serve subcommand tests ---
+
+func TestParseServeSubcommand(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"mammoth", "serve"}
+	scfg, ok := parseServeArgs(os.Args[1:])
+
+	if !ok {
+		t.Fatal("expected parseServeArgs to recognize 'serve' subcommand")
+	}
+	if scfg.port != 2389 {
+		t.Errorf("expected default port=2389, got %d", scfg.port)
+	}
+	if scfg.dataDir != "" {
+		t.Errorf("expected empty dataDir by default, got %q", scfg.dataDir)
+	}
+}
+
+func TestParseServeSubcommandWithPort(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"mammoth", "serve", "--port", "9999"}
+	scfg, ok := parseServeArgs(os.Args[1:])
+
+	if !ok {
+		t.Fatal("expected parseServeArgs to recognize 'serve' subcommand")
+	}
+	if scfg.port != 9999 {
+		t.Errorf("expected port=9999, got %d", scfg.port)
+	}
+}
+
+func TestParseServeSubcommandWithDataDir(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"mammoth", "serve", "--data-dir", "/tmp/test-data"}
+	scfg, ok := parseServeArgs(os.Args[1:])
+
+	if !ok {
+		t.Fatal("expected parseServeArgs to recognize 'serve' subcommand")
+	}
+	if scfg.dataDir != "/tmp/test-data" {
+		t.Errorf("expected dataDir=/tmp/test-data, got %q", scfg.dataDir)
+	}
+}
+
+func TestParseServeArgsReturnsFalseForNonServe(t *testing.T) {
+	_, ok := parseServeArgs([]string{"pipeline.dot"})
+	if ok {
+		t.Error("expected parseServeArgs to return false for non-serve arg")
+	}
+
+	_, ok = parseServeArgs([]string{"run", "pipeline.dot"})
+	if ok {
+		t.Error("expected parseServeArgs to return false for 'run' subcommand")
+	}
+
+	_, ok = parseServeArgs([]string{"--server"})
+	if ok {
+		t.Error("expected parseServeArgs to return false for '--server' flag")
+	}
+}
+
+func TestRunServeStartsHealthEndpoint(t *testing.T) {
+	dataDir := t.TempDir()
+
+	scfg := serveConfig{
+		port:    0, // use port 0 to let the OS pick a free port
+		dataDir: dataDir,
+	}
+
+	// Create a server and test the health endpoint via httptest
+	srv, err := buildWebServer(scfg)
+	if err != nil {
+		t.Fatalf("buildWebServer failed: %v", err)
+	}
+
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/health")
+	if err != nil {
+		t.Fatalf("GET /health failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200 for /health, got %d", resp.StatusCode)
+	}
+
+	var body map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode health response: %v", err)
+	}
+	if body["status"] != "ok" {
+		t.Errorf("expected health status %q, got %q", "ok", body["status"])
+	}
+}
+
+func TestRunServeGracefulShutdown(t *testing.T) {
+	dataDir := t.TempDir()
+
+	scfg := serveConfig{
+		port:    0,
+		dataDir: dataDir,
+	}
+
+	srv, err := buildWebServer(scfg)
+	if err != nil {
+		t.Fatalf("buildWebServer failed: %v", err)
+	}
+
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// Verify server responds before shutdown
+	resp, err := http.Get(ts.URL + "/health")
+	if err != nil {
+		t.Fatalf("GET /health failed before shutdown: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 before shutdown, got %d", resp.StatusCode)
+	}
+
+	// Close the test server (simulates shutdown)
+	ts.Close()
+
+	// Verify server no longer responds
+	_, err = http.Get(ts.URL + "/health")
+	if err == nil {
+		t.Error("expected error after server shutdown")
+	}
+}
+
+func TestRunServeResolvesDefaultDataDir(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	scfg := serveConfig{
+		port:    0,
+		dataDir: "", // empty means use default
+	}
+
+	srv, err := buildWebServer(scfg)
+	if err != nil {
+		t.Fatalf("buildWebServer with default data dir failed: %v", err)
+	}
+
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/health")
+	if err != nil {
+		t.Fatalf("GET /health failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
 func TestDetectBackendClaudeCodeEnvVarActivation(t *testing.T) {
 	// MAMMOTH_BACKEND=claude-code with claude binary available should use it
 	t.Setenv("MAMMOTH_BACKEND", "claude-code")

@@ -1,0 +1,7 @@
+{{define "graph_viewer"}}
+<div id="graph-viewer" hx-swap-oob="true">
+    <h3>Graph Visualization</h3>
+    <div id="graph-container" data-session-id="{{.SessionID}}"></div>
+    <textarea id="dot-source" hidden>{{.Session.RawDOT}}</textarea>
+</div>
+{{end}}

@@ -1,0 +1,20 @@
+{{/* ABOUTME: Activity panel with SSE connection for real-time transcript updates. */}}
+{{/* ABOUTME: Includes activity transcript, agent status controls, and undo button. */}}
+<div class="activity-panel" hx-ext="sse" sse-connect="/api/specs/{{ .SpecID }}/events/stream">
+    {{ template "activity_transcript" . }}
+</div>
+
+<div class="agent-controls">
+    <div id="agent-status"
+         hx-get="/web/specs/{{ .SpecID }}/agents/status"
+         hx-trigger="load"
+         hx-swap="outerHTML">
+    </div>
+    <button class="btn btn-sm btn-undo"
+            hx-post="/web/specs/{{ .SpecID }}/undo"
+            hx-target="#canvas"
+            hx-swap="innerHTML"
+            title="Undo last action">
+        Undo
+    </button>
+</div>

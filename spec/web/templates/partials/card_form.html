@@ -1,0 +1,53 @@
+{{/* ABOUTME: Create/edit form for a kanban card with title, type, body, and lane fields. */}}
+{{/* ABOUTME: Switches between PUT (edit) and POST (create) based on whether CardID is set. */}}
+<div class="card" style="background: var(--bg-surface);">
+    <h4>{{ if .CardID }}Edit Card{{ else }}Create Card{{ end }}</h4>
+    <form {{ if .CardID }}
+              hx-put="/web/specs/{{ .SpecID }}/cards/{{ .CardID }}"
+              hx-target="closest .card"
+              hx-swap="outerHTML"
+          {{ else }}
+              hx-post="/web/specs/{{ .SpecID }}/cards"
+              hx-target="#board"
+              hx-swap="outerHTML"
+          {{ end }}>
+        <div class="form-group">
+            <label for="card-title">Title</label>
+            <input type="text" id="card-title" name="title" value="{{ .Title }}" required>
+        </div>
+        <div class="form-group">
+            <label for="card-type">Type</label>
+            <select id="card-type" name="card_type">
+                <option value="idea" {{ if eq .CardType "idea" }}selected{{ end }}>Idea</option>
+                <option value="plan" {{ if eq .CardType "plan" }}selected{{ end }}>Plan</option>
+                <option value="task" {{ if eq .CardType "task" }}selected{{ end }}>Task</option>
+                <option value="decision" {{ if eq .CardType "decision" }}selected{{ end }}>Decision</option>
+                <option value="risk" {{ if eq .CardType "risk" }}selected{{ end }}>Risk</option>
+                <option value="note" {{ if eq .CardType "note" }}selected{{ end }}>Note</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="card-body">Body</label>
+            <textarea id="card-body" name="body" placeholder="Optional details...">{{ .Body }}</textarea>
+        </div>
+        <div class="form-group">
+            <label for="card-lane">Lane</label>
+            <select id="card-lane" name="lane">
+                <option value="Ideas" {{ if eq .Lane "Ideas" }}selected{{ end }}>Ideas</option>
+                <option value="Plan" {{ if eq .Lane "Plan" }}selected{{ end }}>Plan</option>
+                <option value="Spec" {{ if eq .Lane "Spec" }}selected{{ end }}>Spec</option>
+            </select>
+        </div>
+        <div style="display: flex; gap: var(--spacing-sm);">
+            <button type="submit" class="btn btn-primary">
+                {{ if .CardID }}Save{{ else }}Create{{ end }}
+            </button>
+            {{ if not .CardID }}
+            <button type="button" class="btn"
+                    onclick="this.closest('.card').remove()">
+                Cancel
+            </button>
+            {{ end }}
+        </div>
+    </form>
+</div>

@@ -1,0 +1,36 @@
+{{/* ABOUTME: App shell with 2-column layout: nav rail + workspace. */}}
+{{/* ABOUTME: Loads fonts, HTMX, SSE extension, SortableJS, and Viz.js. */}}
+{{ define "base" }}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Agentic spec builder — collaborative specification management with an AI agent swarm and real-time web UI">
+    <meta name="author" content="2389 Research, Inc.">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta property="og:title" content="mammoth-specd — {{ block "og_title" . }}Spec Builder{{ end }}">
+    <meta property="og:description" content="Build software specs collaboratively with AI. A swarm of agents brainstorms, plans, and generates architecture diagrams in real time.">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="mammoth-specd">
+    <title>mammoth-specd — {{ block "title" . }}Spec Builder{{ end }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Serif+Display&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+
+    <meta name="htmx-config" content='{"allowScriptTags":true}'>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.11.0/lib/viz-standalone.js"></script>
+</head>
+<body>
+    <div class="app-layout">
+        <nav class="nav-rail">{{ block "nav" . }}{{ end }}</nav>
+        <div class="workspace" id="workspace">{{ block "workspace" . }}{{ end }}</div>
+    </div>
+    {{ block "scripts" . }}{{ end }}
+</body>
+</html>
+{{ end }}

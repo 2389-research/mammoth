@@ -1,5 +1,5 @@
-// ABOUTME: CLI entrypoint for the mammoth pipeline runner with run, validate, and server modes.
-// ABOUTME: Wires together the attractor engine, HTTP server, retry policies, and signal handling.
+// ABOUTME: CLI entrypoint for the mammoth pipeline runner with run, validate, server, and serve modes.
+// ABOUTME: Wires together the attractor engine, HTTP server, web UI, retry policies, and signal handling.
 package main
 
 import (
@@ -17,6 +17,7 @@ import (
 	"github.com/2389-research/mammoth/attractor"
 	"github.com/2389-research/mammoth/render"
 	"github.com/2389-research/mammoth/tui"
+	"github.com/2389-research/mammoth/web"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -41,8 +42,22 @@ type config struct {
 	pipelineFile  string
 }
 
+// serveConfig holds configuration for the "mammoth serve" subcommand.
+type serveConfig struct {
+	port    int
+	dataDir string
+}
+
 func main() {
 	loadDotEnv(".env")
+
+	// Check for the "serve" subcommand before regular flag parsing, since
+	// it uses its own flag set and doesn't share flags with pipeline mode.
+	if len(os.Args) > 1 {
+		if scfg, ok := parseServeArgs(os.Args[1:]); ok {
+			os.Exit(runServe(scfg))
+		}
+	}
 
 	cfg := parseFlags()
 
@@ -700,6 +715,102 @@ func runServer(cfg config) int {
 	}()
 
 	fmt.Fprintf(os.Stderr, "listening on %s\n", addr)
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+
+	return 0
+}
+
+// parseServeArgs checks whether args starts with the "serve" subcommand and,
+// if so, parses serve-specific flags. Returns the serve config and true if
+// "serve" was detected, or a zero value and false otherwise.
+func parseServeArgs(args []string) (serveConfig, bool) {
+	if len(args) == 0 || args[0] != "serve" {
+		return serveConfig{}, false
+	}
+
+	var scfg serveConfig
+	fs := flag.NewFlagSet("mammoth serve", flag.ContinueOnError)
+	fs.IntVar(&scfg.port, "port", 2389, "Server port (default: 2389)")
+	fs.StringVar(&scfg.dataDir, "data-dir", "", "Data directory for projects (default: $XDG_DATA_HOME/mammoth)")
+
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, "Usage: mammoth serve [flags]")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Start the unified web server for the mammoth wizard flow.")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Flags:")
+		fs.PrintDefaults()
+	}
+
+	if err := fs.Parse(args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			os.Exit(0)
+		}
+		os.Exit(2)
+	}
+
+	return scfg, true
+}
+
+// buildWebServer creates a web.Server for the "mammoth serve" subcommand,
+// resolving the data directory and configuring the listen address.
+func buildWebServer(scfg serveConfig) (*web.Server, error) {
+	dataDir := scfg.dataDir
+	if dataDir == "" {
+		resolved, err := resolveDataDir("")
+		if err != nil {
+			return nil, fmt.Errorf("resolve data dir: %w", err)
+		}
+		dataDir = resolved
+	}
+
+	addr := fmt.Sprintf("127.0.0.1:%d", scfg.port)
+	srv, err := web.NewServer(web.ServerConfig{
+		Addr:    addr,
+		DataDir: dataDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create web server: %w", err)
+	}
+	return srv, nil
+}
+
+// runServe starts the unified web server for the mammoth wizard flow. It
+// listens on the configured port and blocks until SIGINT or SIGTERM.
+func runServe(scfg serveConfig) int {
+	srv, err := buildWebServer(scfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+
+	addr := fmt.Sprintf("127.0.0.1:%d", scfg.port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Fprintln(os.Stderr, "\nInterrupted, shutting down...")
+		cancel()
+	}()
+
+	httpServer := &http.Server{
+		Addr:    addr,
+		Handler: srv,
+	}
+
+	go func() {
+		<-ctx.Done()
+		httpServer.Close()
+	}()
+
+	fmt.Fprintf(os.Stderr, "mammoth web UI: http://%s\n", addr)
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1

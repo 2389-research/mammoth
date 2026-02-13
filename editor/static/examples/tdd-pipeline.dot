@@ -1,0 +1,22 @@
+digraph tdd_pipeline {
+    graph [goal="Test-driven development workflow", rankdir=TB]
+
+    start [shape=Mdiamond, label="Start"]
+    write_test [shape=box, prompt="Write a failing test for the next feature", label="Write Test"]
+    run_test [shape=box, prompt="Run the test suite", label="Run Tests"]
+    check_result [shape=diamond, label="Tests Pass?"]
+    implement [shape=box, prompt="Write minimal code to make the test pass", label="Implement", goal_gate=true, max_retries=3]
+    refactor [shape=box, prompt="Refactor while keeping tests green", label="Refactor"]
+    more_features [shape=diamond, label="More Features?"]
+    done [shape=Msquare, label="Done"]
+
+    start -> write_test
+    write_test -> run_test
+    run_test -> check_result
+    check_result -> implement [condition="outcome=fail"]
+    check_result -> refactor [condition="outcome=success"]
+    implement -> run_test
+    refactor -> more_features
+    more_features -> write_test [condition="outcome=success"]
+    more_features -> done [condition="outcome=fail"]
+}

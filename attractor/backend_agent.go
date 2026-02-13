@@ -208,6 +208,8 @@ func createProviderAdapter(ctx context.Context, name, apiKey, baseURL string) ll
 
 	switch name {
 	case "anthropic":
+		// Empty model string uses the mux client's built-in default;
+		// the actual model is set per-request by the agent profile.
 		client := muxllm.NewAnthropicClient(apiKey, "")
 		return llm.NewMuxAdapter(name, client)
 	case "openai":
@@ -217,6 +219,7 @@ func createProviderAdapter(ctx context.Context, name, apiKey, baseURL string) ll
 		client, err := muxllm.NewGeminiClient(ctx, apiKey, "")
 		if err != nil {
 			log.Printf("failed to create Gemini mux client, falling back to built-in adapter: %v", err)
+			//nolint:staticcheck // SA1019: Using deprecated adapter as fallback for mux client creation failure
 			return llm.NewGeminiAdapter(apiKey)
 		}
 		return llm.NewMuxAdapter(name, client)
@@ -229,6 +232,8 @@ func createProviderAdapter(ctx context.Context, name, apiKey, baseURL string) ll
 // createLegacyProviderAdapter creates a mammoth built-in provider adapter.
 // Used when a custom base URL is specified, since the mux clients do not
 // support base URL overrides.
+//
+//nolint:staticcheck // SA1019: Using deprecated adapters intentionally for custom base URL fallback
 func createLegacyProviderAdapter(name, apiKey, baseURL string) llm.ProviderAdapter {
 	switch name {
 	case "anthropic":

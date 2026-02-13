@@ -1,0 +1,12 @@
+digraph simple_pipeline {
+    graph [goal="Simple linear workflow", rankdir=LR]
+
+    start [shape=Mdiamond, label="Start"]
+    plan [shape=box, prompt="Create a plan for the task", label="Plan"]
+    implement [shape=box, prompt="Implement the plan", label="Implement"]
+    done [shape=Msquare, label="Done"]
+
+    start -> plan
+    plan -> implement
+    implement -> done
+}
