@@ -1,0 +1,9 @@
+change_id = "ccccce899c65946f1d0e39971b35b55e"
+type = "behavioral"
+intent = "feat(dot): add consolidated AST types for unified DOT parser"
+files = [".agent/changes/63e424d871316ca8d88290596226f9df.toml"]
+breaking = false
+
+[invariants]
+checked = []
+status = "skipped"
