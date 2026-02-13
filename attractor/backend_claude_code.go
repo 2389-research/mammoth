@@ -250,6 +250,11 @@ func (b *ClaudeCodeBackend) RunAgent(ctx context.Context, config AgentRunConfig)
 		}
 	}
 
+	// Surface scanner errors (e.g. ErrTooLong from oversized JSONL lines)
+	if scanErr := scanner.Err(); scanErr != nil && resultEvent == nil {
+		return nil, fmt.Errorf("reading claude output: %w", scanErr)
+	}
+
 	// Wait for the process to finish
 	waitErr := cmd.Wait()
 
