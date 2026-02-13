@@ -1,0 +1,15 @@
+change_id = "63e424d871316ca8d88290596226f9df"
+type = "behavioral"
+intent = "feat(dot): add lexer with line/column tracking"
+files = [
+    ".agent/changes/e4cc558a4d95a48f5b505adf484a2eb7.toml",
+    "dot/ast.go",
+    "dot/ast_test.go",
+    "dot/lexer.go",
+    "dot/lexer_test.go",
+]
+breaking = false
+
+[invariants]
+checked = []
+status = "skipped"
