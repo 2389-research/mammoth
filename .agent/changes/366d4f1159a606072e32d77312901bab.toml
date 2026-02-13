@@ -1,0 +1,9 @@
+change_id = "366d4f1159a606072e32d77312901bab"
+type = "behavioral"
+intent = "feat(dot): add recursive descent parser"
+files = [".agent/changes/dc0677231a8ef589eb42aba7d8fbb2d9.toml"]
+breaking = false
+
+[invariants]
+checked = []
+status = "skipped"
