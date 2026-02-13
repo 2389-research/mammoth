@@ -1,0 +1,21 @@
+change_id = "93f1f2b5d957de05331244f2792f708c"
+type = "behavioral"
+intent = "refactor(attractor): wire to consolidated dot/ parser package"
+files = [
+    ".agent/changes/3fd4b7995a1f66c6e44f90a1a1a63700.toml",
+    ".agent/checkpoints/pre-dot-wiring.json",
+    "attractor/ast.go",
+    "attractor/ast_test.go",
+    "attractor/compat.go",
+    "attractor/lexer.go",
+    "attractor/lexer_test.go",
+    "attractor/parser.go",
+    "attractor/parser_test.go",
+    "render/render.go",
+    "render/render_test.go",
+]
+breaking = false
+
+[invariants]
+checked = []
+status = "skipped"
