@@ -1,0 +1,23 @@
+# Build artifacts
+bin/
+*.test
+
+# Environment and secrets
+.env
+.env.*
+
+# Coverage
+coverage.out
+coverage.html
+
+# OS files
+.DS_Store
+
+# Workgraph internal state
+.workgraph/
+
+# Scratch scenario tests
+.scratch/
+
+# Pipeline run artifacts
+artifacts/

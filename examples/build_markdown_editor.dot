@@ -1,0 +1,146 @@
+// Build a Go TUI markdown editor with live preview.
+// Exercises: multi-phase Go build, goal gates, compile loops, human review.
+digraph build_markdown_editor {
+    graph [
+        goal="Build a Go TUI markdown editor with split-pane live preview using ANSI rendering",
+        retry_target="implement_editor",
+        default_max_retry=3,
+        model_stylesheet="
+            * { llm_model: claude-sonnet-4-5; llm_provider: anthropic; }
+            .code { llm_model: claude-opus-4-6; llm_provider: anthropic; }
+            .review { llm_model: claude-sonnet-4-5; llm_provider: anthropic; }
+            #implement_renderer { llm_model: claude-opus-4-6; llm_provider: anthropic; reasoning_effort: high; }
+        "
+    ]
+    rankdir=LR
+
+    start [shape=Mdiamond, label="Start"]
+    done  [shape=Msquare, label="Done"]
+
+    // Phase 1: Design
+    plan [
+        label="Plan Editor",
+        prompt="Design a TUI markdown editor for: $goal.
+Features:
+- Split pane: left side is raw markdown editor, right side is rendered preview
+- ANSI-based markdown rendering (bold, italic, headers, code blocks, lists, links)
+- Vi-style modal editing: normal mode (hjkl navigation) and insert mode (i to enter, Esc to exit)
+- File operations: open file from CLI arg, save with :w, quit with :q, save+quit with :wq
+- Line numbers in editor pane
+- Status bar at bottom showing mode, filename, line/col position, modified indicator
+- Syntax highlighting for markdown in editor pane (headers in cyan, code in green, emphasis in yellow)
+- Terminal resize handling
+- Single main.go file, only dep is golang.org/x/term
+Output: data structures, rendering pipeline, keymap design, pane layout math."
+    ]
+
+    // Phase 2: Project setup
+    setup [
+        label="Setup Module",
+        class="code",
+        prompt="Set up the Go project:
+1. Run 'go mod init markdown-editor'
+2. Run 'go get golang.org/x/term'
+3. Create main.go with package main, ABOUTME comments, and a stub main()
+4. Verify with 'go build ./...'
+The binary should accept a filename as a positional arg."
+    ]
+
+    // Phase 3: Editor core
+    implement_editor [
+        label="Implement Editor",
+        class="code",
+        prompt="Implement the text editor core in main.go:
+- Buffer type: []string for lines, cursor position (row, col), scroll offset
+- Vi modal editing: normal mode (hjkl, dd, yy, p, o, O, x, w, b, 0, $, G, gg) and insert mode (typing, backspace, enter, tab)
+- Mode switching: i/a/o/O enter insert, Esc returns to normal
+- Command mode: : prefix, support :w, :q, :wq, :q!
+- File I/O: load file into buffer on start, save buffer to file on :w
+- Undo stack: store buffer snapshots on each edit
+- Terminal raw mode via golang.org/x/term
+- Non-blocking input via goroutine
+Must compile cleanly.",
+        goal_gate=true,
+        max_retries=3
+    ]
+
+    // Phase 4: Markdown renderer
+    implement_renderer [
+        label="Implement Renderer",
+        class="code",
+        prompt="Implement the ANSI markdown renderer in main.go:
+- Parse markdown line-by-line for rendering
+- Headers (# to ######): bold + cyan, proportional sizing via font weight
+- Bold (**text**): ANSI bold
+- Italic (*text*): ANSI italic/dim
+- Code spans (`code`): green background or green text
+- Fenced code blocks (```): green text, indented
+- Unordered lists (- or *): bullet character + indent
+- Ordered lists (1.): number + indent
+- Links ([text](url)): underline text, dim url
+- Horizontal rules (---): full-width line
+- Blockquotes (>): dim + indented with bar
+Render into a string buffer for the preview pane."
+    ]
+
+    // Phase 5: Split pane layout
+    implement_layout [
+        label="Implement Layout",
+        class="code",
+        prompt="Implement the split-pane TUI layout in main.go:
+- Detect terminal width and height via term.GetSize
+- Left pane: editor with line numbers (50% width)
+- Right pane: rendered markdown preview (50% width)
+- Vertical divider between panes (dim pipe character)
+- Status bar at bottom: mode indicator, filename, line:col, modified flag, scroll percentage
+- Render both panes into a single frame buffer via strings.Builder
+- Flush in one write to avoid flicker
+- Handle terminal resize via SIGWINCH
+- Scroll sync: preview follows editor cursor position"
+    ]
+
+    // Phase 6: Compile check
+    compile [
+        label="Compile",
+        class="code",
+        prompt="Compile and verify the markdown editor:
+1. Run 'go build -o mdedit .' - must succeed
+2. Run 'go vet ./...' - must have no warnings
+3. Check binary exists and is executable
+4. Create a test.md with sample markdown and verify the binary accepts it as an arg
+Report all results."
+    ]
+
+    // Phase 7: Compile gate
+    compile_ok [shape=diamond, label="Compiles?"]
+
+    // Phase 8: LLM code review
+    review [
+        label="Review Editor",
+        class="review",
+        prompt="Review all generated code in the working directory.\nCheck for: compilation/syntax, vi keybinding correctness, markdown rendering accuracy, split-pane layout, edge cases, error handling.\nEnd your response with OUTCOME:PASS if acceptable, or OUTCOME:FAIL with details if issues need fixing."
+    ]
+
+    // Phase 9: Final polish
+    polish [
+        label="Polish",
+        class="code",
+        prompt="Apply review feedback and polish:
+- Verify all vi keybindings work correctly
+- Ensure undo/redo is reliable
+- Test with various markdown files
+- Handle edge cases: empty file, very long lines, binary file detection
+- Clean up any compiler warnings"
+    ]
+
+    // Edges
+    start -> plan -> setup -> implement_editor -> implement_renderer -> implement_layout -> compile -> compile_ok
+
+    compile_ok -> review            [label="Pass", condition="outcome=success"]
+    compile_ok -> implement_editor  [label="Fail", condition="outcome=fail"]
+
+    review -> done     [label="Pass", condition="outcome=success"]
+    review -> polish   [label="Fail", condition="outcome=fail"]
+
+    polish -> compile
+}

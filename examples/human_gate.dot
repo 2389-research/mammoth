@@ -1,0 +1,23 @@
+// Human-in-the-loop: code review gate with approve/fix choices.
+digraph human_gate {
+    rankdir=LR
+
+    start [shape=Mdiamond, label="Start"]
+    exit  [shape=Msquare, label="Exit"]
+
+    implement [shape=box, label="Implement", prompt="Write the code"]
+    ship_it   [shape=box, label="Ship It", prompt="Prepare the release"]
+    fixes     [shape=box, label="Apply Fixes", prompt="Fix the review feedback"]
+
+    review_gate [
+        shape=hexagon,
+        label="Review Changes",
+        type="wait.human"
+    ]
+
+    start -> implement -> review_gate
+    review_gate -> ship_it [label="[A] Approve"]
+    review_gate -> fixes   [label="[F] Fix"]
+    ship_it -> exit
+    fixes -> review_gate
+}

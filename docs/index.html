@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mammoth — Documentation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('theme');
+            if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
+    <style>
+        :root {
+            --color-brand: #2563eb;
+            --color-brand-subtle: rgba(37, 99, 235, 0.08);
+            --color-brand-text: #1d4ed8;
+            --color-green: #16a34a;
+            --color-green-subtle: rgba(22, 163, 74, 0.08);
+            --color-amber: #ca8a04;
+            --color-amber-subtle: rgba(202, 138, 4, 0.08);
+            --color-text-primary: #111827;
+            --color-text-secondary: #6b7280;
+            --color-text-tertiary: #9ca3af;
+            --color-surface: #ffffff;
+            --color-bg: #f9fafb;
+            --color-border: rgba(0, 0, 0, 0.06);
+            --color-hover: rgba(0, 0, 0, 0.025);
+            --color-card-shadow: 0 1px 2px 0 rgba(0,0,0,0.03), 0 1px 3px -1px rgba(0,0,0,0.04);
+            --color-btn-text: #ffffff;
+            --font-sans: 'Inter', system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        html.dark {
+            --color-brand: #60a5fa;
+            --color-brand-subtle: rgba(96, 165, 250, 0.1);
+            --color-brand-text: #93bbfd;
+            --color-green: #4ade80;
+            --color-green-subtle: rgba(74, 222, 128, 0.1);
+            --color-amber: #fbbf24;
+            --color-amber-subtle: rgba(251, 191, 36, 0.1);
+            --color-text-primary: #f1f5f9;
+            --color-text-secondary: #94a3b8;
+            --color-text-tertiary: #475569;
+            --color-surface: rgba(255, 255, 255, 0.03);
+            --color-bg: #0c0f14;
+            --color-border: rgba(255, 255, 255, 0.06);
+            --color-hover: rgba(255, 255, 255, 0.03);
+            --color-card-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+            --color-btn-text: #0c0f14;
+        }
+
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--color-bg);
+            color: var(--color-text-primary);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+
+        /* ---- NAV ---- */
+        .nav {
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            background: var(--color-bg);
+            z-index: 10;
+        }
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            color: inherit;
+        }
+        .nav-logo {
+            width: 28px;
+            height: 28px;
+            background: var(--color-brand);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .nav-logo svg { width: 14px; height: 14px; }
+        .nav-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .nav-link {
+            font-size: 13px;
+            color: var(--color-text-secondary);
+            text-decoration: none;
+            padding: 6px 10px;
+            border-radius: 8px;
+            transition: background 0.15s, color 0.15s;
+        }
+        .nav-link:hover {
+            background: var(--color-hover);
+            color: var(--color-text-primary);
+        }
+        .theme-toggle {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: none;
+            background: transparent;
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s, color 0.15s;
+        }
+        .theme-toggle:hover {
+            background: var(--color-hover);
+            color: var(--color-text-primary);
+        }
+        .theme-toggle svg { width: 18px; height: 18px; }
+        .theme-toggle .icon-sun { display: none; }
+        .theme-toggle .icon-moon { display: block; }
+        html.dark .theme-toggle .icon-sun { display: block; }
+        html.dark .theme-toggle .icon-moon { display: none; }
+
+        /* ---- MAIN ---- */
+        .main {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 48px 24px 80px;
+        }
+
+        /* ---- HERO ---- */
+        .hero {
+            margin-bottom: 48px;
+            animation: fadeIn 0.4s ease-out;
+        }
+        .hero h1 {
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            margin-bottom: 8px;
+        }
+        .hero p {
+            color: var(--color-text-secondary);
+            font-size: 16px;
+            line-height: 1.5;
+            max-width: 560px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ---- LAYERS ---- */
+        .layers {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        .layer-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .layer-chip-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+        .layer-llm { color: var(--color-brand-text); background: var(--color-brand-subtle); }
+        .layer-llm .layer-chip-dot { background: var(--color-brand); }
+        .layer-agent { color: var(--color-amber); background: var(--color-amber-subtle); }
+        .layer-agent .layer-chip-dot { background: var(--color-amber); }
+        .layer-pipeline { color: var(--color-green); background: var(--color-green-subtle); }
+        .layer-pipeline .layer-chip-dot { background: var(--color-green); }
+
+        /* ---- SECTION ---- */
+        .section {
+            margin-bottom: 48px;
+            animation: fadeIn 0.4s ease-out both;
+        }
+        .section:nth-child(2) { animation-delay: 0.05s; }
+        .section:nth-child(3) { animation-delay: 0.1s; }
+        .section:nth-child(4) { animation-delay: 0.15s; }
+        .section:nth-child(5) { animation-delay: 0.2s; }
+        .section-header {
+            font-size: 13px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--color-text-tertiary);
+            margin-bottom: 16px;
+        }
+
+        /* ---- QUICK START CARD ---- */
+        .quickstart-card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 16px;
+            box-shadow: var(--color-card-shadow);
+            padding: 24px;
+        }
+        .step {
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+        }
+        .step + .step {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid var(--color-border);
+        }
+        .step-number {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--color-brand-subtle);
+            color: var(--color-brand);
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+        .step-content {
+            min-width: 0;
+        }
+        .step-label {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 6px;
+        }
+        .step-code {
+            font-family: var(--font-mono);
+            font-size: 13px;
+            line-height: 1.6;
+            background: var(--color-hover);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            overflow-x: auto;
+            white-space: pre;
+            color: var(--color-text-primary);
+        }
+
+        /* ---- DOC GRID ---- */
+        .doc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+            gap: 12px;
+        }
+        .doc-card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 12px;
+            box-shadow: var(--color-card-shadow);
+            padding: 16px;
+            text-decoration: none;
+            color: inherit;
+            transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .doc-card:hover {
+            border-color: var(--color-brand);
+            box-shadow: 0 0 0 3px var(--color-brand-subtle);
+            transform: translateY(-1px);
+        }
+        .doc-card-title {
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .doc-card-desc {
+            font-size: 13px;
+            color: var(--color-text-secondary);
+            line-height: 1.4;
+        }
+        .doc-card-arrow {
+            font-size: 14px;
+            color: var(--color-text-tertiary);
+            margin-top: 4px;
+            transition: transform 0.15s, color 0.15s;
+        }
+        .doc-card:hover .doc-card-arrow {
+            transform: translateX(3px);
+            color: var(--color-brand);
+        }
+
+        /* ---- ARCHITECTURE ---- */
+        .arch-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .arch-layer {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 12px;
+            box-shadow: var(--color-card-shadow);
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .arch-badge {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 500;
+            padding: 3px 8px;
+            border-radius: 6px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .arch-badge-llm { color: var(--color-brand-text); background: var(--color-brand-subtle); }
+        .arch-badge-agent { color: var(--color-amber); background: var(--color-amber-subtle); }
+        .arch-badge-pipeline { color: var(--color-green); background: var(--color-green-subtle); }
+        .arch-name {
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .arch-desc {
+            font-size: 13px;
+            color: var(--color-text-secondary);
+        }
+        .arch-connector {
+            width: 1px;
+            height: 8px;
+            background: var(--color-border);
+            margin-left: 36px;
+        }
+
+        /* ---- FOOTER ---- */
+        .footer {
+            border-top: 1px solid var(--color-border);
+            padding-top: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+            color: var(--color-text-tertiary);
+        }
+        .footer a {
+            color: var(--color-text-secondary);
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+        .footer a:hover {
+            color: var(--color-text-primary);
+        }
+
+        @media (max-width: 640px) {
+            .nav { padding: 12px 16px; }
+            .main { padding: 32px 16px 60px; }
+            .hero h1 { font-size: 24px; }
+            .doc-grid { grid-template-columns: 1fr; }
+            .arch-layer { flex-wrap: wrap; gap: 8px; }
+            .footer { flex-direction: column; gap: 8px; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="nav">
+        <a class="nav-brand" href="./">
+            <div class="nav-logo">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <path d="M7 1L12 4.5V9.5L7 13L2 9.5V4.5L7 1Z" stroke="var(--color-btn-text)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+                    <circle cx="7" cy="7" r="1.5" fill="var(--color-btn-text)"/>
+                </svg>
+            </div>
+            <div class="nav-title">Mammoth</div>
+        </a>
+        <div class="nav-right">
+            <a class="nav-link" href="https://github.com/2389-research/mammoth">GitHub</a>
+            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+                <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+                <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/>
+                    <line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+            </button>
+        </div>
+    </nav>
+
+    <div class="main">
+        <!-- Hero -->
+        <div class="hero">
+            <h1>Mammoth</h1>
+            <p>A DOT-based pipeline runner for LLM agent workflows. Define a graph, run it, watch it think.</p>
+            <div class="layers">
+                <span class="layer-chip layer-llm"><span class="layer-chip-dot"></span>LLM SDK</span>
+                <span class="layer-chip layer-agent"><span class="layer-chip-dot"></span>Agent Loop</span>
+                <span class="layer-chip layer-pipeline"><span class="layer-chip-dot"></span>Pipeline Runner</span>
+            </div>
+        </div>
+
+        <!-- Quick Start -->
+        <div class="section">
+            <div class="section-header">Quick Start</div>
+            <div class="quickstart-card">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <div class="step-label">Install</div>
+                        <div class="step-code">go install github.com/2389-research/mammoth/cmd/mammoth@latest</div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <div class="step-label">Set an API key</div>
+                        <div class="step-code">export ANTHROPIC_API_KEY="sk-ant-..."</div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <div class="step-label">Run a pipeline</div>
+                        <div class="step-code">mammoth run pipeline.dot</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Documentation Grid -->
+        <div class="section">
+            <div class="section-header">Documentation</div>
+            <div class="doc-grid">
+                <a class="doc-card" href="quickstart.md">
+                    <div class="doc-card-title">Quickstart</div>
+                    <div class="doc-card-desc">Get a pipeline running in under five minutes</div>
+                    <div class="doc-card-arrow">&rarr;</div>
+                </a>
+                <a class="doc-card" href="cli-usage.md">
+                    <div class="doc-card-title">CLI Usage</div>
+                    <div class="doc-card-desc">Pipeline execution, validation, and server mode</div>
+                    <div class="doc-card-arrow">&rarr;</div>
+                </a>
+                <a class="doc-card" href="cli-spec.md">
+                    <div class="doc-card-title">CLI Specification</div>
+                    <div class="doc-card-desc">Commands, flags, output formats, and exit codes</div>
+                    <div class="doc-card-arrow">&rarr;</div>
+                </a>
+                <a class="doc-card" href="dsl-reference.md">
+                    <div class="doc-card-title">DSL Reference</div>
+                    <div class="doc-card-desc">DOT digraph syntax for LLM agent pipelines</div>
+                    <div class="doc-card-arrow">&rarr;</div>
+                </a>
+                <a class="doc-card" href="handlers.md">
+                    <div class="doc-card-title">Handlers</div>
+                    <div class="doc-card-desc">9 built-in execution units: shapes, dispatch, and behavior</div>
+                    <div class="doc-card-arrow">&rarr;</div>
+                </a>
+                <a class="doc-card" href="backend-config.md">
+                    <div class="doc-card-title">Backend Configuration</div>
+                    <div class="doc-card-desc">Anthropic, OpenAI, Gemini: keys, catalog, retry</div>
+                    <div class="doc-card-arrow">&rarr;</div>
+                </a>
+                <a class="doc-card" href="api-reference.md">
+                    <div class="doc-card-title">API Reference</div>
+                    <div class="doc-card-desc">Go packages, HTTP endpoints, types, and events</div>
+                    <div class="doc-card-arrow">&rarr;</div>
+                </a>
+                <a class="doc-card" href="walkthrough.md">
+                    <div class="doc-card-title">Walkthrough</div>
+                    <div class="doc-card-desc">Write, validate, and run pipelines from scratch</div>
+                    <div class="doc-card-arrow">&rarr;</div>
+                </a>
+                <a class="doc-card" href="parity-matrix.md">
+                    <div class="doc-card-title">Parity Matrix</div>
+                    <div class="doc-card-desc">Spec coverage: 191/193 done, 2 partial, 0 missing</div>
+                    <div class="doc-card-arrow">&rarr;</div>
+                </a>
+                <a class="doc-card" href="coverage.md">
+                    <div class="doc-card-title">Test Coverage</div>
+                    <div class="doc-card-desc">Per-package thresholds and critical path analysis</div>
+                    <div class="doc-card-arrow">&rarr;</div>
+                </a>
+            </div>
+        </div>
+
+        <!-- Architecture -->
+        <div class="section">
+            <div class="section-header">Architecture</div>
+            <div class="arch-stack">
+                <div class="arch-layer">
+                    <span class="arch-badge arch-badge-pipeline">attractor/</span>
+                    <span class="arch-name">Pipeline Runner</span>
+                    <span class="arch-desc">DOT-based DAG execution, node handlers, human-in-the-loop</span>
+                </div>
+                <div class="arch-connector"></div>
+                <div class="arch-layer">
+                    <span class="arch-badge arch-badge-agent">agent/</span>
+                    <span class="arch-name">Agent Loop</span>
+                    <span class="arch-desc">Agentic loop, provider profiles, tools, steering, subagents</span>
+                </div>
+                <div class="arch-connector"></div>
+                <div class="arch-layer">
+                    <span class="arch-badge arch-badge-llm">llm/</span>
+                    <span class="arch-name">LLM SDK</span>
+                    <span class="arch-desc">Unified client for OpenAI, Anthropic, and Gemini APIs</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <span>Mammoth &mdash; A Go implementation of the <a href="https://github.com/strongdm/attractor">StrongDM Attractor</a> spec</span>
+            <a href="https://github.com/2389-research/mammoth">View on GitHub</a>
+        </div>
+    </div>
+
+    <script>
+        function toggleTheme() {
+            var html = document.documentElement;
+            var isDark = html.classList.contains('dark');
+            html.classList.toggle('dark');
+            localStorage.setItem('theme', isDark ? 'light' : 'dark');
+        }
+    </script>
+</body>
+</html>

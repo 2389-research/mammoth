@@ -1,0 +1,122 @@
+// Build an HTMX-based blog platform with Flask, SQLite, and Markdown.
+// Exercises: stylesheet, multi-phase build, conditional gates, human review.
+digraph build_htmx_blog {
+    graph [
+        goal="Build an HTMX-based blog platform using Flask, SQLite, and Markdown rendering",
+        retry_target="implement_backend",
+        default_max_retry=2,
+        model_stylesheet="
+            * { llm_model: claude-sonnet-4-5; llm_provider: anthropic; }
+            .code { llm_model: claude-opus-4-6; llm_provider: anthropic; }
+            .frontend { llm_model: claude-sonnet-4-5; llm_provider: anthropic; }
+            .review { llm_model: claude-sonnet-4-5; llm_provider: anthropic; }
+        "
+    ]
+    rankdir=LR
+
+    start [shape=Mdiamond, label="Start"]
+    done  [shape=Msquare, label="Done"]
+
+    // Phase 1: Architecture
+    plan [
+        label="Plan Architecture",
+        class="planning",
+        prompt="Design a blog platform for: $goal.
+Architecture decisions:
+- Flask app in a single app.py
+- SQLite via python sqlite3 stdlib (no ORM)
+- Markdown rendering server-side via the markdown library
+- HTMX for all CRUD interactions (no page reloads)
+- Jinja2 templates: base.html, index.html, post.html, post_form.html, post_item.html, confirm_delete.html
+- Hand-written CSS in static/style.css (no frameworks)
+- Seed data: 3 sample posts on first run
+- Port 1337
+Output file list, route table, and template hierarchy."
+    ]
+
+    // Phase 2: Project setup
+    setup [
+        label="Setup Project",
+        class="code",
+        prompt="Set up the Python project:
+1. Run 'uv init' if no pyproject.toml exists
+2. Run 'uv add flask markdown'
+3. Create directory structure: templates/, static/
+4. Create a minimal main.py that imports and runs the app
+Verify with 'uv run python -c \"import flask; print(flask.__version__)\"'"
+    ]
+
+    // Phase 3: Backend implementation (goal gate)
+    implement_backend [
+        label="Implement Backend",
+        class="code",
+        prompt="Implement app.py with all routes for: $goal.
+Routes: GET /, GET /posts/<id>, GET /posts/new, POST /posts, GET /posts/<id>/edit, PUT /posts/<id>, DELETE /posts/<id>, GET /posts/<id>/confirm-delete.
+Include: SQLite init with schema creation, seed data function, markdown rendering, flash messages via HTMX OOB swaps.
+All routes must return proper HTMX partials or full pages.",
+        goal_gate=true,
+        max_retries=3
+    ]
+
+    // Phase 4: Templates
+    implement_templates [
+        label="Implement Templates",
+        class="frontend",
+        prompt="Create all Jinja2 templates for the blog:
+- base.html: HTML shell with HTMX CDN, nav bar, flash message container, main content area
+- index.html: Post listing with article cards, new post button
+- post.html: Single post view with rendered markdown, edit/delete buttons
+- post_form.html: Create/edit form using hx-post/hx-put targeting #main-content
+- post_item.html: Single post card partial for HTMX swaps
+- confirm_delete.html: Delete confirmation with hx-delete
+All templates must extend base.html and use HTMX attributes."
+    ]
+
+    // Phase 5: Styling
+    implement_css [
+        label="Implement CSS",
+        class="frontend",
+        prompt="Create static/style.css for the blog:
+- System font stack, cream background (#fefefe), dark text (#333)
+- Max-width 720px centered layout
+- Article cards with subtle borders and padding
+- Responsive down to 480px
+- Form styling for create/edit
+- Flash message styling: fixed position top-right, auto-fade
+- Code block styling for markdown fenced code
+No CSS frameworks - hand-written only."
+    ]
+
+    // Phase 6: Smoke test
+    smoke_test [
+        label="Smoke Test",
+        class="code",
+        prompt="Start the Flask app in the background, wait for it to be ready, then:
+1. GET / - expect 200
+2. GET /posts/1 - expect 200
+3. GET /posts/new - expect 200
+4. POST /posts with title=Test&body=Hello - expect 200
+5. GET /posts/<new_id>/edit - expect 200
+6. DELETE /posts/<new_id> - expect 200
+Kill the server and report results. All 6 must pass."
+    ]
+
+    // Phase 7: Test gate
+    tests_ok [shape=diamond, label="Tests pass?"]
+
+    // Phase 8: LLM code review
+    review [
+        label="Review Blog",
+        class="review",
+        prompt="Review all generated code in the working directory.\nCheck for: Flask route correctness, HTMX attribute usage, template inheritance, SQLite schema, CSS styling, error handling.\nEnd your response with OUTCOME:PASS if acceptable, or OUTCOME:FAIL with details if issues need fixing."
+    ]
+
+    // Edges
+    start -> plan -> setup -> implement_backend -> implement_templates -> implement_css -> smoke_test -> tests_ok
+
+    tests_ok -> review            [label="Pass", condition="outcome=success"]
+    tests_ok -> implement_backend [label="Fail", condition="outcome=fail"]
+
+    review -> done                [label="Pass", condition="outcome=success"]
+    review -> implement_backend   [label="Fail", condition="outcome=fail"]
+}

@@ -1,0 +1,24 @@
+// Plan-implement-review pipeline for integration smoke testing (DoD 11.13).
+// Exercises goal gates, conditional branching, and the plan->implement->review->done flow.
+digraph plan_implement_review {
+    graph [
+        goal="Create a hello world Python script",
+        retry_target="implement"
+    ]
+    rankdir=LR
+    node [shape=box]
+
+    start     [shape=Mdiamond, label="Start"]
+    done      [shape=Msquare, label="Done"]
+
+    plan      [label="Plan", prompt="Plan how to create a hello world script for: $goal"]
+    implement [label="Implement", prompt="Write the code based on the plan", goal_gate=true]
+    review    [label="Review", prompt="Review the code for correctness"]
+
+    start -> plan
+    plan -> implement
+    implement -> review [condition="outcome=success"]
+    implement -> plan   [condition="outcome=fail", label="Retry"]
+    review -> done      [condition="outcome=success"]
+    review -> implement [condition="outcome=fail", label="Fix"]
+}

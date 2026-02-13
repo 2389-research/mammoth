@@ -1,0 +1,20 @@
+// Goal gate enforcement: implement must succeed before pipeline can exit.
+// If tests fail at the gate, retries back to implement.
+digraph goal_gate {
+    graph [
+        goal="Build a reliable feature with tests",
+        retry_target="implement"
+    ]
+    rankdir=LR
+    node [shape=box]
+
+    start     [shape=Mdiamond, label="Start"]
+    exit      [shape=Msquare, label="Exit"]
+
+    plan      [label="Plan", prompt="Plan the implementation for: $goal"]
+    implement [label="Implement", prompt="Implement the plan", goal_gate=true, max_retries=3]
+    validate  [label="Validate", prompt="Run the test suite"]
+
+    start -> plan -> implement -> validate -> exit
+    validate -> implement [condition="outcome=fail", label="Fix"]
+}

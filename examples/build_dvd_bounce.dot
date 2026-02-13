@@ -1,0 +1,83 @@
+// Build a bouncing DVD logo screensaver as a single HTML file.
+// Exercises: lightweight pipeline, single coding node, compile gate, human approval.
+digraph build_dvd_bounce {
+    graph [
+        goal="Build a bouncing DVD Video logo screensaver as a single self-contained HTML file",
+        model_stylesheet="
+            * { llm_model: claude-sonnet-4-5; llm_provider: anthropic; }
+            .code { llm_model: claude-opus-4-6; llm_provider: anthropic; }
+            .review { llm_model: claude-sonnet-4-5; llm_provider: anthropic; }
+        "
+    ]
+    rankdir=LR
+
+    start [shape=Mdiamond, label="Start"]
+    done  [shape=Msquare, label="Done"]
+
+    // Phase 1: Design
+    design [
+        label="Design",
+        prompt="Design a DVD screensaver for: $goal.
+Specify:
+- Visual design: DVD Video logo as a rounded pill shape with colored border and dark inner background
+- Color palette: 8 vibrant colors that cycle on wall hits
+- Animation: requestAnimationFrame at 60fps, 2px/frame velocity
+- Corner hit detection: both axes bounce simultaneously, celebrate with scale pulse
+- Corner hit counter in top-right
+- All CSS and JS inline in a single HTML file, zero external dependencies
+Output the complete design spec."
+    ]
+
+    // Phase 2: Implement
+    implement [
+        label="Implement",
+        class="code",
+        prompt="Create index.html implementing the DVD screensaver for: $goal.
+Requirements:
+- Single self-contained HTML file, all CSS and JS inline
+- Dark background (#111), full viewport, no scrollbars
+- DVD logo: 150x90px rounded rectangle, currentColor trick for dynamic color
+- 'DVD' text 42px bold italic, 'Video' text 14px bold underneath
+- Glow effect via drop-shadow using currentColor
+- 8-color palette cycling on any wall hit
+- Corner hit: scale pulse animation (1x to 1.4x over 0.4s) with amplified glow
+- Corner counter: fixed top-right, monospace, flashes white on corner hit
+- Random start position and direction
+Write the complete file.",
+        goal_gate=true,
+        max_retries=2
+    ]
+
+    // Phase 3: Validate HTML
+    validate [
+        label="Validate",
+        class="code",
+        prompt="Validate the generated index.html:
+1. Check the file exists and is non-empty
+2. Verify it contains <!DOCTYPE html>, <html>, <head>, <body> tags
+3. Verify it contains a <script> tag (JS is present)
+4. Verify it contains a <style> tag (CSS is present)
+5. Check for 'requestAnimationFrame' (animation loop exists)
+6. Check for 'DVD' text content
+Report pass/fail for each check."
+    ]
+
+    // Phase 4: Validation gate
+    valid [shape=diamond, label="Valid HTML?"]
+
+    // Phase 5: LLM code review
+    preview [
+        label="Review Code",
+        class="review",
+        prompt="Review all generated code in the working directory.\nCheck for: valid HTML structure, CSS correctness, JavaScript animation logic, requestAnimationFrame usage, DVD logo rendering.\nEnd your response with OUTCOME:PASS if acceptable, or OUTCOME:FAIL with details if issues need fixing."
+    ]
+
+    // Edges
+    start -> design -> implement -> validate -> valid
+
+    valid -> preview    [label="Pass", condition="outcome=success"]
+    valid -> implement  [label="Fail", condition="outcome=fail"]
+
+    preview -> done       [label="Pass", condition="outcome=success"]
+    preview -> implement  [label="Fail", condition="outcome=fail"]
+}

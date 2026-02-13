@@ -1,0 +1,82 @@
+// Full-featured pipeline: stylesheet, goal gates, human review, retry, branching.
+// Exercises most attractor features in a single realistic workflow.
+digraph full_pipeline {
+    graph [
+        goal="Create a hello world Python script",
+        retry_target="implement",
+        default_max_retry=2,
+        model_stylesheet="
+            * { llm_model: claude-sonnet-4-5; llm_provider: anthropic; }
+            .code { llm_model: claude-opus-4-6; llm_provider: anthropic; }
+            #critical_review { llm_model: gpt-5.2; llm_provider: openai; reasoning_effort: high; }
+        "
+    ]
+    rankdir=LR
+
+    // Terminal nodes
+    start [shape=Mdiamond, label="Start"]
+    done  [shape=Msquare, label="Done"]
+
+    // Planning phase
+    plan [
+        label="Plan",
+        class="planning",
+        prompt="Plan how to create a hello world script for: $goal"
+    ]
+
+    // Implementation phase (goal gate - must succeed)
+    implement [
+        label="Implement",
+        class="code",
+        prompt="Write the code based on the plan",
+        goal_gate=true,
+        max_retries=3
+    ]
+
+    // Validation phase
+    validate [
+        label="Run Tests",
+        class="code",
+        prompt="Run the test suite and check for correctness"
+    ]
+
+    // Conditional gate
+    tests_ok [shape=diamond, label="Tests passing?"]
+
+    // Critical review (uses highest-specificity model from stylesheet)
+    critical_review [
+        label="Critical Review",
+        class="code",
+        prompt="Deep review of the implementation for correctness and edge cases"
+    ]
+
+    // Human approval gate
+    human_review [
+        shape=hexagon,
+        label="Human Approval",
+        type="wait.human"
+    ]
+
+    // Ship it
+    ship [
+        label="Ship",
+        prompt="Prepare the final release artifacts"
+    ]
+
+    // Edges
+    start -> plan -> implement -> validate -> tests_ok
+
+    // Branch on test results
+    tests_ok -> critical_review [label="Pass", condition="outcome=success"]
+    tests_ok -> implement       [label="Fail", condition="outcome=fail"]
+
+    // After critical review, human decides
+    critical_review -> human_review
+
+    // Human choices
+    human_review -> ship       [label="[A] Approve"]
+    human_review -> implement  [label="[R] Revise"]
+
+    // Ship to done
+    ship -> done
+}

@@ -1,0 +1,12 @@
+<!-- ABOUTME: Partial template for a single post item in the list view. -->
+<!-- ABOUTME: Used by index.html and HTMX swaps to render individual post cards. -->
+<article class="post-card" id="post-{{ post.id }}">
+    <h2>
+        <a href="/posts/{{ post.id }}"
+           hx-get="/posts/{{ post.id }}"
+           hx-target="#main-content"
+           hx-push-url="true">{{ post.title }}</a>
+    </h2>
+    <time class="post-date">{{ post.created_at[:10] }}</time>
+    <p class="post-preview">{{ post.preview }}</p>
+</article>
