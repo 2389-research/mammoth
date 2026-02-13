@@ -39,7 +39,7 @@ func printHelp(w io.Writer, ver string) {
 	fmt.Fprintln(w)
 
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  mammoth <pipeline.dot>              Run a pipeline")
+	fmt.Fprintln(w, "  mammoth [run] <pipeline.dot>        Run a pipeline")
 	fmt.Fprintln(w, "  mammoth -validate <pipeline.dot>    Validate without executing")
 	fmt.Fprintln(w, "  mammoth -server [-port 2389]        Start HTTP API server")
 	fmt.Fprintln(w)

@@ -39,8 +39,9 @@ func NewRunDirectory(baseDir, runID string) (*RunDirectory, error) {
 }
 
 // NodeDir returns the path for a node's artifact directory.
+// The nodeID is sanitized to prevent path traversal attacks.
 func (rd *RunDirectory) NodeDir(nodeID string) string {
-	return filepath.Join(rd.BaseDir, "nodes", nodeID)
+	return filepath.Join(rd.BaseDir, "nodes", sanitizeNodeID(nodeID))
 }
 
 // EnsureNodeDir creates the directory for a node if it doesn't exist.

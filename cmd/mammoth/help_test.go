@@ -41,7 +41,7 @@ func TestPrintHelpContainsUsagePatterns(t *testing.T) {
 	out := buf.String()
 
 	patterns := []string{
-		"mammoth <pipeline.dot>",
+		"mammoth [run] <pipeline.dot>",
 		"mammoth -validate <pipeline.dot>",
 		"mammoth -server",
 	}

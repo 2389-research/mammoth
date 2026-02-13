@@ -855,12 +855,14 @@ func TestFindResumableReturnsMostRecent(t *testing.T) {
 	}
 }
 
-func TestFindResumableMatchesRunningStatus(t *testing.T) {
+func TestFindResumableMatchesStaleRunningStatus(t *testing.T) {
 	store := newTestStore(t)
 
+	// A "running" run started > 5 minutes ago is considered stale and resumable
 	state := newTestRunState(t)
 	state.Status = "running"
 	state.SourceHash = "runninghash"
+	state.StartedAt = time.Now().Add(-10 * time.Minute) // stale
 
 	if err := store.Create(state); err != nil {
 		t.Fatalf("Create failed: %v", err)
@@ -876,6 +878,33 @@ func TestFindResumableMatchesRunningStatus(t *testing.T) {
 		t.Fatalf("FindResumable failed: %v", err)
 	}
 	if got == nil {
-		t.Fatal("expected a resumable run for running status, got nil")
+		t.Fatal("expected a resumable run for stale running status, got nil")
+	}
+}
+
+func TestFindResumableSkipsRecentRunningStatus(t *testing.T) {
+	store := newTestStore(t)
+
+	// A "running" run started < 5 minutes ago might still be active; skip it
+	state := newTestRunState(t)
+	state.Status = "running"
+	state.SourceHash = "runninghash"
+	state.StartedAt = time.Now() // recent — likely still active
+
+	if err := store.Create(state); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	cpPath := filepath.Join(store.baseDir, state.ID, "checkpoint.json")
+	if err := os.WriteFile(cpPath, []byte(`{"current_node":"build"}`), 0644); err != nil {
+		t.Fatalf("write checkpoint failed: %v", err)
+	}
+
+	got, err := store.FindResumable("runninghash")
+	if err != nil {
+		t.Fatalf("FindResumable failed: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("expected nil for a recently-started running run, got %v", got.ID)
 	}
 }

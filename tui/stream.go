@@ -36,7 +36,6 @@ func WithResumeInfo(info *ResumeInfo) StreamOption {
 		// Pre-mark previous nodes as completed with a special duration marker
 		for _, nodeID := range info.PreviousNodes {
 			m.statuses[nodeID] = NodeCompleted
-			m.completed++
 			m.durations[nodeID] = -1 // sentinel: signals "(previous run)" in view
 		}
 	}
@@ -48,7 +47,7 @@ func WithResumeInfo(info *ResumeInfo) StreamOption {
 type StreamModel struct {
 	graph   *attractor.Graph
 	engine  *attractor.Engine
-	source  string
+	title   string
 	ctx     context.Context
 	cancel  context.CancelFunc
 	verbose bool
@@ -73,12 +72,14 @@ type StreamModel struct {
 	nodeToolCalls  map[string]int // per-node tool call count
 	totalToolCalls int            // running total tool calls
 
+	// Output directory (from engine's workdir)
+	workdir string
+
 	// Spinner
 	spinnerIdx int
 
 	// Pipeline state
 	pipelineStart time.Time
-	completed     int
 	total         int
 	done          bool
 	err           error
@@ -97,15 +98,15 @@ type StreamModel struct {
 func NewStreamModel(
 	graph *attractor.Graph,
 	engine *attractor.Engine,
-	source string,
+	title string,
 	ctx context.Context,
 	verbose bool,
 	opts ...StreamOption,
 ) StreamModel {
-	cancel := func() {} // no-op default; caller may replace via ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	ctx, cancel := context.WithCancel(ctx)
 
 	nodeOrder := topologicalOrder(graph)
 	total := len(nodeOrder)
@@ -118,7 +119,7 @@ func NewStreamModel(
 	m := StreamModel{
 		graph:         graph,
 		engine:        engine,
-		source:        source,
+		title:         title,
 		ctx:           ctx,
 		cancel:        cancel,
 		verbose:       verbose,
@@ -168,7 +169,7 @@ func (m StreamModel) Init() tea.Cmd {
 	if m.resumeCmd != nil {
 		pipelineCmd = m.resumeCmd()
 	} else {
-		pipelineCmd = RunPipelineCmd(m.ctx, m.engine, m.source)
+		pipelineCmd = RunPipelineGraphCmd(m.ctx, m.engine, m.graph)
 	}
 	return tea.Batch(
 		pipelineCmd,
@@ -218,9 +219,9 @@ func (m StreamModel) View() string {
 
 	// Header — show resume info when resuming
 	if m.resumeInfo != nil && m.resumeInfo.ResumedFrom != "" {
-		b.WriteString(fmt.Sprintf("🦣 mammoth — %s (resuming from %s)\n\n", m.source, m.resumeInfo.ResumedFrom))
+		b.WriteString(fmt.Sprintf("🦣 mammoth — %s (resuming from %s)\n\n", m.title, m.resumeInfo.ResumedFrom))
 	} else {
-		b.WriteString(fmt.Sprintf("🦣 mammoth — %s\n\n", m.source))
+		b.WriteString(fmt.Sprintf("🦣 mammoth — %s\n\n", m.title))
 	}
 
 	// Node list
@@ -269,6 +270,11 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 	switch evt.Type {
 	case attractor.EventPipelineStarted:
 		m.pipelineStart = time.Now()
+		if evt.Data != nil {
+			if wd, ok := evt.Data["workdir"].(string); ok {
+				m.workdir = wd
+			}
+		}
 
 	case attractor.EventStageStarted:
 		m.statuses[evt.NodeID] = NodeRunning
@@ -276,15 +282,23 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 
 	case attractor.EventStageCompleted:
 		m.statuses[evt.NodeID] = NodeCompleted
-		m.completed++
 		if start, ok := m.startedAt[evt.NodeID]; ok {
 			m.durations[evt.NodeID] = time.Since(start)
 		}
-		// Capture model name from codergen.* data attached to stage.completed
+		// Capture model name and token counts from codergen.* data
 		if evt.Data != nil {
 			if model, ok := evt.Data["codergen.model"]; ok {
 				if s, ok := model.(string); ok {
 					m.nodeModels[evt.NodeID] = s
+				}
+			}
+			// Backfill tokens from stage completion if EventAgentLLMTurn
+			// didn't already provide them (e.g. claude-code backend error paths).
+			if m.nodeTokens[evt.NodeID] == 0 {
+				if tok, ok := evt.Data["codergen.tokens_used"]; ok {
+					tokens := toInt(tok)
+					m.nodeTokens[evt.NodeID] += tokens
+					m.totalTokens += tokens
 				}
 			}
 		}
@@ -313,14 +327,19 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 		}
 
 	case attractor.EventAgentLLMTurn:
-		// Accumulate tokens (always, not just verbose)
+		// Accumulate tokens (always, not just verbose).
+		// Prefer total_tokens when present; otherwise sum input+output; fall back to legacy "tokens".
 		if evt.Data != nil {
 			turnTokens := 0
-			if inputTok, ok := evt.Data["input_tokens"]; ok {
-				turnTokens += toInt(inputTok)
-			}
-			if outputTok, ok := evt.Data["output_tokens"]; ok {
-				turnTokens += toInt(outputTok)
+			if totalTok, ok := evt.Data["total_tokens"]; ok && toInt(totalTok) > 0 {
+				turnTokens = toInt(totalTok)
+			} else {
+				if inputTok, ok := evt.Data["input_tokens"]; ok {
+					turnTokens += toInt(inputTok)
+				}
+				if outputTok, ok := evt.Data["output_tokens"]; ok {
+					turnTokens += toInt(outputTok)
+				}
 			}
 			if turnTokens == 0 {
 				if tok, ok := evt.Data["tokens"]; ok {
@@ -392,6 +411,8 @@ func (m StreamModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		m.cancel()
+		m.done = true
+		m.err = context.Canceled
 		return m, tea.Quit
 	}
 
@@ -443,10 +464,32 @@ func (m StreamModel) renderNodeLine(id, label string, status NodeStatus) string 
 	}
 }
 
+// completedCount returns the number of nodes currently in completed status.
+func (m StreamModel) completedCount() int {
+	n := 0
+	for _, s := range m.statuses {
+		if s == NodeCompleted {
+			n++
+		}
+	}
+	return n
+}
+
+// currentNodeLabel returns the label of the currently running node, or empty string.
+func (m StreamModel) currentNodeLabel() string {
+	for _, id := range m.nodeOrder {
+		if m.statuses[id] == NodeRunning {
+			return m.nodeLabelByID(id)
+		}
+	}
+	return ""
+}
+
 // renderProgressLine renders the bottom progress/completion line.
 func (m StreamModel) renderProgressLine() string {
 	elapsed := time.Since(m.pipelineStart)
 	elapsedStr := formatDuration(elapsed)
+	completed := m.completedCount()
 
 	tokenSuffix := ""
 	if m.totalTokens > 0 {
@@ -456,14 +499,19 @@ func (m StreamModel) renderProgressLine() string {
 	if m.done {
 		if m.err != nil {
 			return FailedStyle.Render(
-				fmt.Sprintf("  ✗ %d/%d complete · %s · FAILED: %v", m.completed, m.total, elapsedStr, m.err))
+				fmt.Sprintf("  ✗ %d/%d complete · %s · FAILED: %v", completed, m.total, elapsedStr, m.err))
 		}
 		return CompletedStyle.Render(
-			fmt.Sprintf("  ✓ %d/%d complete · %s%s", m.completed, m.total, elapsedStr, tokenSuffix))
+			fmt.Sprintf("  ✓ %d/%d complete · %s%s", completed, m.total, elapsedStr, tokenSuffix))
+	}
+
+	nodeSuffix := ""
+	if label := m.currentNodeLabel(); label != "" {
+		nodeSuffix = fmt.Sprintf(" · %s", label)
 	}
 
 	return PendingStyle.Render(
-		fmt.Sprintf("  %d/%d complete · %s elapsed%s", m.completed, m.total, elapsedStr, tokenSuffix))
+		fmt.Sprintf("  %d/%d complete · %s elapsed%s%s", completed, m.total, elapsedStr, tokenSuffix, nodeSuffix))
 }
 
 // renderSummary renders the post-run summary block with node counts, models,
@@ -558,6 +606,13 @@ func (m StreamModel) renderSummary() string {
 		PendingStyle.Render("Duration"),
 		elapsedStr))
 
+	// Output directory line
+	if m.workdir != "" {
+		b.WriteString(fmt.Sprintf("  %s   %s\n",
+			PendingStyle.Render("Output"),
+			m.workdir))
+	}
+
 	return b.String()
 }
 
@@ -641,7 +696,7 @@ func topologicalOrder(graph *attractor.Graph) []string {
 	return order
 }
 
-// toInt converts an interface{} value to int, handling common numeric types.
+// toInt converts an interface{} value to int, handling common numeric types and pointer variants.
 func toInt(v any) int {
 	switch n := v.(type) {
 	case int:
@@ -650,6 +705,16 @@ func toInt(v any) int {
 		return int(n)
 	case float64:
 		return int(n)
+	case *int:
+		if n != nil {
+			return *n
+		}
+		return 0
+	case *int64:
+		if n != nil {
+			return int(*n)
+		}
+		return 0
 	default:
 		return 0
 	}

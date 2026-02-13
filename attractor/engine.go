@@ -175,7 +175,7 @@ func (e *Engine) RunGraph(ctx context.Context, graph *Graph) (*RunResult, error)
 	}
 
 	// Phase 4: EXECUTE with restart loop
-	e.emitEvent(EngineEvent{Type: EventPipelineStarted})
+	e.emitEvent(EngineEvent{Type: EventPipelineStarted, Data: map[string]any{"workdir": artifactDir}})
 
 	restartCfg := e.config.RestartConfig
 	if restartCfg == nil {
@@ -348,7 +348,7 @@ func (e *Engine) ResumeFromCheckpoint(ctx context.Context, graph *Graph, checkpo
 		}
 	}
 
-	e.emitEvent(EngineEvent{Type: EventPipelineStarted, Data: map[string]any{"resumed": true, "from_node": cp.CurrentNode}})
+	e.emitEvent(EngineEvent{Type: EventPipelineStarted, Data: map[string]any{"resumed": true, "from_node": cp.CurrentNode, "workdir": artifactDir}})
 
 	rs := &resumeState{
 		completedNodes: cp.CompletedNodes,

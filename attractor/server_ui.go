@@ -57,7 +57,7 @@ type activeNodeView struct {
 	Active bool
 }
 
-// toInt safely coerces an any value to int from int, int64, or float64.
+// toInt safely coerces an any value to int from int, int64, float64, or their pointer variants.
 func toInt(v any) int {
 	switch n := v.(type) {
 	case int:
@@ -66,6 +66,16 @@ func toInt(v any) int {
 		return int(n)
 	case float64:
 		return int(n)
+	case *int:
+		if n != nil {
+			return *n
+		}
+		return 0
+	case *int64:
+		if n != nil {
+			return int(*n)
+		}
+		return 0
 	default:
 		return 0
 	}

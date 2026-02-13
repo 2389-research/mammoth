@@ -13,6 +13,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// markCompleted marks the first n nodes in order as NodeCompleted for test setup.
+func markCompleted(m *StreamModel, n int) {
+	for i, id := range m.nodeOrder {
+		if i >= n {
+			break
+		}
+		m.statuses[id] = NodeCompleted
+	}
+}
+
 // testStreamGraph creates a simple linear DAG: start -> build -> test -> done.
 func testStreamGraph() *attractor.Graph {
 	return &attractor.Graph{
@@ -92,8 +102,8 @@ func TestNewStreamModelTotalCount(t *testing.T) {
 	if m.total != 4 {
 		t.Errorf("total = %d, want 4", m.total)
 	}
-	if m.completed != 0 {
-		t.Errorf("completed = %d, want 0", m.completed)
+	if m.completedCount() != 0 {
+		t.Errorf("completed = %d, want 0", m.completedCount())
 	}
 }
 
@@ -155,8 +165,8 @@ func TestStreamModelHandleStageCompleted(t *testing.T) {
 	if m.statuses["build"] != NodeCompleted {
 		t.Errorf("expected build to be NodeCompleted, got %v", m.statuses["build"])
 	}
-	if m.completed != 1 {
-		t.Errorf("completed = %d, want 1", m.completed)
+	if m.completedCount() != 1 {
+		t.Errorf("completed = %d, want 1", m.completedCount())
 	}
 	if _, ok := m.durations["build"]; !ok {
 		t.Error("expected duration to be recorded for build")
@@ -388,7 +398,7 @@ func TestStreamModelViewShowsProgressLine(t *testing.T) {
 func TestStreamModelViewShowsCompletionLine(t *testing.T) {
 	m := testStreamModel()
 	m.done = true
-	m.completed = 4
+	markCompleted(&m, 4)
 	m.pipelineStart = time.Now().Add(-10 * time.Second)
 
 	view := m.View()
@@ -405,7 +415,7 @@ func TestStreamModelViewShowsFailureLine(t *testing.T) {
 	m := testStreamModel()
 	m.done = true
 	m.err = context.Canceled
-	m.completed = 2
+	markCompleted(&m, 2)
 	m.pipelineStart = time.Now().Add(-10 * time.Second)
 
 	view := m.View()
@@ -713,8 +723,8 @@ func TestStreamModelResumePreMarksPreviousNodes(t *testing.T) {
 func TestStreamModelResumeCompletedCount(t *testing.T) {
 	m := testStreamModelWithResume()
 
-	if m.completed != 1 {
-		t.Errorf("expected completed=1 (from resume), got %d", m.completed)
+	if m.completedCount() != 1 {
+		t.Errorf("expected completed=1 (from resume), got %d", m.completedCount())
 	}
 }
 
@@ -1049,7 +1059,7 @@ func TestStreamModelTracksTotalToolCalls(t *testing.T) {
 func TestStreamModelSummaryShownWhenDone(t *testing.T) {
 	m := testStreamModel()
 	m.done = true
-	m.completed = 4
+	markCompleted(&m, 4)
 	m.pipelineStart = time.Now().Add(-30 * time.Second)
 	m.totalTokens = 12000
 	m.totalToolCalls = 10
@@ -1076,7 +1086,7 @@ func TestStreamModelSummaryShownWhenDone(t *testing.T) {
 func TestStreamModelSummaryShowsModelsUsed(t *testing.T) {
 	m := testStreamModel()
 	m.done = true
-	m.completed = 4
+	markCompleted(&m, 4)
 	m.pipelineStart = time.Now().Add(-30 * time.Second)
 
 	// Set different models for different nodes
@@ -1102,7 +1112,7 @@ func TestStreamModelSummaryShowsModelsUsed(t *testing.T) {
 func TestStreamModelSummaryShowsNodeCounts(t *testing.T) {
 	m := testStreamModel()
 	m.done = true
-	m.completed = 3
+	markCompleted(&m, 3)
 	m.pipelineStart = time.Now().Add(-30 * time.Second)
 
 	// Mix of completed and failed
@@ -1128,7 +1138,7 @@ func TestStreamModelSummaryShowsNodeCounts(t *testing.T) {
 func TestStreamModelSummaryShowsToolCalls(t *testing.T) {
 	m := testStreamModel()
 	m.done = true
-	m.completed = 4
+	markCompleted(&m, 4)
 	m.pipelineStart = time.Now().Add(-30 * time.Second)
 	m.totalToolCalls = 42
 
@@ -1147,7 +1157,7 @@ func TestStreamModelSummaryShowsToolCalls(t *testing.T) {
 func TestStreamModelSummaryMinimalNoTokensNoTools(t *testing.T) {
 	m := testStreamModel()
 	m.done = true
-	m.completed = 4
+	markCompleted(&m, 4)
 	m.pipelineStart = time.Now().Add(-30 * time.Second)
 	// No tokens, no tool calls, no models
 
@@ -1186,7 +1196,7 @@ func TestStreamModelSummaryResumePreviousNodesExcluded(t *testing.T) {
 		m.statuses[id] = NodeCompleted
 		m.durations[id] = 5 * time.Second
 	}
-	m.completed = 4 // 1 from resume + 3 from this run
+	markCompleted(&m, 4) // 1 from resume + 3 from this run
 	m.done = true
 	m.pipelineStart = time.Now().Add(-30 * time.Second)
 

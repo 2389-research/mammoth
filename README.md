@@ -35,8 +35,9 @@ go install github.com/2389-research/mammoth/cmd/mammoth@latest
 Pre-built binaries for macOS and Linux (amd64/arm64) are available on the [releases page](https://github.com/2389-research/mammoth/releases/latest).
 
 ```bash
-# Example: Linux amd64
-curl -sL https://github.com/2389-research/mammoth/releases/latest/download/mammoth_0.1.0_Linux_x86_64.tar.gz | tar xz
+# Example: Linux amd64 — replace VERSION with the desired release (e.g. 0.1.0)
+VERSION="0.1.0"
+curl -sL "https://github.com/2389-research/mammoth/releases/latest/download/mammoth_${VERSION}_Linux_x86_64.tar.gz" | tar xz
 sudo mv mammoth /usr/local/bin/
 ```
 

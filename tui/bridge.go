@@ -46,6 +46,15 @@ func RunPipelineCmd(ctx context.Context, engine *attractor.Engine, source string
 	}
 }
 
+// RunPipelineGraphCmd returns a tea.Cmd that runs the engine with an already-parsed graph.
+// When the pipeline completes (or fails), it sends a PipelineResultMsg.
+func RunPipelineGraphCmd(ctx context.Context, engine *attractor.Engine, graph *attractor.Graph) tea.Cmd {
+	return func() tea.Msg {
+		result, err := engine.RunGraph(ctx, graph)
+		return PipelineResultMsg{Result: result, Err: err}
+	}
+}
+
 // WaitForHumanGateCmd returns a tea.Cmd that blocks on the given request channel
 // and sends a HumanGateRequestMsg when a request arrives.
 func WaitForHumanGateCmd(requestCh <-chan gateRequest) tea.Cmd {

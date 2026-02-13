@@ -4,7 +4,6 @@ version: 2
 
 before:
   hooks:
-    - go mod tidy
     - go test -count=1 ./...
 
 builds:
@@ -72,7 +71,8 @@ changelog:
       order: 999
 
 brews:
-  - repository:
+  - skip_upload: "{{ if .Env.HOMEBREW_TAP_TOKEN }}false{{ else }}true{{ end }}"
+    repository:
       owner: 2389-research
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"

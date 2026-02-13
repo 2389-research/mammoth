@@ -35,6 +35,7 @@ type config struct {
 	dataDir       string
 	retryPolicy   string
 	baseURL       string
+	backendType   string
 	verbose       bool
 	showVersion   bool
 	pipelineFile  string
@@ -66,6 +67,7 @@ func parseFlags() config {
 	fs.StringVar(&cfg.dataDir, "data-dir", "", "Data directory for persistent state (default: $XDG_DATA_HOME/mammoth)")
 	fs.StringVar(&cfg.retryPolicy, "retry", "none", "Default retry policy: none, standard, aggressive, linear, patient")
 	fs.StringVar(&cfg.baseURL, "base-url", "", "Custom API base URL for the LLM provider")
+	fs.StringVar(&cfg.backendType, "backend", "", "Agent backend: agent (default), claude-code")
 	fs.BoolVar(&cfg.tuiMode, "tui", false, "Run with interactive terminal UI")
 	fs.BoolVar(&cfg.fresh, "fresh", false, "Force a fresh run, skip auto-resume")
 	fs.BoolVar(&cfg.verbose, "verbose", false, "Verbose output")
@@ -82,8 +84,14 @@ func parseFlags() config {
 		os.Exit(2)
 	}
 
-	if fs.NArg() > 0 {
-		cfg.pipelineFile = fs.Arg(0)
+	// Accept optional "run" subcommand: `mammoth run pipeline.dot` is equivalent
+	// to `mammoth pipeline.dot`.
+	argIdx := 0
+	if fs.NArg() > 0 && fs.Arg(0) == "run" {
+		argIdx = 1
+	}
+	if fs.NArg() > argIdx {
+		cfg.pipelineFile = fs.Arg(argIdx)
 	}
 
 	return cfg
@@ -98,7 +106,7 @@ func run(cfg config) int {
 
 	if cfg.pipelineFile == "" {
 		printHelp(os.Stderr, version)
-		return 0
+		return 1
 	}
 
 	if cfg.validateOnly {
@@ -107,9 +115,10 @@ func run(cfg config) int {
 
 	// Any mode that actually executes a pipeline needs an LLM backend.
 	// Check for API keys before doing anything else.
-	if detectBackend(false) == nil {
+	if detectBackend(false, cfg.backendType) == nil {
 		fmt.Fprintln(os.Stderr, "error: no LLM API key found")
 		fmt.Fprintln(os.Stderr, "Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY")
+		fmt.Fprintln(os.Stderr, "Or use --backend claude-code to use the Claude Code CLI")
 		return 1
 	}
 
@@ -193,7 +202,7 @@ func runPipelineResume(
 		ArtifactDir:        cfg.artifactDir,
 		DefaultRetry:       retryPolicyFromName(cfg.retryPolicy),
 		Handlers:           attractor.DefaultHandlerRegistry(),
-		Backend:            detectBackend(cfg.verbose),
+		Backend:            detectBackend(cfg.verbose, cfg.backendType),
 		BaseURL:            cfg.baseURL,
 		RunID:              resumeState.ID,
 	}
@@ -203,8 +212,9 @@ func runPipelineResume(
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Update the existing run state to "running"
+	// Update the existing run state to "running" and clear any previous error
 	resumeState.Status = "running"
+	resumeState.Error = ""
 	if err := store.Update(resumeState); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not update run state: %v\n", err)
 	}
@@ -223,7 +233,11 @@ func runPipelineResume(
 	resumeState.CompletedAt = &now
 	resumeState.SourceHash = sourceHash
 	if runErr != nil {
-		resumeState.Status = "failed"
+		if errors.Is(runErr, context.Canceled) {
+			resumeState.Status = "cancelled"
+		} else {
+			resumeState.Status = "failed"
+		}
 		resumeState.Error = runErr.Error()
 	} else {
 		resumeState.Status = "completed"
@@ -330,6 +344,11 @@ func runPipelineResumeDirect(
 	if result.FinalOutcome != nil {
 		fmt.Printf("Final status: %s\n", result.FinalOutcome.Status)
 	}
+	if result.Context != nil {
+		if wd := result.Context.GetString("_workdir", ""); wd != "" {
+			fmt.Printf("Output directory: %s\n", wd)
+		}
+	}
 
 	return result, nil
 }
@@ -361,7 +380,7 @@ func runPipelineFresh(
 		ArtifactDir:        cfg.artifactDir,
 		DefaultRetry:       retryPolicyFromName(cfg.retryPolicy),
 		Handlers:           attractor.DefaultHandlerRegistry(),
-		Backend:            detectBackend(cfg.verbose),
+		Backend:            detectBackend(cfg.verbose, cfg.backendType),
 		BaseURL:            cfg.baseURL,
 		RunID:              runID,
 	}
@@ -416,7 +435,11 @@ func runPipelineFresh(
 			Events:       []attractor.EngineEvent{},
 		}
 		if runErr != nil {
-			finalState.Status = "failed"
+			if errors.Is(runErr, context.Canceled) {
+				finalState.Status = "cancelled"
+			} else {
+				finalState.Status = "failed"
+			}
 			finalState.Error = runErr.Error()
 		} else {
 			finalState.Status = "completed"
@@ -510,6 +533,11 @@ func runPipelineDirect(
 	if result.FinalOutcome != nil {
 		fmt.Printf("Final status: %s\n", result.FinalOutcome.Status)
 	}
+	if result.Context != nil {
+		if wd := result.Context.GetString("_workdir", ""); wd != "" {
+			fmt.Printf("Output directory: %s\n", wd)
+		}
+	}
 
 	return result, nil
 }
@@ -550,7 +578,7 @@ func runPipelineWithTUI(cfg config) int {
 		ArtifactDir:   cfg.artifactDir,
 		DefaultRetry:  retryPolicyFromName(cfg.retryPolicy),
 		Handlers:      attractor.DefaultHandlerRegistry(),
-		Backend:       detectBackend(cfg.verbose),
+		Backend:       detectBackend(cfg.verbose, cfg.backendType),
 		BaseURL:       cfg.baseURL,
 	}
 
@@ -599,12 +627,12 @@ func buildPipelineServer(cfg config) (*attractor.PipelineServer, error) {
 	}
 
 	engineCfg := attractor.EngineConfig{
-		CheckpointDir:   cfg.checkpointDir,
-		ArtifactDir:     cfg.artifactDir,
-		DefaultRetry:    retryPolicyFromName(cfg.retryPolicy),
-		Handlers:        attractor.DefaultHandlerRegistry(),
-		Backend:         detectBackend(cfg.verbose),
-		BaseURL:         cfg.baseURL,
+		CheckpointDir: cfg.checkpointDir,
+		ArtifactDir:   cfg.artifactDir,
+		DefaultRetry:  retryPolicyFromName(cfg.retryPolicy),
+		Handlers:      attractor.DefaultHandlerRegistry(),
+		Backend:       detectBackend(cfg.verbose, cfg.backendType),
+		BaseURL:       cfg.baseURL,
 	}
 
 	if cfg.verbose {
@@ -636,7 +664,7 @@ func buildPipelineServer(cfg config) (*attractor.PipelineServer, error) {
 
 // runServer starts the HTTP pipeline server.
 func runServer(cfg config) int {
-	if detectBackend(false) == nil {
+	if detectBackend(false, cfg.backendType) == nil {
 		fmt.Fprintln(os.Stderr, "warning: no LLM API key found — pipelines with codergen nodes will fail")
 		fmt.Fprintln(os.Stderr, "Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY")
 	}
@@ -742,9 +770,26 @@ func retryPolicyFromName(name string) attractor.RetryPolicy {
 	}
 }
 
-// detectBackend checks for LLM API keys in the environment and returns
-// an AgentBackend if any are found, or nil for stub mode.
-func detectBackend(verbose bool) attractor.CodergenBackend {
+// detectBackend selects the agent backend based on the --backend flag,
+// MAMMOTH_BACKEND env var, or auto-detection from API keys.
+func detectBackend(verbose bool, backendType string) attractor.CodergenBackend {
+	// Check env var fallback when no explicit flag
+	if backendType == "" {
+		backendType = os.Getenv("MAMMOTH_BACKEND")
+	}
+
+	if backendType == "claude-code" {
+		backend, err := attractor.NewClaudeCodeBackend()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[backend] claude-code: %v, falling back to agent\n", err)
+		} else {
+			if verbose {
+				fmt.Fprintf(os.Stderr, "[backend] using ClaudeCodeBackend (%s)\n", backend.BinaryPath)
+			}
+			return backend
+		}
+	}
+
 	keys := []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"}
 	for _, k := range keys {
 		if os.Getenv(k) != "" {

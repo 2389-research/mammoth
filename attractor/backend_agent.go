@@ -447,12 +447,13 @@ func tokenUsageFromLLM(u llm.Usage) TokenUsage {
 	return tu
 }
 
-// truncateString truncates a string to maxLen characters.
+// truncateString truncates a string to maxLen runes, preserving valid UTF-8.
 func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
-	return s[:maxLen]
+	return string(runes[:maxLen])
 }
 
 // atomicAddInt32 is a thin wrapper around atomic.AddInt32 to keep it testable

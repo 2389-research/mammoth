@@ -89,6 +89,36 @@ func TestParseFlagsDefaults(t *testing.T) {
 	if cfg.fresh {
 		t.Error("expected fresh=false by default")
 	}
+	if cfg.backendType != "" {
+		t.Errorf("expected empty backendType by default, got %q", cfg.backendType)
+	}
+}
+
+func TestParseFlagsBackend(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"mammoth", "--backend", "claude-code", "pipeline.dot"}
+	cfg := parseFlags()
+
+	if cfg.backendType != "claude-code" {
+		t.Errorf("expected backendType='claude-code', got %q", cfg.backendType)
+	}
+	if cfg.pipelineFile != "pipeline.dot" {
+		t.Errorf("expected pipelineFile='pipeline.dot', got %q", cfg.pipelineFile)
+	}
+}
+
+func TestParseFlagsBackendDefaultEmpty(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"mammoth", "pipeline.dot"}
+	cfg := parseFlags()
+
+	if cfg.backendType != "" {
+		t.Errorf("expected empty backendType by default, got %q", cfg.backendType)
+	}
 }
 
 func TestParseFlagsFresh(t *testing.T) {
@@ -255,6 +285,46 @@ func TestParseFlagsRetry(t *testing.T) {
 
 	if cfg.retryPolicy != "aggressive" {
 		t.Errorf("expected retryPolicy=aggressive, got %q", cfg.retryPolicy)
+	}
+}
+
+func TestParseFlagsRunSubcommand(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"mammoth", "run", "pipeline.dot"}
+	cfg := parseFlags()
+
+	if cfg.pipelineFile != "pipeline.dot" {
+		t.Errorf("expected pipelineFile='pipeline.dot', got %q", cfg.pipelineFile)
+	}
+}
+
+func TestParseFlagsRunSubcommandWithFlags(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"mammoth", "--backend", "claude-code", "run", "pipeline.dot"}
+	cfg := parseFlags()
+
+	if cfg.pipelineFile != "pipeline.dot" {
+		t.Errorf("expected pipelineFile='pipeline.dot', got %q", cfg.pipelineFile)
+	}
+	if cfg.backendType != "claude-code" {
+		t.Errorf("expected backendType='claude-code', got %q", cfg.backendType)
+	}
+}
+
+func TestParseFlagsRunSubcommandAlone(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	// "mammoth run" with no pipeline file should result in empty pipelineFile
+	os.Args = []string{"mammoth", "run"}
+	cfg := parseFlags()
+
+	if cfg.pipelineFile != "" {
+		t.Errorf("expected empty pipelineFile, got %q", cfg.pipelineFile)
 	}
 }
 
@@ -459,8 +529,8 @@ func TestRunRequiresPipelineFile(t *testing.T) {
 		pipelineFile: "",
 	}
 	exitCode := run(cfg)
-	if exitCode != 0 {
-		t.Errorf("expected exit code 0 when no pipeline file given (shows help), got %d", exitCode)
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 when no pipeline file given (usage error), got %d", exitCode)
 	}
 }
 
@@ -469,8 +539,8 @@ func TestRunNoArgsShowsHelp(t *testing.T) {
 		pipelineFile: "",
 	}
 	exitCode := run(cfg)
-	if exitCode != 0 {
-		t.Errorf("expected exit code 0 for no-args help display, got %d", exitCode)
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 for no-args (usage error), got %d", exitCode)
 	}
 }
 
@@ -825,5 +895,86 @@ func TestRunPipelineFreshSkipsResume(t *testing.T) {
 	}
 	if len(runs) != 2 {
 		t.Errorf("expected 2 runs (fresh created a new one), got %d", len(runs))
+	}
+}
+
+// --- detectBackend tests ---
+
+func TestDetectBackendClaudeCodeFlag(t *testing.T) {
+	// When --backend=claude-code and claude binary exists, should return ClaudeCodeBackend
+	// We can't guarantee claude is installed, so just test the env var path.
+	// Clear API keys so the agent fallback doesn't activate
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	// With a bogus backend type, should fall through to API key detection
+	backend := detectBackend(false, "bogus-backend")
+	if backend != nil {
+		t.Errorf("expected nil backend for unknown type without API keys, got %T", backend)
+	}
+}
+
+func TestDetectBackendEnvVar(t *testing.T) {
+	// MAMMOTH_BACKEND env var should be checked when backendType is empty
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("MAMMOTH_BACKEND", "bogus-type")
+
+	// With a bogus env var value, should fall through to API key check (and return nil)
+	backend := detectBackend(false, "")
+	if backend != nil {
+		t.Errorf("expected nil backend for bogus MAMMOTH_BACKEND without API keys, got %T", backend)
+	}
+}
+
+func TestDetectBackendAgentDefault(t *testing.T) {
+	// With an API key and no explicit backend, should return AgentBackend
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+
+	backend := detectBackend(false, "")
+	if backend == nil {
+		t.Fatal("expected non-nil backend with API key set")
+	}
+	if _, ok := backend.(*attractor.AgentBackend); !ok {
+		t.Errorf("expected *AgentBackend, got %T", backend)
+	}
+}
+
+func TestDetectBackendClaudeCodeFallback(t *testing.T) {
+	// When claude-code is requested but binary not found, should fall back to agent
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	// Use a PATH that won't have claude
+	t.Setenv("PATH", "/nonexistent")
+
+	backend := detectBackend(false, "claude-code")
+	// Should fall back to AgentBackend since claude binary isn't found but API key exists
+	if backend == nil {
+		t.Fatal("expected non-nil backend (fallback to agent)")
+	}
+	if _, ok := backend.(*attractor.AgentBackend); !ok {
+		t.Errorf("expected fallback to *AgentBackend, got %T", backend)
+	}
+}
+
+func TestDetectBackendClaudeCodeEnvVarActivation(t *testing.T) {
+	// MAMMOTH_BACKEND=claude-code with claude binary available should use it
+	t.Setenv("MAMMOTH_BACKEND", "claude-code")
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+
+	backend := detectBackend(false, "")
+	if backend == nil {
+		t.Fatal("expected non-nil backend")
+	}
+	// The backend type depends on whether claude is actually installed;
+	// just verify we get a non-nil backend of some type
+	switch backend.(type) {
+	case *attractor.ClaudeCodeBackend:
+		// claude was found — correct
+	case *attractor.AgentBackend:
+		// claude not found, fell back to agent — also correct
+	default:
+		t.Errorf("expected *ClaudeCodeBackend or *AgentBackend, got %T", backend)
 	}
 }

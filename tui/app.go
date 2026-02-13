@@ -30,9 +30,10 @@ type AppModel struct {
 	statusBar StatusBarModel
 	humanGate HumanGateModel
 
-	engine *attractor.Engine
-	source string          // DOT source to execute
-	ctx    context.Context // cancellation context for engine execution
+	engine   *attractor.Engine
+	source   string           // DOT source (fallback for engine.Run)
+	astGraph *attractor.Graph // parsed graph for engine.RunGraph
+	ctx      context.Context  // cancellation context for engine execution
 
 	focus     FocusTarget
 	done      bool  // pipeline finished
@@ -59,6 +60,7 @@ func NewAppModel(g *attractor.Graph, engine *attractor.Engine, source string, ct
 		humanGate: NewHumanGateModel(),
 		engine:    engine,
 		source:    source,
+		astGraph:  g,
 		ctx:       ctx,
 		focus:     FocusGraph,
 	}
@@ -79,7 +81,7 @@ func (m AppModel) Init() tea.Cmd {
 	// which works correctly via the returned mutated model. Calling it here on
 	// a value receiver would discard the mutation.
 	return tea.Batch(
-		RunPipelineCmd(m.ctx, m.engine, m.source),
+		RunPipelineGraphCmd(m.ctx, m.engine, m.astGraph),
 		WaitForHumanGateCmd(m.humanGate.RequestChan()),
 		TickCmd(100*time.Millisecond),
 	)
@@ -254,15 +256,19 @@ func (m AppModel) handleHumanGateRequest(msg HumanGateRequestMsg) (tea.Model, te
 			if node := m.graph.graph.FindNode(msg.NodeID); node != nil {
 				label = nodeLabel(node)
 			}
-			nodeIDs := m.graph.graph.NodeIDs()
-			for i, id := range nodeIDs {
+			// Use topological order for consistent step numbering
+			order := topologicalOrder(m.graph.graph)
+			for i, id := range order {
 				if id == msg.NodeID {
-					position = fmt.Sprintf("step %d/%d", i+1, len(nodeIDs))
+					position = fmt.Sprintf("step %d/%d", i+1, len(order))
 					break
 				}
 			}
 		}
 		m.humanGate.SetNodeContext(msg.NodeID, label, position)
+	} else {
+		// Clear stale node context when no node ID is provided
+		m.humanGate.SetNodeContext("", "", "")
 	}
 	return m, nil
 }

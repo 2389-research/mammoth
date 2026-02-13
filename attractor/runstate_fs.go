@@ -132,6 +132,8 @@ func (s *FSRunStateStore) getUnlocked(id string) (*RunState, error) {
 	sourceData, sourceErr := os.ReadFile(filepath.Join(runDir, "source.dot"))
 	if sourceErr == nil {
 		source = string(sourceData)
+	} else if !os.IsNotExist(sourceErr) {
+		return nil, fmt.Errorf("read source.dot for %q: %w", id, sourceErr)
 	}
 
 	state := &RunState{
@@ -244,11 +246,16 @@ func (s *FSRunStateStore) FindResumable(sourceHash string) (*RunState, error) {
 			continue
 		}
 
-		// Must match hash, not be completed, and have a checkpoint
+		// Must match hash, be in a resumable status, and have a checkpoint.
+		// A "running" run is only resumable if it appears stale (started > 5 min ago),
+		// which indicates the process was killed rather than still active.
 		if state.SourceHash != sourceHash {
 			continue
 		}
 		if state.Status == "completed" {
+			continue
+		}
+		if state.Status == "running" && time.Since(state.StartedAt) < 5*time.Minute {
 			continue
 		}
 

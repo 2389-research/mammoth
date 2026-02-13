@@ -84,6 +84,9 @@ func (h *ToolHandler) Execute(ctx context.Context, node *Node, pctx *Context, st
 	// This ensures child processes spawned by the shell are also terminated.
 	cmd.Cancel = func() error {
 		killProcessGroup(cmd)
+		if cmd.Process == nil {
+			return nil
+		}
 		return cmd.Process.Kill()
 	}
 	cmd.WaitDelay = 3 * time.Second

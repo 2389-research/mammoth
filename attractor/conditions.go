@@ -28,13 +28,18 @@ func EvaluateCondition(condition string, outcome *Outcome, ctx *Context) bool {
 }
 
 // evaluateClause evaluates a single "key op literal" clause.
+// Comparisons on "outcome" and "preferred_label" keys are case-insensitive;
+// all other keys use exact (case-sensitive) matching.
 func evaluateClause(clause string, outcome *Outcome, ctx *Context) bool {
 	// Try != first (longer operator)
 	if idx := strings.Index(clause, "!="); idx >= 0 {
 		key := strings.TrimSpace(clause[:idx])
 		literal := strings.TrimSpace(clause[idx+2:])
 		resolved := resolveKey(key, outcome, ctx)
-		return !strings.EqualFold(resolved, literal)
+		if caseInsensitiveKey(key) {
+			return !strings.EqualFold(resolved, literal)
+		}
+		return resolved != literal
 	}
 
 	// Try =
@@ -42,11 +47,19 @@ func evaluateClause(clause string, outcome *Outcome, ctx *Context) bool {
 		key := strings.TrimSpace(clause[:idx])
 		literal := strings.TrimSpace(clause[idx+1:])
 		resolved := resolveKey(key, outcome, ctx)
-		return strings.EqualFold(resolved, literal)
+		if caseInsensitiveKey(key) {
+			return strings.EqualFold(resolved, literal)
+		}
+		return resolved == literal
 	}
 
 	// No operator found -- clause is malformed, treat as false
 	return false
+}
+
+// caseInsensitiveKey returns true for keys where comparison should be case-insensitive.
+func caseInsensitiveKey(key string) bool {
+	return key == "outcome" || key == "preferred_label"
 }
 
 // resolveKey resolves a key to its string value from outcome or context.
