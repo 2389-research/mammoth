@@ -30,6 +30,9 @@ type AnthropicAdapter struct {
 type AnthropicOption func(*AnthropicAdapter)
 
 // WithAnthropicBaseURL overrides the default Anthropic API base URL.
+//
+// Deprecated: Use NewMuxAdapter with the appropriate mux/llm client instead.
+// Retained as fallback for custom base URL configurations.
 func WithAnthropicBaseURL(url string) AnthropicOption {
 	return func(a *AnthropicAdapter) {
 		a.BaseURL = url
@@ -54,6 +57,9 @@ func WithAnthropicVersion(version string) AnthropicOption {
 // NewAnthropicAdapter creates an AnthropicAdapter with the given API key and options.
 // Authentication uses x-api-key header instead of Bearer token, so the API key
 // is stored in DefaultHeaders rather than BaseAdapter.APIKey.
+//
+// Deprecated: Use NewMuxAdapter with the appropriate mux/llm client instead.
+// Retained as fallback for custom base URL configurations.
 func NewAnthropicAdapter(apiKey string, opts ...AnthropicOption) *AnthropicAdapter {
 	adapter := &AnthropicAdapter{
 		BaseAdapter: NewBaseAdapter("", anthropicDefaultBaseURL, DefaultAdapterTimeout()),

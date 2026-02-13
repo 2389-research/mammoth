@@ -1,0 +1,26 @@
+{{/* ABOUTME: LLM provider connection status indicator for the nav rail. */}}
+{{/* ABOUTME: Shows active provider with model name, or disconnected state with provider list. */}}
+<div class="provider-status">
+    {{ if .AnyAvailable }}
+    <div class="provider-active">
+        <span class="provider-dot connected"></span>
+        <span class="provider-label">{{ .DefaultProvider }}</span>
+        {{ if .DefaultModel }}
+        <span class="provider-model">{{ .DefaultModel }}</span>
+        {{ end }}
+    </div>
+    {{ else }}
+    <div class="provider-inactive">
+        <span class="provider-dot disconnected"></span>
+        <span class="provider-label">No provider configured</span>
+    </div>
+    {{ end }}
+    <div class="provider-list">
+        {{ range .Providers }}
+        <div class="provider-item">
+            <span class="provider-dot {{ if .HasAPIKey }}connected{{ else }}disconnected{{ end }}"></span>
+            <span>{{ .Name }}</span>
+        </div>
+        {{ end }}
+    </div>
+</div>

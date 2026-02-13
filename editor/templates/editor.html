@@ -1,0 +1,55 @@
+{{define "content"}}
+<div class="editor" data-session-id="{{.SessionID}}">
+    <div class="toolbar">
+        <button id="undo-btn"
+                hx-post="/sessions/{{.SessionID}}/undo"
+                hx-target="#editor-panels"
+                hx-swap="none"
+                title="Undo (Ctrl+Z)">
+            ↶ Undo
+        </button>
+        <button id="redo-btn"
+                hx-post="/sessions/{{.SessionID}}/redo"
+                hx-target="#editor-panels"
+                hx-swap="none"
+                title="Redo (Ctrl+Shift+Z)">
+            ↷ Redo
+        </button>
+        <button id="validate-btn"
+                hx-get="/sessions/{{.SessionID}}/validate"
+                hx-target="#diagnostics"
+                hx-swap="outerHTML"
+                title="Validate (Ctrl+Enter)">
+            ✓ Validate
+        </button>
+        <a href="/sessions/{{.SessionID}}/export"
+           class="export-btn"
+           title="Export DOT (Ctrl+S)">
+            ⬇ Export
+        </a>
+        <div class="toolbar-spacer"></div>
+        <div class="legend">
+            <span class="legend-item"><span class="shape-indicator shape-start"></span> Start</span>
+            <span class="legend-item"><span class="shape-indicator shape-exit"></span> Exit</span>
+            <span class="legend-item"><span class="shape-indicator shape-codegen"></span> Codegen</span>
+            <span class="legend-item"><span class="shape-indicator shape-conditional"></span> Conditional</span>
+            <span class="legend-item"><span class="shape-indicator shape-human"></span> Human</span>
+            <span class="legend-item"><span class="shape-indicator shape-tool"></span> Tool</span>
+        </div>
+    </div>
+    <div id="editor-panels" class="panels">
+        <div class="panel panel-code">
+            {{template "code_editor" .}}
+        </div>
+        <div class="panel panel-graph">
+            {{template "graph_viewer" .}}
+        </div>
+        <div class="panel panel-props">
+            {{template "property_panel" .}}
+        </div>
+    </div>
+    <div class="diagnostics-bar">
+        {{template "diagnostics" .}}
+    </div>
+</div>
+{{end}}

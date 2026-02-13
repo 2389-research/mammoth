@@ -1,0 +1,30 @@
+digraph parallel_pipeline {
+    graph [goal="Parallel processing with human review", rankdir=TB]
+
+    start [shape=Mdiamond, label="Start"]
+    analyze [shape=box, prompt="Analyze the input and determine processing strategy", label="Analyze"]
+
+    subgraph cluster_parallel {
+        label="Parallel Processing"
+        task_a [shape=box, prompt="Process stream A", label="Stream A"]
+        task_b [shape=box, prompt="Process stream B", label="Stream B"]
+        task_c [shape=parallelogram, label="External Tool"]
+    }
+
+    merge [shape=box, prompt="Merge results from all streams", label="Merge Results"]
+    review [shape=hexagon, label="Human Review"]
+    approve [shape=diamond, label="Approved?"]
+    done [shape=Msquare, label="Done"]
+
+    start -> analyze
+    analyze -> task_a
+    analyze -> task_b
+    analyze -> task_c
+    task_a -> merge
+    task_b -> merge
+    task_c -> merge
+    merge -> review
+    review -> approve
+    approve -> done [condition="outcome=success"]
+    approve -> analyze [condition="outcome=fail"]
+}

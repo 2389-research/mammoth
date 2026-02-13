@@ -1,0 +1,29 @@
+{{define "diagnostics"}}
+<div id="diagnostics" hx-swap-oob="true">
+    <h3>Diagnostics ({{len .Session.Diagnostics}})</h3>
+    {{if .Error}}
+    <div class="error">{{.Error}}</div>
+    {{end}}
+    {{if .Session.Diagnostics}}
+    <ul class="diagnostic-list">
+        {{range .Session.Diagnostics}}
+        <li class="diagnostic diagnostic-{{.Severity}}"
+            {{if .NodeID}}data-node-id="{{.NodeID}}"{{end}}
+            {{if .EdgeID}}data-edge-id="{{.EdgeID}}"{{end}}>
+            <span class="severity-icon severity-{{.Severity}}">
+                {{if eq .Severity "error"}}✗{{else if eq .Severity "warning"}}⚠{{else}}ℹ{{end}}
+            </span>
+            <span class="diagnostic-content">
+                <span class="rule">[{{.Rule}}]</span>
+                <span class="message">{{.Message}}</span>
+                {{if .NodeID}}<span class="target">node: {{.NodeID}}</span>{{end}}
+                {{if .EdgeID}}<span class="target">edge: {{.EdgeID}}</span>{{end}}
+            </span>
+        </li>
+        {{end}}
+    </ul>
+    {{else}}
+    <p class="no-diagnostics">✓ No issues found.</p>
+    {{end}}
+</div>
+{{end}}

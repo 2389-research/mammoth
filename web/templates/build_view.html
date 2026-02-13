@@ -1,0 +1,89 @@
+{{define "content"}}
+<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
+    <div>
+        <h1>{{.Project.Name}} - Build</h1>
+        <p style="color: var(--text-muted);">
+            {{if .Project.RunID}}Run: {{.Project.RunID}}{{end}}
+        </p>
+    </div>
+    <div style="display: flex; gap: 0.75rem; align-items: center;">
+        <span class="phase-badge phase-build">build</span>
+        <form method="POST" action="/projects/{{.Project.ID}}/build/stop">
+            <button type="submit" class="btn btn-outline" style="border-color: #e94560; color: #e94560;">Stop</button>
+        </form>
+    </div>
+</div>
+
+<div class="card" id="build-status">
+    <h3>Pipeline Progress</h3>
+    <div id="build-events" style="margin-top: 1rem; font-family: monospace; font-size: 0.85rem; max-height: 400px; overflow-y: auto;">
+        <p style="color: var(--text-muted);">Connecting to build events...</p>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 1rem;">
+    <h3>Completed Nodes</h3>
+    <ul id="completed-nodes" style="margin-top: 0.5rem; padding-left: 1.5rem; list-style: none;">
+    </ul>
+</div>
+
+<script>
+(function() {
+    var eventsDiv = document.getElementById('build-events');
+    var nodesList = document.getElementById('completed-nodes');
+    var projectID = '{{.Project.ID}}';
+    var source = new EventSource('/projects/' + projectID + '/build/events');
+
+    source.addEventListener('pipeline.started', function(e) {
+        eventsDiv.innerHTML = '';
+        addEvent('Pipeline started', 'var(--green)');
+    });
+
+    source.addEventListener('stage.started', function(e) {
+        var data = JSON.parse(e.data);
+        addEvent('Stage started: ' + (data.node_id || 'unknown'), 'var(--accent)');
+    });
+
+    source.addEventListener('stage.completed', function(e) {
+        var data = JSON.parse(e.data);
+        var nodeID = data.node_id || 'unknown';
+        addEvent('Stage completed: ' + nodeID, 'var(--green)');
+        var li = document.createElement('li');
+        li.textContent = nodeID;
+        li.style.color = 'var(--green)';
+        li.style.marginBottom = '0.25rem';
+        nodesList.appendChild(li);
+    });
+
+    source.addEventListener('stage.failed', function(e) {
+        var data = JSON.parse(e.data);
+        addEvent('Stage failed: ' + (data.node_id || 'unknown') + ' - ' + (data.reason || ''), '#e94560');
+    });
+
+    source.addEventListener('pipeline.completed', function(e) {
+        addEvent('Pipeline completed', 'var(--green)');
+        source.close();
+    });
+
+    source.addEventListener('pipeline.failed', function(e) {
+        var data = JSON.parse(e.data);
+        addEvent('Pipeline failed: ' + (data.error || 'unknown error'), '#e94560');
+        source.close();
+    });
+
+    source.onerror = function() {
+        addEvent('Connection closed', 'var(--text-muted)');
+        source.close();
+    };
+
+    function addEvent(text, color) {
+        var p = document.createElement('p');
+        p.textContent = new Date().toLocaleTimeString() + ' ' + text;
+        p.style.color = color || 'var(--text)';
+        p.style.marginBottom = '0.25rem';
+        eventsDiv.appendChild(p);
+        eventsDiv.scrollTop = eventsDiv.scrollHeight;
+    }
+})();
+</script>
+{{end}}

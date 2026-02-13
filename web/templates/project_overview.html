@@ -1,0 +1,59 @@
+{{define "content"}}
+<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
+    <div>
+        <h1>{{.Project.Name}}</h1>
+        <p style="color: var(--text-muted);">Created {{.Project.CreatedAt.Format "Jan 2, 2006 3:04 PM"}}</p>
+    </div>
+    <span class="phase-badge phase-{{.Project.Phase}}">{{.Project.Phase}}</span>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 2rem;">
+    <div class="card{{if eq (lower (print .Project.Phase)) "spec"}} active-phase{{end}}">
+        <h3>Spec</h3>
+        <p>Define what the pipeline should do.</p>
+        {{if .Project.SpecID}}
+            <p style="color: var(--green); font-size: 0.8rem; margin-top: 0.5rem;">Spec created</p>
+        {{end}}
+        <a href="/projects/{{.Project.ID}}/spec" class="btn btn-outline" style="margin-top: 0.75rem; display: inline-block;">
+            {{if eq (lower (print .Project.Phase)) "spec"}}Start Spec{{else}}View Spec{{end}}
+        </a>
+    </div>
+
+    <div class="card{{if eq (lower (print .Project.Phase)) "edit"}} active-phase{{end}}">
+        <h3>Edit</h3>
+        <p>Edit the DOT pipeline definition.</p>
+        {{if .Project.DOT}}
+            <p style="color: var(--green); font-size: 0.8rem; margin-top: 0.5rem;">DOT defined</p>
+        {{end}}
+        <a href="/projects/{{.Project.ID}}/editor" class="btn btn-outline" style="margin-top: 0.75rem; display: inline-block;">
+            {{if eq (lower (print .Project.Phase)) "edit"}}Edit DOT{{else}}View DOT{{end}}
+        </a>
+    </div>
+
+    <div class="card{{if eq (lower (print .Project.Phase)) "build"}} active-phase{{end}}">
+        <h3>Build</h3>
+        <p>Run the attractor pipeline.</p>
+        {{if .Project.RunID}}
+            <p style="color: var(--green); font-size: 0.8rem; margin-top: 0.5rem;">Run: {{.Project.RunID}}</p>
+        {{end}}
+        {{if eq (lower (print .Project.Phase)) "build"}}
+            <a href="/projects/{{.Project.ID}}/build" class="btn" style="margin-top: 0.75rem; display: inline-block;">View Build</a>
+        {{else}}
+            <form method="POST" action="/projects/{{.Project.ID}}/build/start" style="margin-top: 0.75rem;">
+                <button type="submit" class="btn btn-outline">Start Build</button>
+            </form>
+        {{end}}
+    </div>
+</div>
+
+{{if .Project.Diagnostics}}
+<div class="card" style="border-color: #e6a647;">
+    <h3 style="color: #e6a647;">Diagnostics</h3>
+    <ul style="margin-top: 0.5rem; padding-left: 1.5rem;">
+        {{range .Project.Diagnostics}}
+        <li style="color: var(--text-muted); font-size: 0.85rem;">{{.}}</li>
+        {{end}}
+    </ul>
+</div>
+{{end}}
+{{end}}

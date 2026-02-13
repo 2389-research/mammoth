@@ -1,0 +1,90 @@
+{{/* ABOUTME: Chat transcript partial with avatar initials and message continuations. */}}
+{{/* ABOUTME: SSE-refreshed via parent compositor; shows grouped messages and question cards. */}}
+{{ define "chat_transcript" }}
+<div id="{{ .ContainerID }}"
+     class="chat-transcript-wrap"
+     hx-trigger="sse:transcript_appended, sse:question_asked, sse:question_answered, sse:agent_step_started, sse:agent_step_finished"
+     hx-get="/web/specs/{{ .SpecID }}/activity/transcript?container_id={{ .ContainerID }}"
+     hx-target="#{{ .ContainerID }}"
+     hx-swap="outerHTML">
+    <div class="chat-messages" id="{{ .ContainerID }}-feed">
+        {{ range .Transcript }}
+        {{ if .IsStep }}
+        <div class="chat-status-line">
+            <span class="status-dot dot-{{ .RoleClass }}"></span>
+            <span class="chat-status-body">{{ .SenderLabel }} {{ .Content }}</span>
+            <span class="chat-status-time">{{ .Timestamp }}</span>
+        </div>
+        {{ else }}
+        <div class="chat-message {{ if .IsContinuation }}chat-continuation{{ end }}">
+            {{ if not .IsContinuation }}
+            <div class="chat-message-header">
+                <div class="chat-avatar avatar-{{ .RoleClass }}">{{ .Initial }}</div>
+                <span class="chat-sender">{{ .SenderLabel }}</span>
+                <span class="chat-time">{{ .Timestamp }}</span>
+            </div>
+            {{ end }}
+            <div class="chat-body">{{ .ContentHTML }}</div>
+        </div>
+        {{ end }}
+        {{ end }}
+        {{ if not .Transcript }}
+        <div class="chat-empty">
+            <div class="chat-empty-icon">&#128172;</div>
+            <p class="chat-empty-title">No messages yet</p>
+            <p class="chat-empty-hint">Type below to start a conversation with the agents.</p>
+        </div>
+        {{ end }}
+    </div>
+
+    {{ if .PendingQuestion }}
+    <div class="chat-question-card">
+        <div class="chat-message-header">
+            <div class="chat-avatar avatar-question">?</div>
+            <span class="chat-sender">Quick decision</span>
+        </div>
+        {{ if eq .PendingQuestion.Type "boolean" }}
+        <div class="chat-question-body">{{ .PendingQuestion.Question }}</div>
+        <form hx-post="/web/specs/{{ .SpecID }}/answer"
+              hx-target="#{{ .ContainerID }}"
+              hx-swap="outerHTML"
+              class="chat-question-options">
+            <input type="hidden" name="question_id" value="{{ .PendingQuestion.QuestionID }}">
+            <button type="submit" name="answer" value="Yes" class="chat-option-btn">Yes</button>
+            <button type="submit" name="answer" value="No" class="chat-option-btn">No</button>
+        </form>
+
+        {{ else if eq .PendingQuestion.Type "multiple_choice" }}
+        <div class="chat-question-body">{{ .PendingQuestion.Question }}</div>
+        <form hx-post="/web/specs/{{ .SpecID }}/answer"
+              hx-target="#{{ .ContainerID }}"
+              hx-swap="outerHTML"
+              class="chat-question-options">
+            <input type="hidden" name="question_id" value="{{ .PendingQuestion.QuestionID }}">
+            {{ range .PendingQuestion.Choices }}
+            <button type="submit" name="answer" value="{{ . }}" class="chat-option-btn">{{ . }}</button>
+            {{ end }}
+        </form>
+
+        {{ else if eq .PendingQuestion.Type "freeform" }}
+        <div class="chat-question-body">{{ .PendingQuestion.Question }}</div>
+        <form hx-post="/web/specs/{{ .SpecID }}/answer"
+              hx-target="#{{ .ContainerID }}"
+              hx-swap="outerHTML"
+              class="chat-question-options">
+            <input type="hidden" name="question_id" value="{{ .PendingQuestion.QuestionID }}">
+            <textarea name="answer" placeholder="{{ .PendingQuestion.Placeholder }}" rows="2" class="chat-question-textarea"></textarea>
+            <button type="submit" class="chat-option-btn">Submit</button>
+        </form>
+        {{ end }}
+    </div>
+    {{ end }}
+</div>
+
+<script>
+    (function() {
+        var feed = document.getElementById('{{ .ContainerID }}-feed');
+        if (feed) feed.scrollTop = feed.scrollHeight;
+    })();
+</script>
+{{ end }}

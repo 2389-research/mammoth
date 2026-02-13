@@ -7,7 +7,12 @@ require (
 	github.com/charmbracelet/bubbles v0.21.1
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/go-chi/chi/v5 v5.2.5
 	github.com/google/uuid v1.6.0
+	github.com/mattn/go-sqlite3 v1.14.34
+	github.com/oklog/ulid/v2 v2.1.1
+	github.com/yuin/goldmark v1.7.16
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

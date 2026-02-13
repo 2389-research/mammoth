@@ -216,7 +216,7 @@ func isBareIdentifier(val string) bool {
 
 	// Check for simple bare identifiers
 	for _, ch := range val {
-		if !(ch == '_' || unicode.IsLower(ch) || unicode.IsDigit(ch)) {
+		if ch != '_' && !unicode.IsLower(ch) && !unicode.IsDigit(ch) {
 			return false
 		}
 	}

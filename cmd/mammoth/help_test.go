@@ -44,6 +44,7 @@ func TestPrintHelpContainsUsagePatterns(t *testing.T) {
 		"mammoth [run] <pipeline.dot>",
 		"mammoth -validate <pipeline.dot>",
 		"mammoth -server",
+		"mammoth serve",
 	}
 	for _, p := range patterns {
 		if !strings.Contains(out, p) {

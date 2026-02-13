@@ -1,0 +1,37 @@
+{{define "content"}}
+<h1>Welcome to mammoth</h1>
+<p style="color: var(--text-muted); margin-bottom: 2rem;">
+    Build attractor pipelines from idea to execution.
+</p>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem;">
+    <a href="/projects/new" class="card" style="text-decoration: none; color: inherit;">
+        <h3>New from Idea</h3>
+        <p>Describe what you want to build and let mammoth generate the pipeline spec.</p>
+    </a>
+    <a href="/projects/new?mode=dot" class="card" style="text-decoration: none; color: inherit;">
+        <h3>Upload DOT</h3>
+        <p>Already have a DOT pipeline definition? Upload it and start editing.</p>
+    </a>
+</div>
+
+<h2 style="margin-bottom: 1rem;">Recent Projects</h2>
+
+{{if .Projects}}
+<div>
+    {{range .Projects}}
+    <a href="/projects/{{.ID}}" class="card" style="display: flex; align-items: center; justify-content: space-between; text-decoration: none; color: inherit;">
+        <div>
+            <h3>{{.Name}}</h3>
+            <p>Created {{.CreatedAt.Format "Jan 2, 2006"}}</p>
+        </div>
+        <span class="phase-badge phase-{{.Phase}}">{{.Phase}}</span>
+    </a>
+    {{end}}
+</div>
+{{else}}
+<div class="card">
+    <p>No projects yet. Create one above to get started.</p>
+</div>
+{{end}}
+{{end}}

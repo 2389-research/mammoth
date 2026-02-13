@@ -25,6 +25,9 @@ type OpenAIAdapter struct {
 type OpenAIOption func(*OpenAIAdapter)
 
 // WithOpenAIBaseURL sets the base URL for OpenAI API requests.
+//
+// Deprecated: Use NewMuxAdapter with the appropriate mux/llm client instead.
+// Retained as fallback for custom base URL configurations.
 func WithOpenAIBaseURL(url string) OpenAIOption {
 	return func(a *OpenAIAdapter) {
 		a.BaseURL = url
@@ -54,6 +57,9 @@ func WithOpenAIProject(project string) OpenAIOption {
 }
 
 // NewOpenAIAdapter creates a new OpenAIAdapter with the given API key and options.
+//
+// Deprecated: Use NewMuxAdapter with the appropriate mux/llm client instead.
+// Retained as fallback for custom base URL configurations.
 func NewOpenAIAdapter(apiKey string, opts ...OpenAIOption) *OpenAIAdapter {
 	adapter := &OpenAIAdapter{
 		BaseAdapter: NewBaseAdapter(apiKey, "https://api.openai.com", DefaultAdapterTimeout()),

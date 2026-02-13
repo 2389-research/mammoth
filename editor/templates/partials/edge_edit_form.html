@@ -1,0 +1,28 @@
+{{define "edge_edit_form"}}
+<div class="edit-form" data-edge-id="{{.EdgeID}}">
+    <h4>Edge: {{.Edge.From}} &rarr; {{.Edge.To}}</h4>
+    <form hx-post="/sessions/{{.SessionID}}/edges/{{urlquery .EdgeID}}" hx-target="#editor-panels" hx-swap="none">
+        {{range $k, $v := .Edge.Attrs}}
+        <div class="form-group">
+            <label>{{$k}}</label>
+            <input name="attr_{{$k}}" value="{{$v}}" class="form-input">
+        </div>
+        {{end}}
+        <!-- new attr key/value pair -->
+        <div class="form-group new-attr-group">
+            <label>Add attribute</label>
+            <div class="new-attr-row">
+                <input name="new_attr_key" placeholder="key" class="form-input">
+                <input name="new_attr_value" placeholder="value" class="form-input">
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn-primary">Save</button>
+            <button type="button" class="btn-danger"
+                    hx-delete="/sessions/{{.SessionID}}/edges/{{urlquery .EdgeID}}"
+                    hx-target="#editor-panels" hx-swap="none"
+                    hx-confirm="Delete edge {{.Edge.From}} &rarr; {{.Edge.To}}?">Delete</button>
+        </div>
+    </form>
+</div>
+{{end}}

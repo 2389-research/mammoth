@@ -1,0 +1,121 @@
+{{define "property_panel"}}
+<div id="property-panel" hx-swap-oob="true">
+    <h3>Properties</h3>
+    <div id="selection-props" class="selection-props">
+        <p class="hint">Click a node or edge in the graph to view its properties</p>
+    </div>
+    <div class="graph-summary">
+        <h4>Graph: {{.Session.Graph.Name}}</h4>
+        <div class="summary-stats">
+            <div class="stat">
+                <span class="stat-label">Nodes:</span>
+                <span class="stat-value">{{len .Session.Graph.Nodes}}</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Edges:</span>
+                <span class="stat-value">{{len .Session.Graph.Edges}}</span>
+            </div>
+            {{if .Session.Graph.Subgraphs}}
+            <div class="stat">
+                <span class="stat-label">Subgraphs:</span>
+                <span class="stat-value">{{len .Session.Graph.Subgraphs}}</span>
+            </div>
+            {{end}}
+        </div>
+    </div>
+    <!-- Editable graph attributes form (always visible so users can add attrs) -->
+    <div class="graph-attrs">
+        <h4>Graph Attributes</h4>
+        <form class="add-form" hx-post="/sessions/{{.SessionID}}/attrs" hx-target="#editor-panels" hx-swap="none">
+            {{range $key, $val := .Session.Graph.Attrs}}
+            <div class="form-group">
+                <label>{{$key}}</label>
+                <input name="attr_{{$key}}" value="{{$val}}" class="form-input">
+            </div>
+            {{end}}
+            <!-- new attr key/value pair -->
+            <div class="form-group new-attr-group">
+                <label>Add attribute</label>
+                <div class="new-attr-row">
+                    <input name="new_attr_key" placeholder="key" class="form-input">
+                    <input name="new_attr_value" placeholder="value" class="form-input">
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+    <div class="node-list collapsible">
+        <h4>Nodes ({{len .Session.Graph.Nodes}})</h4>
+        <div class="list-content">
+            {{range $id, $node := .Session.Graph.Nodes}}
+            <div class="node-item clickable"
+                 hx-get="/sessions/{{$.SessionID}}/nodes/{{urlquery $id}}/edit"
+                 hx-target="#selection-props"
+                 hx-swap="innerHTML">
+                <span class="item-id">{{$id}}</span>
+                {{if $node.Attrs.label}}
+                <span class="item-label">{{index $node.Attrs "label"}}</span>
+                {{end}}
+            </div>
+            {{end}}
+        </div>
+    </div>
+    <div class="edge-list collapsible">
+        <h4>Edges ({{len .Session.Graph.Edges}})</h4>
+        <div class="list-content">
+            {{range $idx, $edge := .Session.Graph.Edges}}
+            <div class="edge-item clickable"
+                 hx-get="/sessions/{{$.SessionID}}/edges/{{urlquery $edge.ID}}/edit"
+                 hx-target="#selection-props"
+                 hx-swap="innerHTML">
+                <span class="item-id">{{$edge.From}} &rarr; {{$edge.To}}</span>
+            </div>
+            {{end}}
+        </div>
+    </div>
+    <!-- Add Node mini-form -->
+    <div class="add-node-form">
+        <h4>Add Node</h4>
+        <form class="add-form" hx-post="/sessions/{{.SessionID}}/nodes" hx-target="#editor-panels" hx-swap="none">
+            <div class="form-group">
+                <label>ID (required)</label>
+                <input name="id" required placeholder="node_id" class="form-input">
+            </div>
+            <div class="form-group">
+                <label>Label</label>
+                <input name="attr_label" placeholder="optional label" class="form-input">
+            </div>
+            <div class="form-group">
+                <label>Shape</label>
+                <input name="attr_shape" placeholder="optional shape" class="form-input">
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn-primary">Add Node</button>
+            </div>
+        </form>
+    </div>
+    <!-- Add Edge mini-form -->
+    <div class="add-edge-form">
+        <h4>Add Edge</h4>
+        <form class="add-form" hx-post="/sessions/{{.SessionID}}/edges" hx-target="#editor-panels" hx-swap="none">
+            <div class="form-group">
+                <label>From (required)</label>
+                <input name="from" required placeholder="source node" class="form-input">
+            </div>
+            <div class="form-group">
+                <label>To (required)</label>
+                <input name="to" required placeholder="target node" class="form-input">
+            </div>
+            <div class="form-group">
+                <label>Label</label>
+                <input name="attr_label" placeholder="optional label" class="form-input">
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn-primary">Add Edge</button>
+            </div>
+        </form>
+    </div>
+</div>
+{{end}}

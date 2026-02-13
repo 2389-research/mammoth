@@ -1,0 +1,103 @@
+{{/* ABOUTME: Spec compositor: command bar + canvas + chat rail. */}}
+{{/* ABOUTME: Loaded into #workspace when a spec is selected; default view is the document canvas. */}}
+
+<div class="spec-compositor" hx-ext="sse" sse-connect="/api/specs/{{ .SpecID }}/events/stream">
+
+<header class="command-bar">
+    <div class="command-bar-left">
+        <span class="command-bar-title">{{ .Title }}</span>
+        <span class="command-bar-chevron">&#8250;</span>
+        <span class="command-bar-subtitle">{{ .OneLiner }}</span>
+    </div>
+    <div class="view-toggles-capsule">
+        <button class="view-toggle active" data-view="document"
+                hx-get="/web/specs/{{ .SpecID }}/document"
+                hx-target="#canvas" hx-swap="innerHTML">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span class="view-toggle-label">Document</span>
+        </button>
+        <button class="view-toggle" data-view="board"
+                hx-get="/web/specs/{{ .SpecID }}/board"
+                hx-target="#canvas" hx-swap="innerHTML">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <span class="view-toggle-label">Board</span>
+        </button>
+        <button class="view-toggle" data-view="diagram"
+                hx-get="/web/specs/{{ .SpecID }}/diagram"
+                hx-target="#canvas" hx-swap="innerHTML">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+            <span class="view-toggle-label">Diagram</span>
+        </button>
+    </div>
+    <div class="command-bar-right">
+        <div id="agent-controls" hx-get="/web/specs/{{ .SpecID }}/agents/status"
+             hx-trigger="load, sse:agent_step_started, sse:agent_step_finished, refreshAgents from:body"
+             hx-swap="innerHTML"></div>
+    </div>
+</header>
+
+<div class="spec-body">
+    {{/* Sentinel: registers EventSource listeners for content SSE events so htmx-ext-sse picks them up. */}}
+    <div id="canvas-refresh-sentinel" style="display:none"
+         hx-trigger="sse:card_created, sse:card_updated, sse:card_moved, sse:card_deleted, sse:spec_core_updated">
+    </div>
+    <main class="canvas" id="canvas"
+          hx-get="/web/specs/{{ .SpecID }}/document"
+          hx-trigger="load" hx-swap="innerHTML">
+    </main>
+    <aside class="chat-rail" id="chat-rail"
+           hx-get="/web/specs/{{ .SpecID }}/chat-panel"
+           hx-trigger="load" hx-swap="innerHTML">
+    </aside>
+</div>
+
+</div>
+
+<script>
+    // View toggle active state management
+    document.querySelectorAll('.view-toggles-capsule .view-toggle').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.view-toggles-capsule .view-toggle').forEach(function(b) {
+                b.classList.remove('active');
+            });
+            btn.classList.add('active');
+        });
+    });
+
+    // Refresh agent status when agent controls are swapped (start/pause/resume)
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target && evt.detail.target.id === 'agent-status') {
+            document.body.dispatchEvent(new CustomEvent('refreshAgents'));
+        }
+    });
+
+    // Proactive canvas refresh on card changes via SSE.
+    // htmx-ext-sse dispatches htmx:sseMessage as a real DOM CustomEvent on the SSE
+    // source element. The sentinel div above ensures listeners are registered for
+    // content event types. We debounce to avoid hammering the server.
+    (function() {
+        var refreshTimer = null;
+        var contentEvents = {
+            'card_created': true, 'card_updated': true, 'card_moved': true,
+            'card_deleted': true, 'spec_core_updated': true
+        };
+        var compositor = document.querySelector('.spec-compositor');
+        if (!compositor) return;
+
+        compositor.addEventListener('htmx:sseMessage', function(evt) {
+            var sseEvent = evt.detail;
+            if (!sseEvent) return;
+            // htmx-ext-sse detail shape varies by version: check both .type and .event
+            var eventName = sseEvent.type || sseEvent.event || '';
+            if (!contentEvents[eventName]) return;
+
+            if (refreshTimer) clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(function() {
+                var activeBtn = document.querySelector('.view-toggle.active');
+                if (activeBtn) {
+                    activeBtn.click();
+                }
+            }, 800);
+        });
+    })();
+</script>

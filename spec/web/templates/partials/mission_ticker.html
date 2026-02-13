@@ -1,0 +1,76 @@
+{{/* ABOUTME: Compact activity ticker for the mission strip. */}}
+{{/* ABOUTME: Shows last entries and pending question widget in a compact format. */}}
+<div class="mission-ticker" id="mission-ticker-feed">
+    {{ range .TickerEntries }}
+    <div class="ticker-entry">
+        <span class="status-dot dot-{{ .RoleClass }}"></span>
+        <span class="ticker-sender">{{ .SenderLabel }}</span>
+        <span class="ticker-text">{{ .Content }}</span>
+        <span class="ticker-time">{{ .Timestamp }}</span>
+    </div>
+    {{ end }}
+    {{ if not .TickerEntries }}
+    <div class="ticker-empty">Awaiting activity...</div>
+    {{ end }}
+</div>
+
+{{ if .PendingQuestion }}
+<div class="question-widget" id="question-widget">
+    {{ if eq .PendingQuestion.Type "boolean" }}
+    <div class="question-header">Agent is asking:</div>
+    <p class="question-text">{{ .PendingQuestion.Question }}</p>
+    <form hx-post="/web/specs/{{ .SpecID }}/answer"
+          hx-target="#mission-ticker"
+          hx-swap="innerHTML">
+        <input type="hidden" name="question_id" value="{{ .PendingQuestion.QuestionID }}">
+        <div class="bool-buttons">
+            <button type="submit" name="answer" value="Yes" class="btn btn-answer btn-yes">Yes</button>
+            <button type="submit" name="answer" value="No" class="btn btn-answer btn-no">No</button>
+        </div>
+    </form>
+
+    {{ else if eq .PendingQuestion.Type "multiple_choice" }}
+    <div class="question-header">Agent is asking:</div>
+    <p class="question-text">{{ .PendingQuestion.Question }}</p>
+    <form hx-post="/web/specs/{{ .SpecID }}/answer"
+          hx-target="#mission-ticker"
+          hx-swap="innerHTML">
+        <input type="hidden" name="question_id" value="{{ .PendingQuestion.QuestionID }}">
+        <div class="question-choices">
+            {{ range .PendingQuestion.Choices }}
+            <label class="choice-label">
+                {{ if $.PendingQuestion.AllowMulti }}
+                <input type="checkbox" name="answer" value="{{ . }}">
+                {{ else }}
+                <input type="radio" name="answer" value="{{ . }}">
+                {{ end }}
+                <span class="choice-text">{{ . }}</span>
+            </label>
+            {{ end }}
+        </div>
+        <button type="submit" class="btn btn-answer btn-submit">Submit</button>
+    </form>
+
+    {{ else if eq .PendingQuestion.Type "freeform" }}
+    <div class="question-header">Agent is asking:</div>
+    <p class="question-text">{{ .PendingQuestion.Question }}</p>
+    <form hx-post="/web/specs/{{ .SpecID }}/answer"
+          hx-target="#mission-ticker"
+          hx-swap="innerHTML">
+        <input type="hidden" name="question_id" value="{{ .PendingQuestion.QuestionID }}">
+        <div class="form-group">
+            <textarea name="answer" placeholder="{{ .PendingQuestion.Placeholder }}" rows="2"></textarea>
+        </div>
+        <button type="submit" class="btn btn-answer btn-submit">Submit</button>
+    </form>
+    {{ end }}
+</div>
+{{ end }}
+
+<script>
+    (function() {
+        var feed = document.getElementById('mission-ticker-feed');
+        if (!feed) return;
+        feed.scrollTop = feed.scrollHeight;
+    })();
+</script>
