@@ -1,0 +1,17 @@
+change_id = "dc0677231a8ef589eb42aba7d8fbb2d9"
+type = "behavioral"
+intent = "feat(dot): add serializer with color-coding"
+files = [
+    ".agent/changes/ccccce899c65946f1d0e39971b35b55e.toml",
+    "dot/parser.go",
+    "dot/parser_test.go",
+    "dot/serializer.go",
+    "dot/serializer_test.go",
+    "dot/validator/lint.go",
+    "dot/validator/lint_test.go",
+]
+breaking = false
+
+[invariants]
+checked = []
+status = "skipped"
