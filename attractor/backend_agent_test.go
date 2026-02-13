@@ -358,62 +358,72 @@ func TestAgentBackendProviderSelectionOpenAI(t *testing.T) {
 	}
 }
 
-func TestCreateProviderAdapterAnthropicReturnsRealAdapter(t *testing.T) {
-	adapter := createProviderAdapter("anthropic", "test-key-anthropic", "")
+func TestCreateProviderAdapterAnthropicReturnsMuxAdapter(t *testing.T) {
+	adapter := createProviderAdapter(context.Background(), "anthropic", "test-key-anthropic", "")
 
-	// Should return the real AnthropicAdapter, not a placeholder
-	anthropicAdapter, ok := adapter.(*llm.AnthropicAdapter)
+	// Should return a MuxAdapter wrapping a mux Anthropic client
+	muxAdapter, ok := adapter.(*llm.MuxAdapter)
 	if !ok {
-		t.Fatalf("expected *llm.AnthropicAdapter, got %T", adapter)
+		t.Fatalf("expected *llm.MuxAdapter, got %T", adapter)
 	}
-	if anthropicAdapter.Name() != "anthropic" {
-		t.Errorf("expected Name() = 'anthropic', got %q", anthropicAdapter.Name())
+	if muxAdapter.Name() != "anthropic" {
+		t.Errorf("expected Name() = 'anthropic', got %q", muxAdapter.Name())
 	}
 }
 
-func TestCreateProviderAdapterOpenAIReturnsRealAdapter(t *testing.T) {
-	adapter := createProviderAdapter("openai", "test-key-openai", "")
+func TestCreateProviderAdapterOpenAIReturnsMuxAdapter(t *testing.T) {
+	adapter := createProviderAdapter(context.Background(), "openai", "test-key-openai", "")
 
-	// Should return the real OpenAIAdapter, not a placeholder
-	openaiAdapter, ok := adapter.(*llm.OpenAIAdapter)
+	// Should return a MuxAdapter wrapping a mux OpenAI client
+	muxAdapter, ok := adapter.(*llm.MuxAdapter)
 	if !ok {
-		t.Fatalf("expected *llm.OpenAIAdapter, got %T", adapter)
+		t.Fatalf("expected *llm.MuxAdapter, got %T", adapter)
 	}
-	if openaiAdapter.Name() != "openai" {
-		t.Errorf("expected Name() = 'openai', got %q", openaiAdapter.Name())
+	if muxAdapter.Name() != "openai" {
+		t.Errorf("expected Name() = 'openai', got %q", muxAdapter.Name())
 	}
 }
 
-func TestCreateProviderAdapterGeminiReturnsRealAdapter(t *testing.T) {
-	adapter := createProviderAdapter("gemini", "test-key-gemini", "")
+func TestCreateProviderAdapterGeminiReturnsMuxAdapter(t *testing.T) {
+	// Gemini mux client requires a valid context. With an invalid API key
+	// the constructor may succeed (key validation is deferred to API calls)
+	// or may fail, in which case createProviderAdapter falls back to the
+	// built-in GeminiAdapter.
+	adapter := createProviderAdapter(context.Background(), "gemini", "test-key-gemini", "")
 
-	// Should return the real GeminiAdapter, not a placeholder
-	geminiAdapter, ok := adapter.(*llm.GeminiAdapter)
-	if !ok {
-		t.Fatalf("expected *llm.GeminiAdapter, got %T", adapter)
-	}
-	if geminiAdapter.Name() != "gemini" {
-		t.Errorf("expected Name() = 'gemini', got %q", geminiAdapter.Name())
+	// Should return either a MuxAdapter or a GeminiAdapter (fallback on init error)
+	switch a := adapter.(type) {
+	case *llm.MuxAdapter:
+		if a.Name() != "gemini" {
+			t.Errorf("expected Name() = 'gemini', got %q", a.Name())
+		}
+	case *llm.GeminiAdapter:
+		// Fallback is acceptable when Gemini client init fails
+		if a.Name() != "gemini" {
+			t.Errorf("expected Name() = 'gemini', got %q", a.Name())
+		}
+	default:
+		t.Fatalf("expected *llm.MuxAdapter or *llm.GeminiAdapter, got %T", adapter)
 	}
 }
 
-func TestCreateProviderAdapterUnknownDefaultsToAnthropic(t *testing.T) {
-	adapter := createProviderAdapter("unknown-provider", "test-key", "")
+func TestCreateProviderAdapterUnknownDefaultsToAnthropicMux(t *testing.T) {
+	adapter := createProviderAdapter(context.Background(), "unknown-provider", "test-key", "")
 
-	// Unknown providers should default to AnthropicAdapter
-	anthropicAdapter, ok := adapter.(*llm.AnthropicAdapter)
+	// Unknown providers should default to a MuxAdapter wrapping an Anthropic client
+	muxAdapter, ok := adapter.(*llm.MuxAdapter)
 	if !ok {
-		t.Fatalf("expected *llm.AnthropicAdapter for unknown provider, got %T", adapter)
+		t.Fatalf("expected *llm.MuxAdapter for unknown provider, got %T", adapter)
 	}
-	if anthropicAdapter.Name() != "anthropic" {
-		t.Errorf("expected Name() = 'anthropic', got %q", anthropicAdapter.Name())
+	if muxAdapter.Name() != "anthropic" {
+		t.Errorf("expected Name() = 'anthropic', got %q", muxAdapter.Name())
 	}
 }
 
 func TestCreateProviderAdapterNeverReturnsPlaceholder(t *testing.T) {
 	providers := []string{"anthropic", "openai", "gemini", "unknown"}
 	for _, provider := range providers {
-		adapter := createProviderAdapter(provider, "test-key-"+provider, "")
+		adapter := createProviderAdapter(context.Background(), provider, "test-key-"+provider, "")
 
 		// Verify the adapter is never a placeholder by checking it does not
 		// return the characteristic placeholder error on Complete

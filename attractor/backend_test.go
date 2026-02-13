@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/2389-research/mammoth/llm"
 )
 
 // fakeBackend is a test double that implements CodergenBackend with configurable behavior.
@@ -385,20 +387,28 @@ func TestCreateProviderAdapterWithBaseURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Should not panic with a base URL
-			adapter := createProviderAdapter(tt.provider, "test-key", "https://custom.example.com")
+			// With a base URL, should fall back to legacy (built-in) adapters
+			adapter := createProviderAdapter(context.Background(), tt.provider, "test-key", "https://custom.example.com")
 			if adapter == nil {
 				t.Error("expected non-nil adapter")
+			}
+			// Should NOT be a MuxAdapter when base URL is specified
+			if _, ok := adapter.(*llm.MuxAdapter); ok {
+				t.Errorf("expected legacy adapter with base URL, got *llm.MuxAdapter")
 			}
 		})
 	}
 }
 
 func TestCreateProviderAdapterWithEmptyBaseURL(t *testing.T) {
-	// Empty base URL should use defaults
-	adapter := createProviderAdapter("anthropic", "test-key", "")
+	// Empty base URL should use mux adapter
+	adapter := createProviderAdapter(context.Background(), "anthropic", "test-key", "")
 	if adapter == nil {
 		t.Error("expected non-nil adapter with empty base URL")
+	}
+	// Without a base URL, should use the MuxAdapter
+	if _, ok := adapter.(*llm.MuxAdapter); !ok {
+		t.Errorf("expected *llm.MuxAdapter with empty base URL, got %T", adapter)
 	}
 }
 

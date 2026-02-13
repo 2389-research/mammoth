@@ -5,6 +5,7 @@ package attractor
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/2389-research/mammoth/agent"
 	"github.com/2389-research/mammoth/llm"
+	muxllm "github.com/2389-research/mux/llm"
 )
 
 // defaultAgentMaxTurns is the default maximum number of agent loop turns
@@ -39,7 +41,7 @@ func (b *AgentBackend) RunAgent(ctx context.Context, config AgentRunConfig) (*Ag
 	// Resolve the LLM client
 	client := b.Client
 	if client == nil {
-		envClient, err := createClientFromEnv(config.Provider, config.BaseURL)
+		envClient, err := createClientFromEnv(ctx, config.Provider, config.BaseURL)
 		if err != nil {
 			return nil, fmt.Errorf("create LLM client: %w", err)
 		}
@@ -126,8 +128,9 @@ func (b *AgentBackend) RunAgent(ctx context.Context, config AgentRunConfig) (*Ag
 // It checks for API keys and returns a clear error if none are found. When
 // baseURL is non-empty, it is applied to the preferred provider's adapter.
 // Provider-specific base URL env vars (ANTHROPIC_BASE_URL, OPENAI_BASE_URL,
-// GEMINI_BASE_URL) are also checked as fallbacks.
-func createClientFromEnv(preferredProvider, baseURL string) (*llm.Client, error) {
+// GEMINI_BASE_URL) are also checked as fallbacks. The ctx parameter is needed
+// for providers like Gemini whose mux client constructor requires a context.
+func createClientFromEnv(ctx context.Context, preferredProvider, baseURL string) (*llm.Client, error) {
 	// Check for API keys based on preferred provider
 	providers := []struct {
 		envVar     string
@@ -161,7 +164,7 @@ func createClientFromEnv(preferredProvider, baseURL string) (*llm.Client, error)
 			if providerBaseURL == "" {
 				providerBaseURL = os.Getenv(p.baseEnvVar)
 			}
-			adapter := createProviderAdapter(p.name, key, providerBaseURL)
+			adapter := createProviderAdapter(ctx, p.name, key, providerBaseURL)
 			opts = append(opts, llm.WithProvider(p.name, adapter))
 			found = true
 		}
@@ -190,32 +193,52 @@ func createClientFromEnv(preferredProvider, baseURL string) (*llm.Client, error)
 	return llm.NewClient(opts...), nil
 }
 
-// createProviderAdapter creates a real provider adapter for the given provider.
-// It delegates to the appropriate constructor in the llm package based on
-// the provider name. When baseURL is non-empty, it overrides the provider's
-// default API endpoint. Unknown providers default to Anthropic.
-func createProviderAdapter(name, apiKey, baseURL string) llm.ProviderAdapter {
+// createProviderAdapter creates a provider adapter for the given provider.
+// By default it creates mux/llm clients wrapped with llm.NewMuxAdapter for
+// a unified client implementation. When baseURL is non-empty, it falls back
+// to mammoth's built-in adapters which support custom API endpoints.
+// Unknown providers default to Anthropic.
+func createProviderAdapter(ctx context.Context, name, apiKey, baseURL string) llm.ProviderAdapter {
+	// When a custom base URL is specified, fall back to mammoth's built-in
+	// adapters which support base URL overrides. The mux clients do not
+	// expose base URL configuration.
+	if baseURL != "" {
+		return createLegacyProviderAdapter(name, apiKey, baseURL)
+	}
+
 	switch name {
 	case "anthropic":
-		if baseURL != "" {
-			return llm.NewAnthropicAdapter(apiKey, llm.WithAnthropicBaseURL(baseURL))
-		}
-		return llm.NewAnthropicAdapter(apiKey)
+		client := muxllm.NewAnthropicClient(apiKey, "")
+		return llm.NewMuxAdapter(name, client)
 	case "openai":
-		if baseURL != "" {
-			return llm.NewOpenAIAdapter(apiKey, llm.WithOpenAIBaseURL(baseURL))
-		}
-		return llm.NewOpenAIAdapter(apiKey)
+		client := muxllm.NewOpenAIClient(apiKey, "")
+		return llm.NewMuxAdapter(name, client)
 	case "gemini":
-		if baseURL != "" {
-			return llm.NewGeminiAdapter(apiKey, llm.WithGeminiBaseURL(baseURL))
+		client, err := muxllm.NewGeminiClient(ctx, apiKey, "")
+		if err != nil {
+			log.Printf("failed to create Gemini mux client, falling back to built-in adapter: %v", err)
+			return llm.NewGeminiAdapter(apiKey)
 		}
-		return llm.NewGeminiAdapter(apiKey)
+		return llm.NewMuxAdapter(name, client)
 	default:
-		if baseURL != "" {
-			return llm.NewAnthropicAdapter(apiKey, llm.WithAnthropicBaseURL(baseURL))
-		}
-		return llm.NewAnthropicAdapter(apiKey)
+		client := muxllm.NewAnthropicClient(apiKey, "")
+		return llm.NewMuxAdapter("anthropic", client)
+	}
+}
+
+// createLegacyProviderAdapter creates a mammoth built-in provider adapter.
+// Used when a custom base URL is specified, since the mux clients do not
+// support base URL overrides.
+func createLegacyProviderAdapter(name, apiKey, baseURL string) llm.ProviderAdapter {
+	switch name {
+	case "anthropic":
+		return llm.NewAnthropicAdapter(apiKey, llm.WithAnthropicBaseURL(baseURL))
+	case "openai":
+		return llm.NewOpenAIAdapter(apiKey, llm.WithOpenAIBaseURL(baseURL))
+	case "gemini":
+		return llm.NewGeminiAdapter(apiKey, llm.WithGeminiBaseURL(baseURL))
+	default:
+		return llm.NewAnthropicAdapter(apiKey, llm.WithAnthropicBaseURL(baseURL))
 	}
 }
 
