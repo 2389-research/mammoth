@@ -1,0 +1,13 @@
+change_id = "0e1a46c9b805bc469e19738518ddc986"
+type = "behavioral"
+intent = "chore: add mux/llm dependency"
+files = [
+    ".agent/changes/93f1f2b5d957de05331244f2792f708c.toml",
+    "go.mod",
+    "go.sum",
+]
+breaking = false
+
+[invariants]
+checked = []
+status = "skipped"
