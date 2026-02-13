@@ -1,0 +1,15 @@
+change_id = "c353f4274cf6f6b1ec924ec18d718705"
+type = "behavioral"
+intent = "feat(llm): add mux/llm adapter for agent compatibility"
+files = [
+    ".agent/changes/0e1a46c9b805bc469e19738518ddc986.toml",
+    "go.mod",
+    "go.sum",
+    "llm/mux_adapter.go",
+    "llm/mux_adapter_test.go",
+]
+breaking = false
+
+[invariants]
+checked = []
+status = "skipped"

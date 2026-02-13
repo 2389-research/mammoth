@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	muxllm "github.com/2389-research/mux/llm"
 )
@@ -61,7 +62,11 @@ func (a *MuxAdapter) Stream(ctx context.Context, req Request) (<-chan StreamEven
 			}
 
 			evt := convertStreamEvent(muxEvt, &currentBlockType)
-			ch <- evt
+			select {
+			case ch <- evt:
+			case <-ctx.Done():
+				return
+			}
 
 			// Reset block type on content_block_stop.
 			if muxEvt.Type == muxllm.EventContentStop {
@@ -167,7 +172,9 @@ func convertContentPartsToBlocks(parts []ContentPart) []muxllm.ContentBlock {
 			// Convert json.RawMessage arguments to map[string]any.
 			var input map[string]any
 			if len(part.ToolCall.Arguments) > 0 {
-				_ = json.Unmarshal(part.ToolCall.Arguments, &input)
+				if err := json.Unmarshal(part.ToolCall.Arguments, &input); err != nil {
+					log.Printf("mux adapter: failed to unmarshal tool call arguments for %q: %v", part.ToolCall.Name, err)
+				}
 			}
 			blocks = append(blocks, muxllm.ContentBlock{
 				Type:  muxllm.ContentTypeToolUse,
@@ -230,7 +237,9 @@ func convertTools(tools []ToolDefinition) []muxllm.ToolDefinition {
 	for _, tool := range tools {
 		var schema map[string]any
 		if len(tool.Parameters) > 0 {
-			_ = json.Unmarshal(tool.Parameters, &schema)
+			if err := json.Unmarshal(tool.Parameters, &schema); err != nil {
+				log.Printf("mux adapter: failed to unmarshal tool parameters for %q: %v", tool.Name, err)
+			}
 		}
 		result = append(result, muxllm.ToolDefinition{
 			Name:        tool.Name,
