@@ -1,8 +1,18 @@
 // ABOUTME: Handles d3-graphviz rendering and SVG interaction for graph visualization
 // ABOUTME: Manages node/edge selection, highlighting, and htmx-driven property panel updates
+//
+// KNOWN LIMITATION: DOT rendering is performed client-side via d3-graphviz, which
+// interprets SVG attributes from DOT source. Malicious DOT content (e.g. crafted label
+// attributes) could inject SVG/HTML into the rendered output. Mitigating this fully
+// would require server-side DOT sanitization or a sandboxed rendering iframe, which
+// is tracked as a future improvement.
 
 (function() {
     'use strict';
+
+    function editorBasePath() {
+        return window.MAMMOTH_EDITOR_BASE_PATH || '';
+    }
 
     let graphviz = null;
     let selectedElement = null;
@@ -61,7 +71,12 @@
                 });
         } catch (err) {
             console.error('Error rendering graph:', err);
-            container.innerHTML = '<p class="error">Error rendering graph: ' + err.message + '</p>';
+            // Use textContent to prevent XSS via crafted error messages
+            var errorP = document.createElement('p');
+            errorP.className = 'error';
+            errorP.textContent = 'Error rendering graph: ' + err.message;
+            container.innerHTML = '';
+            container.appendChild(errorP);
         }
     };
 
@@ -112,7 +127,7 @@
         selectedElement = element;
         element.classList.add('selected');
         const sessionID = document.querySelector('.editor').dataset.sessionId;
-        htmx.ajax('GET', `/sessions/${sessionID}/nodes/${encodeURIComponent(nodeId)}/edit`, {target: '#selection-props', swap: 'innerHTML'});
+        htmx.ajax('GET', `${editorBasePath()}/sessions/${sessionID}/nodes/${encodeURIComponent(nodeId)}/edit`, {target: '#selection-props', swap: 'innerHTML'});
     }
 
     // Handle edge click - fetch edit form via htmx
@@ -122,7 +137,7 @@
         element.classList.add('selected');
         const sessionID = document.querySelector('.editor').dataset.sessionId;
         // Edge IDs contain -> which needs URL encoding
-        htmx.ajax('GET', `/sessions/${sessionID}/edges/${encodeURIComponent(edgeId)}/edit`, {target: '#selection-props', swap: 'innerHTML'});
+        htmx.ajax('GET', `${editorBasePath()}/sessions/${sessionID}/edges/${encodeURIComponent(edgeId)}/edit`, {target: '#selection-props', swap: 'innerHTML'});
     }
 
     // Clear current selection

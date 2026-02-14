@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/oklog/ulid/v2"
 
+	specagents "github.com/2389-research/mammoth/spec/agents"
 	"github.com/2389-research/mammoth/spec/core"
 	"github.com/2389-research/mammoth/spec/server"
 	specweb "github.com/2389-research/mammoth/spec/web"
@@ -169,6 +171,196 @@ func (s *Server) ensureSpecActor(projectID, specIDStr string) (string, error) {
 	return specIDStr, nil
 }
 
+// syncProjectFromSpec exports the project's current spec actor state to DOT and
+// updates the project for the editor phase.
+func (s *Server) syncProjectFromSpec(projectID string, p *Project) error {
+	specIDStr, err := s.ensureSpecActor(projectID, p.SpecID)
+	if err != nil {
+		return fmt.Errorf("ensure spec actor: %w", err)
+	}
+
+	specID, err := ulid.Parse(specIDStr)
+	if err != nil {
+		return fmt.Errorf("parse spec ID: %w", err)
+	}
+	handle := s.specState.GetActor(specID)
+	if handle == nil {
+		return fmt.Errorf("spec actor not found")
+	}
+
+	var transitionErr error
+	handle.ReadState(func(st *core.SpecState) {
+		transitionErr = TransitionSpecToEditor(p, st)
+	})
+	if transitionErr != nil {
+		return transitionErr
+	}
+
+	if p.SpecID == "" {
+		p.SpecID = specIDStr
+	}
+	if err := s.store.Update(p); err != nil {
+		return fmt.Errorf("update project: %w", err)
+	}
+	return nil
+}
+
+// seedProjectSpecFromPrompt ensures the project's spec actor exists and appends
+// the provided text as a human transcript message so agents can parse it.
+func (s *Server) seedProjectSpecFromPrompt(projectID, prompt string) error {
+	trimmed := strings.TrimSpace(prompt)
+	if trimmed == "" {
+		return nil
+	}
+
+	p, ok := s.store.Get(projectID)
+	if !ok {
+		return fmt.Errorf("project %s not found", projectID)
+	}
+
+	specIDStr, err := s.ensureSpecActor(projectID, p.SpecID)
+	if err != nil {
+		return fmt.Errorf("ensure spec actor: %w", err)
+	}
+	specID, err := ulid.Parse(specIDStr)
+	if err != nil {
+		return fmt.Errorf("parse spec ID: %w", err)
+	}
+
+	handle := s.specState.GetActor(specID)
+	if handle == nil {
+		return fmt.Errorf("spec actor not found")
+	}
+
+	if _, err := handle.SendCommand(core.AppendTranscriptCommand{
+		Sender:  "human",
+		Content: trimmed,
+	}); err != nil {
+		return fmt.Errorf("append transcript: %w", err)
+	}
+	return nil
+}
+
+// importProjectSpecFromContent imports structured spec data from freeform
+// content using the spec importer. If no LLM client is configured, it falls
+// back to transcript-only seeding.
+func (s *Server) importProjectSpecFromContent(projectID, content, sourceHint string) error {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return nil
+	}
+
+	if err := s.seedProjectSpecFromPrompt(projectID, trimmed); err != nil {
+		return err
+	}
+
+	if s.specState.LLMClient == nil {
+		return nil
+	}
+
+	p, ok := s.store.Get(projectID)
+	if !ok {
+		return fmt.Errorf("project %s not found", projectID)
+	}
+	specIDStr, err := s.ensureSpecActor(projectID, p.SpecID)
+	if err != nil {
+		return fmt.Errorf("ensure spec actor: %w", err)
+	}
+	specID, err := ulid.Parse(specIDStr)
+	if err != nil {
+		return fmt.Errorf("parse spec ID: %w", err)
+	}
+	handle := s.specState.GetActor(specID)
+	if handle == nil {
+		return fmt.Errorf("spec actor not found")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	result, err := specagents.ParseWithLLM(ctx, trimmed, sourceHint, s.specState.LLMClient, s.specState.LLMModel)
+	if err != nil {
+		return fmt.Errorf("import parse failed: %w", err)
+	}
+
+	update := core.UpdateSpecCoreCommand{}
+	hasUpdate := false
+	if t := strings.TrimSpace(result.Spec.Title); t != "" {
+		update.Title = &t
+		hasUpdate = true
+	}
+	if l := strings.TrimSpace(result.Spec.OneLiner); l != "" {
+		update.OneLiner = &l
+		hasUpdate = true
+	}
+	if g := strings.TrimSpace(result.Spec.Goal); g != "" {
+		update.Goal = &g
+		hasUpdate = true
+	}
+	if result.Update != nil {
+		if result.Update.Description != nil && strings.TrimSpace(*result.Update.Description) != "" {
+			v := strings.TrimSpace(*result.Update.Description)
+			update.Description = &v
+			hasUpdate = true
+		}
+		if result.Update.Constraints != nil && strings.TrimSpace(*result.Update.Constraints) != "" {
+			v := strings.TrimSpace(*result.Update.Constraints)
+			update.Constraints = &v
+			hasUpdate = true
+		}
+		if result.Update.SuccessCriteria != nil && strings.TrimSpace(*result.Update.SuccessCriteria) != "" {
+			v := strings.TrimSpace(*result.Update.SuccessCriteria)
+			update.SuccessCriteria = &v
+			hasUpdate = true
+		}
+		if result.Update.Risks != nil && strings.TrimSpace(*result.Update.Risks) != "" {
+			v := strings.TrimSpace(*result.Update.Risks)
+			update.Risks = &v
+			hasUpdate = true
+		}
+		if result.Update.Notes != nil && strings.TrimSpace(*result.Update.Notes) != "" {
+			v := strings.TrimSpace(*result.Update.Notes)
+			update.Notes = &v
+			hasUpdate = true
+		}
+	}
+
+	if hasUpdate {
+		if _, err := handle.SendCommand(update); err != nil {
+			return fmt.Errorf("import update core: %w", err)
+		}
+	}
+
+	for _, c := range result.Cards {
+		title := strings.TrimSpace(c.Title)
+		cardType := strings.TrimSpace(c.CardType)
+		if title == "" || cardType == "" {
+			continue
+		}
+		var body *string
+		if c.Body != nil && strings.TrimSpace(*c.Body) != "" {
+			v := strings.TrimSpace(*c.Body)
+			body = &v
+		}
+		var lane *string
+		if c.Lane != nil && strings.TrimSpace(*c.Lane) != "" {
+			v := strings.TrimSpace(*c.Lane)
+			lane = &v
+		}
+		if _, err := handle.SendCommand(core.CreateCardCommand{
+			CardType:  cardType,
+			Title:     title,
+			Body:      body,
+			Lane:      lane,
+			CreatedBy: "import",
+		}); err != nil {
+			return fmt.Errorf("import create card: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // specURLRewriteMiddleware intercepts HTML responses and rewrites URLs from the
 // spec builder's native /web/specs/{specID} namespace to the unified server's
 // /projects/{projectID}/spec namespace. Non-HTML responses (JSON, SSE, file
@@ -188,6 +380,7 @@ func (s *Server) specURLRewriteMiddleware(next http.Handler) http.Handler {
 			specID:         specID,
 			projectID:      projectID,
 			code:           http.StatusOK,
+			wrapDocument:   r.Method == http.MethodGet && r.Header.Get("HX-Request") == "",
 		}
 
 		next.ServeHTTP(rw, r)
@@ -200,13 +393,14 @@ func (s *Server) specURLRewriteMiddleware(next http.Handler) http.Handler {
 // writer immediately.
 type specURLRewriter struct {
 	http.ResponseWriter
-	buf         bytes.Buffer
-	specID      string
-	projectID   string
-	code        int
-	passthrough bool // true once we know this is not HTML
-	decided     bool // true once we've checked Content-Type
-	finished    bool // true after finish() has been called
+	buf          bytes.Buffer
+	specID       string
+	projectID    string
+	code         int
+	passthrough  bool // true once we know this is not HTML
+	decided      bool // true once we've checked Content-Type
+	finished     bool // true after finish() has been called
+	wrapDocument bool
 }
 
 func (rw *specURLRewriter) WriteHeader(code int) {
@@ -261,6 +455,9 @@ func (rw *specURLRewriter) finish() {
 		bodyStr := string(body)
 		bodyStr = strings.ReplaceAll(bodyStr, "/web/specs/"+rw.specID, projectPrefix)
 		bodyStr = strings.ReplaceAll(bodyStr, "/api/specs/"+rw.specID, projectPrefix+"/api")
+		if rw.wrapDocument && !strings.Contains(strings.ToLower(bodyStr), "<html") {
+			bodyStr = wrapSpecHTML(bodyStr, rw.projectID)
+		}
 		body = []byte(bodyStr)
 	}
 
@@ -275,6 +472,70 @@ func (rw *specURLRewriter) finish() {
 
 	rw.ResponseWriter.WriteHeader(rw.code)
 	_, _ = rw.ResponseWriter.Write(body)
+}
+
+func wrapSpecHTML(inner, projectID string) string {
+	title := "mammoth spec"
+	return "<!DOCTYPE html><html lang=\"en\"><head>" +
+		"<meta charset=\"utf-8\">" +
+		"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
+		"<title>" + html.EscapeString(title) + "</title>" +
+		"<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">" +
+		"<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>" +
+		"<link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Serif+Display&display=swap\" rel=\"stylesheet\">" +
+		"<link rel=\"stylesheet\" href=\"/spec-static/style.css\">" +
+		"<style>" +
+		"body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:#f8fafc;color:#0f172a;}" +
+		".spec-shell-top{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-bottom:1px solid #dbe7f5;background:linear-gradient(140deg,#0f172a,#1e293b 52%,#0b3c5d);box-shadow:0 10px 24px rgba(15,23,42,.22);}" +
+		".spec-shell-brand{font-family:'DM Serif Display',serif;font-size:19px;color:#e2e8f0;letter-spacing:.01em;text-decoration:none;}" +
+		".spec-shell-link{display:inline-flex;align-items:center;gap:6px;border-radius:999px;border:1px solid rgba(148,163,184,.45);padding:7px 12px;color:#bfdbfe;background:rgba(15,23,42,.34);text-decoration:none;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;}" +
+		".spec-shell-link:hover{background:rgba(30,41,59,.58);}" +
+		".spec-shell-hints{display:flex;gap:8px;flex-wrap:wrap;padding:9px 18px;border-bottom:1px solid #dbe7f5;background:linear-gradient(180deg,#f8fbff,#f1f7ff);}" +
+		".spec-shell-hint{display:inline-flex;align-items:center;gap:6px;border-radius:999px;border:1px solid #d3e3f5;padding:5px 10px;background:#fff;color:#334155;font-size:11px;font-weight:600;text-decoration:none;}" +
+		".spec-shell-hint:hover{border-color:#94c8ee;color:#0f172a;}" +
+		".spec-shell-next{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 18px;border-bottom:1px solid #e2e8f0;background:#fff;}" +
+		".spec-shell-next-label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#64748b;font-weight:700;}" +
+		".spec-shell-next-action{display:inline-flex;align-items:center;gap:6px;border-radius:999px;border:1px solid #c7ddf2;padding:6px 11px;background:#eff6ff;color:#0f172a;font-size:11px;font-weight:700;text-decoration:none;}" +
+		".spec-shell-next-action:hover{background:#dbeafe;border-color:#93c5fd;}" +
+		"#canvas.spec-canvas-loading{opacity:.45;transform:translateY(2px);transition:all .2s ease;}" +
+		"#canvas.spec-canvas-enter{animation:specCanvasIn .22s ease;}" +
+		".spec-lane-empty{margin:8px 0 0 0;border:1px dashed #cddff2;border-radius:12px;background:#f8fbff;padding:10px;}" +
+		".spec-lane-empty-title{margin:0;font-size:12px;font-weight:700;color:#334155;}" +
+		".spec-lane-empty-hint{margin:4px 0 0 0;font-size:11px;color:#64748b;}" +
+		"@keyframes specCanvasIn{from{opacity:.45;transform:translateY(2px)}to{opacity:1;transform:translateY(0)}}" +
+		"</style>" +
+		"<meta name=\"htmx-config\" content='{\"allowScriptTags\":true}'>" +
+		"<script src=\"https://unpkg.com/htmx.org@2.0.4\"></script>" +
+		"<script src=\"https://unpkg.com/htmx-ext-sse@2.2.2/sse.js\"></script>" +
+		"<script src=\"https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js\"></script>" +
+		"<script src=\"https://cdn.jsdelivr.net/npm/@viz-js/viz@3.11.0/lib/viz-standalone.js\"></script>" +
+		"</head><body>" +
+		"<div class=\"spec-shell-top\">" +
+		"<a href=\"/projects/" + html.EscapeString(projectID) + "/spec\" class=\"spec-shell-brand\">mammoth spec</a>" +
+		"<a href=\"/projects/" + html.EscapeString(projectID) + "\" class=\"spec-shell-link\">&larr; Project</a>" +
+		"</div>" +
+		"<div class=\"spec-shell-hints\">" +
+		"<a class=\"spec-shell-hint\" href=\"/projects/" + html.EscapeString(projectID) + "/spec/board\">Board</a>" +
+		"<a class=\"spec-shell-hint\" href=\"/projects/" + html.EscapeString(projectID) + "/spec/document\">Document</a>" +
+		"<a class=\"spec-shell-hint\" href=\"/projects/" + html.EscapeString(projectID) + "/spec/activity\">Activity</a>" +
+		"<a class=\"spec-shell-hint\" href=\"/projects/" + html.EscapeString(projectID) + "/spec/diagram\">Diagram</a>" +
+		"<a class=\"spec-shell-hint\" href=\"/projects/" + html.EscapeString(projectID) + "/spec/artifacts\">Artifacts</a>" +
+		"</div>" +
+		"<div class=\"spec-shell-next\">" +
+		"<span class=\"spec-shell-next-label\">Suggested next step</span>" +
+		"<a id=\"spec-shell-next-action\" class=\"spec-shell-next-action\" href=\"/projects/" + html.EscapeString(projectID) + "\">Open project overview</a>" +
+		"</div>" +
+		inner +
+		"<script>(function(){var pid='" + html.EscapeString(projectID) + "';var el=document.getElementById('spec-shell-next-action');if(!el)return;" +
+		"function setAction(text,href,method){el.textContent=text;el.setAttribute('href',href||'#');if(method==='POST'){el.onclick=function(e){e.preventDefault();fetch(href,{method:'POST'}).then(function(){window.location.href='/projects/'+pid+'/editor';});};}else{el.onclick=null;}}" +
+		"fetch('/projects/'+pid,{headers:{'Accept':'application/json'}}).then(function(r){return r.json();}).then(function(p){if(!p||!p.phase){return;}" +
+		"if(p.phase==='spec'){setAction('Generate DOT and continue', '/projects/'+pid+'/spec/continue','POST');return;}" +
+		"if(p.phase==='edit'){setAction('Open DOT editor', '/projects/'+pid+'/editor','GET');return;}" +
+		"if(p.phase==='build'){setAction('Resume build view', '/projects/'+pid+'/build','GET');return;}" +
+		"if(p.phase==='done'){setAction('Review latest build', '/projects/'+pid+'/build','GET');return;}" +
+		"setAction('Open project overview','/projects/'+pid,'GET');" +
+		"}).catch(function(){setAction('Open project overview','/projects/'+pid,'GET');});})();</script>" +
+		"</body></html>"
 }
 
 // handleSpecCommands handles POST .../api/commands for board drag-and-drop.
@@ -385,6 +646,11 @@ func (s *Server) handleSpecEventStream(w http.ResponseWriter, r *http.Request) {
 func (s *Server) initializeSpec(projectID string) (ulid.ULID, error) {
 	specID := core.NewULID()
 
+	p, ok := s.store.Get(projectID)
+	if !ok {
+		return ulid.ULID{}, fmt.Errorf("project %s not found", projectID)
+	}
+
 	specDir := filepath.Join(s.specState.MammothHome, "specs", specID.String())
 	if err := os.MkdirAll(specDir, 0o755); err != nil {
 		return ulid.ULID{}, fmt.Errorf("create spec directory: %w", err)
@@ -392,16 +658,28 @@ func (s *Server) initializeSpec(projectID string) (ulid.ULID, error) {
 
 	handle := core.SpawnActor(specID, core.NewSpecState())
 
+	// Initialize core data immediately so opening /spec renders a working view
+	// instead of "Spec has no core data."
+	title := strings.TrimSpace(p.Name)
+	if title == "" {
+		title = "Untitled Spec"
+	}
+	initialEvents, err := handle.SendCommand(core.CreateSpecCommand{
+		Title:    title,
+		OneLiner: "",
+		Goal:     "",
+	})
+	if err != nil {
+		return ulid.ULID{}, fmt.Errorf("initialize spec core: %w", err)
+	}
+	server.PersistEvents(specDir, initialEvents)
+
 	server.SpawnEventPersister(s.specState, specID, handle)
 	s.specState.SetActor(specID, handle)
 
 	// Auto-start agents if an LLM provider is configured.
 	s.specState.TryStartAgents(specID)
 
-	p, ok := s.store.Get(projectID)
-	if !ok {
-		return ulid.ULID{}, fmt.Errorf("project %s not found", projectID)
-	}
 	p.SpecID = specID.String()
 	if err := s.store.Update(p); err != nil {
 		return ulid.ULID{}, fmt.Errorf("update project spec ID: %w", err)

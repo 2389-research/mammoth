@@ -26,7 +26,7 @@
     <!-- Editable graph attributes form (always visible so users can add attrs) -->
     <div class="graph-attrs">
         <h4>Graph Attributes</h4>
-        <form class="add-form" hx-post="/sessions/{{.SessionID}}/attrs" hx-target="#editor-panels" hx-swap="none">
+        <form class="add-form" hx-post="{{.BasePath}}/sessions/{{.SessionID}}/attrs" hx-target="#editor-panels" hx-swap="none">
             {{range $key, $val := .Session.Graph.Attrs}}
             <div class="form-group">
                 <label>{{$key}}</label>
@@ -51,7 +51,7 @@
         <div class="list-content">
             {{range $id, $node := .Session.Graph.Nodes}}
             <div class="node-item clickable"
-                 hx-get="/sessions/{{$.SessionID}}/nodes/{{urlquery $id}}/edit"
+                 hx-get="{{$.BasePath}}/sessions/{{$.SessionID}}/nodes/{{urlquery $id}}/edit"
                  hx-target="#selection-props"
                  hx-swap="innerHTML">
                 <span class="item-id">{{$id}}</span>
@@ -67,7 +67,7 @@
         <div class="list-content">
             {{range $idx, $edge := .Session.Graph.Edges}}
             <div class="edge-item clickable"
-                 hx-get="/sessions/{{$.SessionID}}/edges/{{urlquery $edge.ID}}/edit"
+                 hx-get="{{$.BasePath}}/sessions/{{$.SessionID}}/edges/{{urlquery $edge.ID}}/edit"
                  hx-target="#selection-props"
                  hx-swap="innerHTML">
                 <span class="item-id">{{$edge.From}} &rarr; {{$edge.To}}</span>
@@ -78,7 +78,7 @@
     <!-- Add Node mini-form -->
     <div class="add-node-form">
         <h4>Add Node</h4>
-        <form class="add-form" hx-post="/sessions/{{.SessionID}}/nodes" hx-target="#editor-panels" hx-swap="none">
+        <form class="add-form" hx-post="{{.BasePath}}/sessions/{{.SessionID}}/nodes" hx-target="#editor-panels" hx-swap="none">
             <div class="form-group">
                 <label>ID (required)</label>
                 <input name="id" required placeholder="node_id" class="form-input">
@@ -99,7 +99,7 @@
     <!-- Add Edge mini-form -->
     <div class="add-edge-form">
         <h4>Add Edge</h4>
-        <form class="add-form" hx-post="/sessions/{{.SessionID}}/edges" hx-target="#editor-panels" hx-swap="none">
+        <form class="add-form" hx-post="{{.BasePath}}/sessions/{{.SessionID}}/edges" hx-target="#editor-panels" hx-swap="none">
             <div class="form-group">
                 <label>From (required)</label>
                 <input name="from" required placeholder="source node" class="form-input">

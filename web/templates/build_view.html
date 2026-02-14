@@ -1,89 +1,598 @@
 {{define "content"}}
-<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
-    <div>
-        <h1>{{.Project.Name}} - Build</h1>
-        <p style="color: var(--text-muted);">
-            {{if .Project.RunID}}Run: {{.Project.RunID}}{{end}}
-        </p>
-    </div>
-    <div style="display: flex; gap: 0.75rem; align-items: center;">
-        <span class="phase-badge phase-build">build</span>
-        <form method="POST" action="/projects/{{.Project.ID}}/build/stop">
-            <button type="submit" class="btn btn-outline" style="border-color: #e94560; color: #e94560;">Stop</button>
-        </form>
-    </div>
-</div>
+<style>
+    .build-shell {
+        display: grid;
+        gap: 16px;
+    }
+    .build-hero {
+        position: relative;
+        overflow: hidden;
+        border-radius: var(--radius-2xl);
+        border: 1px solid color-mix(in srgb, var(--border) 84%, #0ea5e9 16%);
+        background:
+            radial-gradient(circle at 88% 20%, color-mix(in srgb, #0ea5e9 22%, transparent), transparent 42%),
+            radial-gradient(circle at 12% 0%, color-mix(in srgb, #22c55e 18%, transparent), transparent 32%),
+            linear-gradient(145deg, color-mix(in srgb, var(--bg-card) 80%, #f8fafc 20%), var(--bg-card));
+        padding: 20px;
+        box-shadow: 0 20px 60px color-mix(in srgb, #0f172a 14%, transparent);
+    }
+    .build-hero::after {
+        content: "";
+        position: absolute;
+        top: -65px;
+        right: -50px;
+        width: 170px;
+        height: 170px;
+        border-radius: 999px;
+        border: 2px solid color-mix(in srgb, #38bdf8 30%, transparent);
+        pointer-events: none;
+    }
+    .build-hero-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+        flex-wrap: wrap;
+    }
+    .build-title {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: clamp(1.4rem, 2.3vw, 1.9rem);
+        line-height: 1.1;
+        letter-spacing: 0.01em;
+    }
+    .build-subline {
+        margin: 6px 0 0 0;
+        color: var(--text-secondary);
+        font-size: 13px;
+    }
+    .build-pill {
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg-secondary) 90%, #fff 10%);
+        padding: 8px 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+    }
+    .build-pill-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--text-muted);
+    }
+    .build-pill.running {
+        color: color-mix(in srgb, #0f766e 78%, var(--text-primary) 22%);
+    }
+    .build-pill.running .build-pill-dot {
+        background: #14b8a6;
+        box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.55);
+        animation: buildPulse 1.6s infinite;
+    }
+    .build-pill.completed {
+        color: #166534;
+    }
+    .build-pill.completed .build-pill-dot {
+        background: #22c55e;
+    }
+    .build-pill.failed {
+        color: #991b1b;
+    }
+    .build-pill.failed .build-pill-dot {
+        background: #ef4444;
+    }
+    .build-pill.cancelled {
+        color: #b45309;
+    }
+    .build-pill.cancelled .build-pill-dot {
+        background: #f59e0b;
+    }
+    .build-metrics {
+        margin-top: 16px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+    }
+    .build-metric {
+        border-radius: var(--radius-xl);
+        border: 1px solid color-mix(in srgb, var(--border) 86%, #e2e8f0 14%);
+        background: color-mix(in srgb, var(--bg-card) 85%, #fff 15%);
+        padding: 10px 12px;
+    }
+    .build-metric-label {
+        margin: 0;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+        font-weight: 700;
+    }
+    .build-metric-value {
+        margin: 4px 0 0 0;
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--text-primary);
+        overflow-wrap: anywhere;
+    }
+    .build-grid {
+        display: grid;
+        grid-template-columns: 1.4fr 1fr;
+        gap: 14px;
+    }
+    .build-card {
+        border-radius: var(--radius-2xl);
+        border: 1px solid var(--border);
+        background: var(--bg-card);
+        box-shadow: 0 12px 30px color-mix(in srgb, #0f172a 6%, transparent);
+        overflow: hidden;
+    }
+    .build-card-head {
+        border-bottom: 1px solid var(--border);
+        padding: 12px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+    }
+    .build-card-title {
+        margin: 0;
+        font-size: 13px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+    .build-connection {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 11px;
+        color: var(--text-secondary);
+    }
+    .build-connection-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: var(--text-muted);
+    }
+    .build-connection.connected .build-connection-dot {
+        background: #14b8a6;
+    }
+    .build-connection.reconnecting .build-connection-dot {
+        background: #f59e0b;
+    }
+    .build-connection.offline .build-connection-dot {
+        background: #ef4444;
+    }
+    .build-events {
+        max-height: 480px;
+        overflow: auto;
+        padding: 8px 10px 12px 10px;
+        display: grid;
+        gap: 8px;
+    }
+    .build-empty {
+        margin: 10px;
+        padding: 14px;
+        border: 1px dashed var(--border);
+        border-radius: var(--radius-xl);
+        color: var(--text-secondary);
+        font-size: 13px;
+        text-align: center;
+        background: color-mix(in srgb, var(--bg-secondary) 90%, #fff 10%);
+    }
+    .build-event {
+        display: grid;
+        grid-template-columns: 72px 1fr;
+        align-items: start;
+        gap: 10px;
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg-secondary) 88%, #fff 12%);
+        padding: 9px 10px;
+        opacity: 0;
+        transform: translateY(4px);
+        animation: buildSlideIn 220ms ease forwards;
+    }
+    .build-event-time {
+        margin: 2px 0 0 0;
+        font-size: 11px;
+        color: var(--text-muted);
+        font-weight: 600;
+    }
+    .build-event-text {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.35;
+        color: var(--text-primary);
+        overflow-wrap: anywhere;
+    }
+    .build-event.success {
+        border-color: color-mix(in srgb, #22c55e 40%, var(--border));
+    }
+    .build-event.success .build-event-text {
+        color: color-mix(in srgb, #166534 76%, var(--text-primary) 24%);
+    }
+    .build-event.error {
+        border-color: color-mix(in srgb, #ef4444 45%, var(--border));
+    }
+    .build-event.error .build-event-text {
+        color: color-mix(in srgb, #991b1b 78%, var(--text-primary) 22%);
+    }
+    .build-event.muted {
+        opacity: 0.92;
+    }
+    .build-nodes {
+        padding: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-content: flex-start;
+        min-height: 160px;
+    }
+    .build-node-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        border: 1px solid color-mix(in srgb, #22c55e 45%, var(--border));
+        background: color-mix(in srgb, #dcfce7 60%, var(--bg-card) 40%);
+        padding: 6px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #166534;
+    }
+    .build-node-chip::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: #22c55e;
+    }
+    .build-stop-form {
+        margin: 0;
+    }
+    @keyframes buildSlideIn {
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    @keyframes buildPulse {
+        0% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.5); }
+        70% { box-shadow: 0 0 0 9px rgba(20, 184, 166, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0); }
+    }
+    @media (max-width: 980px) {
+        .build-grid {
+            grid-template-columns: 1fr;
+        }
+        .build-metrics {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
 
-<div class="card" id="build-status">
-    <h3>Pipeline Progress</h3>
-    <div id="build-events" style="margin-top: 1rem; font-family: monospace; font-size: 0.85rem; max-height: 400px; overflow-y: auto;">
-        <p style="color: var(--text-muted);">Connecting to build events...</p>
-    </div>
-</div>
+<section class="build-shell">
+    <section class="build-hero">
+        <div class="build-hero-top">
+            <div>
+                <h1 class="build-title">{{.Project.Name}} Build</h1>
+                <p class="build-subline">{{if .Project.RunID}}Run: {{.Project.RunID}}{{else}}Preparing run...{{end}}</p>
+            </div>
+            <div style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <div id="build-status-pill" class="build-pill">
+                    <span class="build-pill-dot"></span>
+                    <span id="build-status-text">connecting</span>
+                </div>
+                <form method="POST" action="/projects/{{.Project.ID}}/build/stop" class="build-stop-form">
+                    <button type="submit" class="btn btn-danger">Stop</button>
+                </form>
+            </div>
+        </div>
+        <div class="build-metrics">
+            <div class="build-metric">
+                <p class="build-metric-label">Current Node</p>
+                <p id="metric-current-node" class="build-metric-value">-</p>
+            </div>
+            <div class="build-metric">
+                <p class="build-metric-label">Completed Nodes</p>
+                <p id="metric-completed-count" class="build-metric-value">0</p>
+            </div>
+            <div class="build-metric">
+                <p class="build-metric-label">Connection</p>
+                <p id="metric-connection" class="build-metric-value">Connecting</p>
+            </div>
+        </div>
+    </section>
 
-<div class="card" style="margin-top: 1rem;">
-    <h3>Completed Nodes</h3>
-    <ul id="completed-nodes" style="margin-top: 0.5rem; padding-left: 1.5rem; list-style: none;">
-    </ul>
-</div>
+    <section class="build-grid">
+        <section class="build-card">
+            <div class="build-card-head">
+                <h2 class="build-card-title">Live Timeline</h2>
+                <div id="connection-badge" class="build-connection">
+                    <span class="build-connection-dot"></span>
+                    <span id="connection-text">connecting</span>
+                </div>
+            </div>
+            <div id="build-events" class="build-events">
+                <div class="build-empty">Connecting to build events...</div>
+            </div>
+        </section>
+
+        <section class="build-card">
+            <div class="build-card-head">
+                <h2 class="build-card-title">Completed Nodes</h2>
+            </div>
+            <div id="completed-nodes" class="build-nodes"></div>
+        </section>
+    </section>
+</section>
 
 <script>
 (function() {
-    var eventsDiv = document.getElementById('build-events');
-    var nodesList = document.getElementById('completed-nodes');
     var projectID = '{{.Project.ID}}';
-    var source = new EventSource('/projects/' + projectID + '/build/events');
+    var stateURL = '/projects/' + projectID + '/build/state';
+    var eventsURL = '/projects/' + projectID + '/build/events';
 
-    source.addEventListener('pipeline.started', function(e) {
-        eventsDiv.innerHTML = '';
-        addEvent('Pipeline started', 'var(--green)');
-    });
+    var eventsDiv = document.getElementById('build-events');
+    var nodesContainer = document.getElementById('completed-nodes');
+    var metricCurrentNode = document.getElementById('metric-current-node');
+    var metricCompletedCount = document.getElementById('metric-completed-count');
+    var metricConnection = document.getElementById('metric-connection');
+    var statusPill = document.getElementById('build-status-pill');
+    var statusText = document.getElementById('build-status-text');
+    var connectionBadge = document.getElementById('connection-badge');
+    var connectionText = document.getElementById('connection-text');
 
-    source.addEventListener('stage.started', function(e) {
-        var data = JSON.parse(e.data);
-        addEvent('Stage started: ' + (data.node_id || 'unknown'), 'var(--accent)');
-    });
+    var source = null;
+    var reconnectTimer = null;
+    var seenCompletions = {};
+    var seenEventKeys = {};
+    var isTerminal = false;
 
-    source.addEventListener('stage.completed', function(e) {
-        var data = JSON.parse(e.data);
-        var nodeID = data.node_id || 'unknown';
-        addEvent('Stage completed: ' + nodeID, 'var(--green)');
-        var li = document.createElement('li');
-        li.textContent = nodeID;
-        li.style.color = 'var(--green)';
-        li.style.marginBottom = '0.25rem';
-        nodesList.appendChild(li);
-    });
+    function setStatus(status) {
+        statusPill.classList.remove('running', 'completed', 'failed', 'cancelled');
+        var text = status || 'unknown';
+        if (status === 'running') {
+            statusPill.classList.add('running');
+        } else if (status === 'completed') {
+            statusPill.classList.add('completed');
+        } else if (status === 'failed') {
+            statusPill.classList.add('failed');
+        } else if (status === 'cancelled') {
+            statusPill.classList.add('cancelled');
+        }
+        statusText.textContent = text;
+        isTerminal = status === 'completed' || status === 'failed' || status === 'cancelled';
+    }
 
-    source.addEventListener('stage.failed', function(e) {
-        var data = JSON.parse(e.data);
-        addEvent('Stage failed: ' + (data.node_id || 'unknown') + ' - ' + (data.reason || ''), '#e94560');
-    });
+    function setConnection(state) {
+        connectionBadge.classList.remove('connected', 'reconnecting', 'offline');
+        if (state === 'connected') {
+            connectionBadge.classList.add('connected');
+            connectionText.textContent = 'live';
+            metricConnection.textContent = 'Live';
+        } else if (state === 'reconnecting') {
+            connectionBadge.classList.add('reconnecting');
+            connectionText.textContent = 'reconnecting';
+            metricConnection.textContent = 'Reconnecting';
+        } else {
+            connectionBadge.classList.add('offline');
+            connectionText.textContent = 'offline';
+            metricConnection.textContent = 'Offline';
+        }
+    }
 
-    source.addEventListener('pipeline.completed', function(e) {
-        addEvent('Pipeline completed', 'var(--green)');
-        source.close();
-    });
+    function connectStream() {
+        if (isTerminal) {
+            return;
+        }
+        if (source) {
+            source.close();
+        }
+        source = new EventSource(eventsURL);
+        setConnection('connected');
 
-    source.addEventListener('pipeline.failed', function(e) {
-        var data = JSON.parse(e.data);
-        addEvent('Pipeline failed: ' + (data.error || 'unknown error'), '#e94560');
-        source.close();
-    });
+        source.addEventListener('pipeline.started', function() {
+            addEvent('Pipeline started', 'success');
+            setStatus('running');
+        });
 
-    source.onerror = function() {
-        addEvent('Connection closed', 'var(--text-muted)');
-        source.close();
-    };
+        source.addEventListener('stage.started', function(e) {
+            var data = safeJSON(e.data);
+            var node = data.node_id || 'unknown';
+            addEvent('Stage started: ' + node, 'normal');
+            metricCurrentNode.textContent = node;
+        });
 
-    function addEvent(text, color) {
-        var p = document.createElement('p');
-        p.textContent = new Date().toLocaleTimeString() + ' ' + text;
-        p.style.color = color || 'var(--text)';
-        p.style.marginBottom = '0.25rem';
-        eventsDiv.appendChild(p);
+        source.addEventListener('stage.completed', function(e) {
+            var data = safeJSON(e.data);
+            var node = data.node_id || 'unknown';
+            addEvent('Stage completed: ' + node, 'success');
+            appendCompletedNode(node);
+        });
+
+        source.addEventListener('stage.failed', function(e) {
+            var data = safeJSON(e.data);
+            var node = data.node_id || 'unknown';
+            var reason = data.reason || data.error || '';
+            addEvent('Stage failed: ' + node + (reason ? ' - ' + reason : ''), 'error');
+        });
+
+        source.addEventListener('pipeline.completed', function() {
+            addEvent('Pipeline completed', 'success');
+            setStatus('completed');
+            closeStream();
+            refreshState();
+        });
+
+        source.addEventListener('pipeline.failed', function(e) {
+            var data = safeJSON(e.data);
+            addEvent('Pipeline failed: ' + (data.error || 'unknown error'), 'error');
+            setStatus('failed');
+            closeStream();
+            refreshState();
+        });
+
+        source.onerror = function() {
+            closeStream();
+            setConnection('reconnecting');
+            refreshState();
+            scheduleReconnect();
+        };
+    }
+
+    function closeStream() {
+        if (source) {
+            source.close();
+            source = null;
+        }
+    }
+
+    function scheduleReconnect() {
+        if (reconnectTimer || isTerminal) {
+            return;
+        }
+        reconnectTimer = setTimeout(function() {
+            reconnectTimer = null;
+            connectStream();
+        }, 1800);
+    }
+
+    function refreshState() {
+        fetch(stateURL, { headers: { 'Accept': 'application/json' } })
+            .then(function(r) { return r.json(); })
+            .then(function(state) {
+                renderState(state);
+                if (state.active && !isTerminal && !source) {
+                    connectStream();
+                }
+                if (!state.active && isTerminal) {
+                    setConnection('offline');
+                }
+            })
+            .catch(function() {
+                addEvent('Unable to fetch build state', 'error');
+            });
+    }
+
+    function renderState(state) {
+        if (!state || typeof state !== 'object') {
+            return;
+        }
+        if (state.status) {
+            setStatus(state.status);
+        }
+        if (state.run_state) {
+            if (state.run_state.current_node) {
+                metricCurrentNode.textContent = state.run_state.current_node;
+            }
+            if (Array.isArray(state.run_state.completed_nodes)) {
+                state.run_state.completed_nodes.forEach(function(nodeID) {
+                    appendCompletedNode(nodeID);
+                });
+            }
+        }
+        if (Array.isArray(state.recent_events)) {
+            state.recent_events.forEach(function(evt) {
+                replayEvent(evt);
+            });
+        }
+        if (Array.isArray(state.diagnostics) && state.diagnostics.length > 0 && state.status !== 'running') {
+            addEvent(state.diagnostics[0], 'error');
+        }
+        metricCompletedCount.textContent = String(Object.keys(seenCompletions).length);
+    }
+
+    function replayEvent(evt) {
+        if (!evt || !evt.event) {
+            return;
+        }
+        var key = eventKey(evt.event, evt.data || '');
+        if (seenEventKeys[key]) {
+            return;
+        }
+        seenEventKeys[key] = true;
+
+        var data = safeJSON(evt.data || '{}');
+        if (evt.event === 'stage.completed') {
+            appendCompletedNode(data.node_id || 'unknown');
+            addEvent('Stage completed: ' + (data.node_id || 'unknown'), 'success');
+        } else if (evt.event === 'stage.started') {
+            addEvent('Stage started: ' + (data.node_id || 'unknown'), 'normal');
+        } else if (evt.event === 'stage.failed') {
+            addEvent('Stage failed: ' + (data.node_id || 'unknown'), 'error');
+        } else if (evt.event === 'pipeline.completed') {
+            addEvent('Pipeline completed', 'success');
+        } else if (evt.event === 'pipeline.failed') {
+            addEvent('Pipeline failed: ' + (data.error || 'unknown error'), 'error');
+        } else if (evt.event === 'pipeline.started') {
+            addEvent('Pipeline started', 'success');
+        }
+    }
+
+    function appendCompletedNode(nodeID) {
+        if (!nodeID || seenCompletions[nodeID]) {
+            return;
+        }
+        seenCompletions[nodeID] = true;
+        var chip = document.createElement('span');
+        chip.className = 'build-node-chip';
+        chip.textContent = nodeID;
+        nodesContainer.appendChild(chip);
+        metricCompletedCount.textContent = String(Object.keys(seenCompletions).length);
+    }
+
+    function eventKey(event, data) {
+        return event + '::' + String(data || '');
+    }
+
+    function safeJSON(text) {
+        try {
+            return JSON.parse(text);
+        } catch (_e) {
+            return {};
+        }
+    }
+
+    function addEvent(text, tone) {
+        if (!text) {
+            return;
+        }
+        if (eventsDiv.querySelector('.build-empty')) {
+            eventsDiv.innerHTML = '';
+        }
+        var card = document.createElement('article');
+        card.className = 'build-event';
+        if (tone === 'success') {
+            card.classList.add('success');
+        } else if (tone === 'error') {
+            card.classList.add('error');
+        } else if (tone === 'muted') {
+            card.classList.add('muted');
+        }
+
+        var timeEl = document.createElement('p');
+        timeEl.className = 'build-event-time';
+        timeEl.textContent = new Date().toLocaleTimeString();
+
+        var textEl = document.createElement('p');
+        textEl.className = 'build-event-text';
+        textEl.textContent = text;
+
+        card.appendChild(timeEl);
+        card.appendChild(textEl);
+        eventsDiv.appendChild(card);
         eventsDiv.scrollTop = eventsDiv.scrollHeight;
     }
+
+    refreshState();
+    connectStream();
 })();
 </script>
 {{end}}

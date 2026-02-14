@@ -4,11 +4,12 @@ package web
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/2389-research/mammoth/dot"
 	"github.com/2389-research/mammoth/dot/validator"
 	"github.com/2389-research/mammoth/spec/core"
-	"github.com/2389-research/mammoth/spec/export"
+	coreexport "github.com/2389-research/mammoth/spec/core/export"
 )
 
 // TransitionSpecToEditor generates DOT from a spec state and updates the project
@@ -73,10 +74,11 @@ func TransitionEditorToBuild(project *Project) error {
 // exportAndValidate generates DOT from the spec state, parses it back to validate
 // round-trip correctness, and runs the linter for diagnostics.
 func exportAndValidate(specState *core.SpecState) (string, []dot.Diagnostic, error) {
-	dotStr, err := export.ExportDOT(specState)
-	if err != nil {
-		return "", nil, fmt.Errorf("export DOT: %w", err)
+	if specState == nil {
+		return "", nil, fmt.Errorf("export DOT: spec state is nil")
 	}
+
+	dotStr := coreexport.ExportDOT(specState)
 
 	g, err := dot.Parse(dotStr)
 	if err != nil {
@@ -102,12 +104,16 @@ func hasErrors(diags []dot.Diagnostic) bool {
 func formatDiagnostics(diags []dot.Diagnostic) []string {
 	result := make([]string, len(diags))
 	for i, d := range diags {
-		loc := ""
+		var locParts []string
 		if d.NodeID != "" {
-			loc = fmt.Sprintf(" node=%s", d.NodeID)
+			locParts = append(locParts, fmt.Sprintf("node=%s", d.NodeID))
 		}
 		if d.EdgeID != "" {
-			loc = fmt.Sprintf(" edge=%s", d.EdgeID)
+			locParts = append(locParts, fmt.Sprintf("edge=%s", d.EdgeID))
+		}
+		loc := ""
+		if len(locParts) > 0 {
+			loc = " " + strings.Join(locParts, ",")
 		}
 		result[i] = fmt.Sprintf("%s: [%s]%s %s", d.Severity, d.Rule, loc, d.Message)
 	}

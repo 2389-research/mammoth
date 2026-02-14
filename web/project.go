@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -74,27 +76,43 @@ func (s *ProjectStore) Create(name string) (*Project, error) {
 	s.projects[id] = p
 	s.mu.Unlock()
 
+	if err := s.Save(p); err != nil {
+		s.mu.Lock()
+		delete(s.projects, id)
+		s.mu.Unlock()
+		return nil, err
+	}
+
 	return p, nil
 }
 
-// Get retrieves a project by ID. Returns the project and true if found,
-// or nil and false if not found.
+// Get retrieves a project by ID. Returns a copy of the project and true if
+// found, or nil and false if not found. The copy prevents data races when
+// callers modify the returned project concurrently.
 func (s *ProjectStore) Get(id string) (*Project, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	p, ok := s.projects[id]
-	return p, ok
+	if !ok {
+		return nil, false
+	}
+	cp := *p
+	cp.Diagnostics = copyStringSlice(p.Diagnostics)
+	return &cp, true
 }
 
-// List returns all projects sorted by creation time, newest first.
+// List returns all projects sorted by creation time, newest first. Each
+// returned project is a copy to prevent data races from concurrent mutation.
 func (s *ProjectStore) List() []*Project {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	result := make([]*Project, 0, len(s.projects))
 	for _, p := range s.projects {
-		result = append(result, p)
+		cp := *p
+		cp.Diagnostics = copyStringSlice(p.Diagnostics)
+		result = append(result, &cp)
 	}
 
 	sort.Slice(result, func(i, j int) bool {
@@ -104,23 +122,69 @@ func (s *ProjectStore) List() []*Project {
 	return result
 }
 
+// copyStringSlice returns a shallow copy of a string slice, preserving nil
+// vs empty semantics.
+func copyStringSlice(s []string) []string {
+	if s == nil {
+		return nil
+	}
+	cp := make([]string, len(s))
+	copy(cp, s)
+	return cp
+}
+
 // Update replaces the stored project with the provided one. The project must
 // already exist in the store (matched by ID).
 func (s *ProjectStore) Update(p *Project) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if _, ok := s.projects[p.ID]; !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("project %q not found", p.ID)
 	}
 
+	p.DataDir = filepath.Join(s.baseDir, p.ID)
 	s.projects[p.ID] = p
+	s.mu.Unlock()
+
+	return s.Save(p)
+}
+
+// validateProjectID rejects IDs that could cause path traversal or filesystem issues.
+func validateProjectID(id string) error {
+	if id == "" {
+		return errors.New("project ID must not be empty")
+	}
+	if strings.Contains(id, "..") {
+		return errors.New("project ID must not contain '..'")
+	}
+	if strings.ContainsAny(id, "/\\") {
+		return errors.New("project ID must not contain path separators")
+	}
 	return nil
 }
 
-// Save persists a project to disk as JSON in its data directory.
+// Save persists a project to disk as JSON in its data directory. It validates
+// the project ID to prevent path traversal attacks before writing.
 func (s *ProjectStore) Save(p *Project) error {
+	if err := validateProjectID(p.ID); err != nil {
+		return fmt.Errorf("invalid project ID: %w", err)
+	}
+
 	dir := filepath.Join(s.baseDir, p.ID)
+
+	// Verify the resolved directory stays under baseDir.
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return fmt.Errorf("resolving project directory: %w", err)
+	}
+	absBase, err := filepath.Abs(s.baseDir)
+	if err != nil {
+		return fmt.Errorf("resolving base directory: %w", err)
+	}
+	if !strings.HasPrefix(absDir, absBase+string(filepath.Separator)) {
+		return fmt.Errorf("project directory escapes base directory")
+	}
+
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating project directory: %w", err)
 	}
@@ -161,12 +225,14 @@ func (s *ProjectStore) LoadAll() error {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return fmt.Errorf("reading %s: %w", path, err)
+			log.Printf("project load: skipping %s: %v", path, err)
+			continue
 		}
 
 		var p Project
 		if err := json.Unmarshal(data, &p); err != nil {
-			return fmt.Errorf("parsing %s: %w", path, err)
+			log.Printf("project load: skipping %s: %v", path, err)
+			continue
 		}
 
 		// Restore the DataDir field which is not serialized.

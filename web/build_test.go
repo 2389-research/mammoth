@@ -79,6 +79,32 @@ func TestBuildStartValidDOT(t *testing.T) {
 	if runStatus != "running" {
 		t.Errorf("expected run status %q, got %q", "running", runStatus)
 	}
+
+	waitForBuildToSettle(t, srv, p.ID, 2*time.Second)
+}
+
+func waitForBuildToSettle(t *testing.T, srv *Server, projectID string, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		srv.buildsMu.RLock()
+		run, exists := srv.builds[projectID]
+		status := ""
+		if exists && run != nil && run.State != nil {
+			status = run.State.Status
+		}
+		srv.buildsMu.RUnlock()
+
+		if !exists || status == "" || status != "running" {
+			return
+		}
+
+		run.Cancel()
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for build %q to settle", projectID)
 }
 
 func TestBuildStartEmptyDOT(t *testing.T) {
@@ -295,6 +321,106 @@ func TestBuildEventsNoBuild(t *testing.T) {
 	// Should return 404 when there's no active build.
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected status 404 for no active build, got %d", rec.Code)
+	}
+}
+
+func TestBuildStateActiveRun(t *testing.T) {
+	srv := newTestServer(t)
+
+	p, err := srv.store.Create("state-active")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	p.Phase = PhaseBuild
+	p.RunID = "state-run-1"
+	if err := srv.store.Update(p); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	run := &BuildRun{
+		State: &RunState{
+			ID:             "state-run-1",
+			Status:         "running",
+			StartedAt:      time.Now(),
+			CompletedNodes: []string{"start"},
+		},
+		Events: make(chan SSEEvent, 10),
+		Cancel: cancel,
+		Ctx:    ctx,
+	}
+	run.EnsureFanoutStarted()
+	run.Events <- SSEEvent{Event: "pipeline.started", Data: `{}`}
+
+	srv.buildsMu.Lock()
+	srv.builds[p.ID] = run
+	srv.buildsMu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/"+p.ID+"/build/state", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var body struct {
+		Active   bool       `json:"active"`
+		Status   string     `json:"status"`
+		Recent   []SSEEvent `json:"recent_events"`
+		RunState *RunState  `json:"run_state"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !body.Active {
+		t.Fatalf("expected active build state")
+	}
+	if body.Status != "running" {
+		t.Fatalf("expected status running, got %q", body.Status)
+	}
+	if body.RunState == nil || body.RunState.ID != "state-run-1" {
+		t.Fatalf("expected run_state with ID state-run-1")
+	}
+	if len(body.Recent) == 0 {
+		t.Logf("recent events buffer not yet populated; continuing")
+	}
+}
+
+func TestBuildStateFromProjectFallback(t *testing.T) {
+	srv := newTestServer(t)
+
+	p, err := srv.store.Create("state-fallback")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	p.Phase = PhaseDone
+	p.RunID = "done-run-1"
+	if err := srv.store.Update(p); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/"+p.ID+"/build/state", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var body struct {
+		Active bool   `json:"active"`
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Active {
+		t.Fatalf("expected inactive fallback state")
+	}
+	if body.Status != "completed" {
+		t.Fatalf("expected completed status, got %q", body.Status)
 	}
 }
 

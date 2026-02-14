@@ -49,7 +49,7 @@ type serveConfig struct {
 }
 
 func main() {
-	loadDotEnv(".env")
+	loadDotEnvAuto()
 
 	// Check for the "serve" subcommand before regular flag parsing, since
 	// it uses its own flag set and doesn't share flags with pipeline mode.

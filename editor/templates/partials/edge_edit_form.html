@@ -1,7 +1,7 @@
 {{define "edge_edit_form"}}
 <div class="edit-form" data-edge-id="{{.EdgeID}}">
     <h4>Edge: {{.Edge.From}} &rarr; {{.Edge.To}}</h4>
-    <form hx-post="/sessions/{{.SessionID}}/edges/{{urlquery .EdgeID}}" hx-target="#editor-panels" hx-swap="none">
+    <form hx-post="{{.BasePath}}/sessions/{{.SessionID}}/edges/{{urlquery .EdgeID}}" hx-target="#editor-panels" hx-swap="none">
         {{range $k, $v := .Edge.Attrs}}
         <div class="form-group">
             <label>{{$k}}</label>
@@ -19,7 +19,7 @@
         <div class="form-actions">
             <button type="submit" class="btn-primary">Save</button>
             <button type="button" class="btn-danger"
-                    hx-delete="/sessions/{{.SessionID}}/edges/{{urlquery .EdgeID}}"
+                    hx-delete="{{.BasePath}}/sessions/{{.SessionID}}/edges/{{urlquery .EdgeID}}"
                     hx-target="#editor-panels" hx-swap="none"
                     hx-confirm="Delete edge {{.Edge.From}} &rarr; {{.Edge.To}}?">Delete</button>
         </div>

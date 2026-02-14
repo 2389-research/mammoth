@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -51,5 +52,37 @@ func loadDotEnv(path string) {
 		if _, exists := os.LookupEnv(key); !exists {
 			os.Setenv(key, value)
 		}
+	}
+}
+
+// loadDotEnvAuto loads .env files from common locations without clobbering
+// existing environment variables. Search order:
+//  1. .env in current directory and its parents
+//  2. .env next to the current executable
+func loadDotEnvAuto() {
+	seen := map[string]bool{}
+
+	addPath := func(p string) {
+		if p == "" || seen[p] {
+			return
+		}
+		seen[p] = true
+		loadDotEnv(p)
+	}
+
+	if wd, err := os.Getwd(); err == nil {
+		dir := wd
+		for {
+			addPath(filepath.Join(dir, ".env"))
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+
+	if exe, err := os.Executable(); err == nil {
+		addPath(filepath.Join(filepath.Dir(exe), ".env"))
 	}
 }

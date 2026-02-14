@@ -1,26 +1,68 @@
 {{define "content"}}
-<h1>New Project</h1>
+<style>
+    .new-shell {
+        display: grid;
+        gap: 14px;
+        max-width: 860px;
+    }
+    .new-hero {
+        border-radius: var(--radius-2xl);
+        border: 1px solid color-mix(in srgb, var(--border) 86%, #0891b2 14%);
+        background:
+            radial-gradient(circle at 84% 12%, color-mix(in srgb, #22d3ee 16%, transparent), transparent 36%),
+            linear-gradient(160deg, color-mix(in srgb, var(--bg-card) 88%, #f0fdfa 12%), var(--bg-card));
+        padding: 18px 20px;
+    }
+    .new-hero h1 {
+        margin: 0;
+        font-family: var(--font-display);
+    }
+    .new-hero p {
+        margin: 8px 0 0 0;
+        color: var(--text-secondary);
+        font-size: 13px;
+        max-width: 68ch;
+    }
+    .new-form-card {
+        border-radius: var(--radius-2xl);
+        border: 1px solid var(--border);
+        background: var(--bg-card);
+        box-shadow: 0 16px 44px color-mix(in srgb, #0f172a 9%, transparent);
+        padding: 16px;
+        display: grid;
+        gap: 12px;
+    }
+    .new-file-note {
+        margin: 6px 0 0 0;
+        color: var(--text-muted);
+        font-size: 12px;
+    }
+</style>
 
-<div class="card">
-    <form method="POST" action="/projects">
-        <label for="name">Project Name</label>
-        <input type="text" id="name" name="name" placeholder="my-pipeline" required>
+<section class="new-shell">
+    <section class="new-hero">
+        <h1>New Project</h1>
+        <p>Start from a prompt, or import an existing specification/DOT file. We’ll initialize the full workflow automatically.</p>
+    </section>
 
-        {{if eq .Mode "dot"}}
-            <label for="dot">DOT Pipeline Definition</label>
-            <textarea id="dot" name="dot" placeholder="digraph pipeline {&#10;    start -> process -> end&#10;}"></textarea>
-        {{else}}
-            <label for="oneliner">One-Liner</label>
-            <input type="text" id="oneliner" name="oneliner" placeholder="A pipeline that processes customer feedback">
+    <section class="new-form-card">
+        <form method="POST" action="/projects" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="prompt">Spec Prompt</label>
+                <textarea id="prompt" name="prompt" rows="8" placeholder="Describe the product or workflow you want to build..."></textarea>
+            </div>
 
-            <label for="goal">Goal</label>
-            <textarea id="goal" name="goal" placeholder="Describe what this pipeline should accomplish..."></textarea>
-        {{end}}
+            <div class="form-group">
+                <label for="import_file">Or Upload File</label>
+                <input type="file" id="import_file" name="import_file" accept=".dot,.gv,.txt,.md,.markdown,.yaml,.yml,.json,.spec">
+                <p class="new-file-note">Supported formats: DOT, Markdown, YAML, JSON, and plain spec text.</p>
+            </div>
 
-        <div style="margin-top: 1rem;">
-            <button type="submit" class="btn">Create Project</button>
-            <a href="/" class="btn btn-outline" style="margin-left: 0.5rem;">Cancel</a>
-        </div>
-    </form>
-</div>
+            <div class="web-inline-actions">
+                <button type="submit" class="btn btn-primary">Create Project</button>
+                <a href="/" class="btn">Cancel</a>
+            </div>
+        </form>
+    </section>
+</section>
 {{end}}

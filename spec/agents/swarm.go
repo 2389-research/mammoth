@@ -20,10 +20,12 @@ import (
 )
 
 // AgentRunner wraps a single agent's role and mutable context.
+// The mu field protects concurrent access to Context fields.
 type AgentRunner struct {
 	Role    AgentRole
 	Context *AgentContext
 	AgentID string
+	mu      sync.RWMutex
 }
 
 // NewAgentRunner creates a new runner for the given role with a unique agent ID.
@@ -144,21 +146,25 @@ func (s *SwarmOrchestrator) RecoverEmptySlots() {
 }
 
 // CollectAgentContexts returns a snapshot map of all agent contexts for persistence.
+// Acquires read locks on each runner to safely read Context fields.
 func (s *SwarmOrchestrator) CollectAgentContexts() map[string]json.RawMessage {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var contexts []*AgentContext
+	result := make(map[string]json.RawMessage, len(s.Agents))
 	for _, runner := range s.Agents {
 		if runner != nil {
-			contexts = append(contexts, runner.Context)
+			runner.mu.RLock()
+			result[runner.Context.AgentID] = runner.Context.ToSnapshotValue()
+			runner.mu.RUnlock()
 		}
 	}
-	return ContextsToSnapshotMap(contexts)
+	return result
 }
 
 // RestoreAgentContexts restores agent contexts from a snapshot map.
 // Matches by AgentRole, since agent_ids may differ between sessions.
+// Acquires write locks on each runner to safely mutate Context fields.
 func (s *SwarmOrchestrator) RestoreAgentContexts(m map[string]json.RawMessage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -167,18 +173,21 @@ func (s *SwarmOrchestrator) RestoreAgentContexts(m map[string]json.RawMessage) {
 	for _, ctx := range restored {
 		for _, runner := range s.Agents {
 			if runner != nil && runner.Role == ctx.AgentRole {
+				runner.mu.Lock()
 				runner.Context.RollingSummary = ctx.RollingSummary
 				runner.Context.KeyDecisions = ctx.KeyDecisions
 				runner.Context.LastEventSeen = ctx.LastEventSeen
+				runner.mu.Unlock()
 			}
 		}
 	}
 }
 
 // RefreshContext drains buffered events for the agent at index, reads the current state,
-// and updates the agent's context accordingly.
+// and updates the agent's context accordingly. Acquires a write lock on the runner
+// to prevent races with concurrent snapshot reads.
 func (s *SwarmOrchestrator) RefreshContext(runner *AgentRunner, eventCh chan core.Event) {
-	// Drain buffered events
+	// Drain buffered events before acquiring the lock
 	var events []core.Event
 	for {
 		select {
@@ -189,11 +198,17 @@ func (s *SwarmOrchestrator) RefreshContext(runner *AgentRunner, eventCh chan cor
 		}
 	}
 drained:
+
+	runner.mu.Lock()
 	runner.Context.UpdateFromEvents(events)
 	runner.Context.RecentEvents = events
+	runner.mu.Unlock()
 
 	// Read current state for the summary
 	s.Actor.ReadState(func(state *core.SpecState) {
+		runner.mu.Lock()
+		defer runner.mu.Unlock()
+
 		if state.Core != nil {
 			runner.Context.StateSummary = fmt.Sprintf(
 				"Title: %s. Goal: %s. Cards: %d. Pending question: %t",

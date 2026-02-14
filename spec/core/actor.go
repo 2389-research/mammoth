@@ -3,6 +3,7 @@
 package core
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -221,13 +222,7 @@ func (a *specActor) commandToEvents(cmd Command) ([]Event, error) {
 			return nil, &CardNotFoundError{CardID: c.CardID}
 		}
 		payloads = []EventPayload{
-			CardUpdatedPayload{
-				CardID:   c.CardID,
-				Title:    c.Title,
-				Body:     c.Body,
-				CardType: c.CardType,
-				Refs:     c.Refs,
-			},
+			CardUpdatedPayload(c),
 		}
 
 	case MoveCardCommand:
@@ -236,11 +231,7 @@ func (a *specActor) commandToEvents(cmd Command) ([]Event, error) {
 			return nil, &CardNotFoundError{CardID: c.CardID}
 		}
 		payloads = []EventPayload{
-			CardMovedPayload{
-				CardID: c.CardID,
-				Lane:   c.Lane,
-				Order:  c.Order,
-			},
+			CardMovedPayload(c),
 		}
 
 	case DeleteCardCommand:
@@ -249,7 +240,7 @@ func (a *specActor) commandToEvents(cmd Command) ([]Event, error) {
 			return nil, &CardNotFoundError{CardID: c.CardID}
 		}
 		payloads = []EventPayload{
-			CardDeletedPayload{CardID: c.CardID},
+			CardDeletedPayload(c),
 		}
 
 	case AppendTranscriptCommand:
@@ -305,6 +296,10 @@ func (a *specActor) commandToEvents(cmd Command) ([]Event, error) {
 				InverseEvents: inverseCopy,
 			},
 		}
+
+	default:
+		a.handle.mu.RUnlock()
+		return nil, fmt.Errorf("%w: %T", ErrUnknownCommand, cmd)
 	}
 
 	a.handle.mu.RUnlock()

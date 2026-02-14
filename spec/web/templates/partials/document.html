@@ -3,67 +3,85 @@
 <div class="document">
     <div class="document-notice">
         <span class="notice-icon">&#9432;</span>
-        Auto-generated from spec data. Edit cards on the Board to update this document.
-        <button class="btn btn-sm btn-regen"
-                hx-get="/web/specs/{{ .SpecID }}/document"
-                hx-target="#canvas" hx-swap="innerHTML"
-                title="Refresh document from current spec data">
-            Regenerate
-        </button>
-        <button class="btn btn-sm btn-export"
-                hx-post="/web/specs/{{ .SpecID }}/regenerate"
-                hx-target=".regen-status" hx-swap="innerHTML"
-                title="Save exports to disk">
-            Export to Disk
-        </button>
-        <span class="regen-status"></span>
+        <span class="document-notice-text">Auto-generated from current cards and core fields. Update board content to refine this document.</span>
+        <div class="document-notice-actions">
+            <button class="btn btn-sm btn-regen"
+                    hx-get="/web/specs/{{ .SpecID }}/document"
+                    hx-target="#canvas" hx-swap="innerHTML"
+                    title="Refresh document from current spec data">
+                Regenerate
+            </button>
+            <button class="btn btn-sm btn-export"
+                    hx-post="/web/specs/{{ .SpecID }}/regenerate"
+                    hx-target=".regen-status" hx-swap="innerHTML"
+                    title="Save exports to disk">
+                Export to Disk
+            </button>
+            <span class="regen-status"></span>
+        </div>
     </div>
     <h1>{{ .Title }}</h1>
-    <blockquote>{{ .OneLiner }}</blockquote>
+    <blockquote>{{ if .OneLiner }}{{ .OneLiner }}{{ else }}No one-liner yet. Add one in the board/core fields to sharpen scope.{{ end }}</blockquote>
 
-    <h2>Goal</h2>
-    <div class="doc-content">{{ .GoalHTML }}</div>
+    <section class="doc-section">
+        <h2>Goal</h2>
+        <div class="doc-content">{{ .GoalHTML }}</div>
+    </section>
 
     {{ if .DescriptionHTML }}
-    <h2>Description</h2>
-    <div class="doc-content">{{ .DescriptionHTML }}</div>
+    <section class="doc-section">
+        <h2>Description</h2>
+        <div class="doc-content">{{ .DescriptionHTML }}</div>
+    </section>
     {{ end }}
 
     {{ if .ConstraintsHTML }}
-    <h2>Constraints</h2>
-    <div class="doc-content">{{ .ConstraintsHTML }}</div>
+    <section class="doc-section">
+        <h2>Constraints</h2>
+        <div class="doc-content">{{ .ConstraintsHTML }}</div>
+    </section>
     {{ end }}
 
     {{ if .SuccessCriteriaHTML }}
-    <h2>Success Criteria</h2>
-    <div class="doc-content">{{ .SuccessCriteriaHTML }}</div>
+    <section class="doc-section">
+        <h2>Success Criteria</h2>
+        <div class="doc-content">{{ .SuccessCriteriaHTML }}</div>
+    </section>
     {{ end }}
 
     {{ if .RisksHTML }}
-    <h2>Risks</h2>
-    <div class="doc-content">{{ .RisksHTML }}</div>
+    <section class="doc-section">
+        <h2>Risks</h2>
+        <div class="doc-content">{{ .RisksHTML }}</div>
+    </section>
     {{ end }}
 
     {{ if .NotesHTML }}
-    <h2>Notes</h2>
-    <div class="doc-content">{{ .NotesHTML }}</div>
+    <section class="doc-section">
+        <h2>Notes</h2>
+        <div class="doc-content">{{ .NotesHTML }}</div>
+    </section>
     {{ end }}
 
     {{ if .Lanes }}
     <hr>
     {{ range .Lanes }}
-    <h2>{{ .Name }}</h2>
-    {{ if not .Cards }}
-    <p class="muted">No cards in this lane.</p>
-    {{ else }}
-    {{ range .Cards }}
-    <h3>{{ .Title }} <span class="card-type badge-{{ .CardType }}">{{ .CardType }}</span></h3>
-    {{ if .BodyHTML }}
-    <div class="doc-content">{{ .BodyHTML }}</div>
-    {{ end }}
-    <p class="card-meta">by {{ .CreatedBy }}</p>
-    {{ end }}
-    {{ end }}
+    <section class="doc-lane-block">
+        <h2>{{ .Name }}</h2>
+        {{ if not .Cards }}
+        <p class="muted">No cards in this lane yet.</p>
+        {{ else }}
+        {{ range .Cards }}
+        <article class="doc-card-entry">
+            <h3>{{ .Title }} <span class="card-type badge-{{ .CardType }}">{{ .CardType }}</span></h3>
+            {{ if .BodyHTML }}
+            <div class="doc-content">{{ .BodyHTML }}</div>
+            {{ end }}
+            <p class="card-meta">by {{ .CreatedBy }}</p>
+        </article>
+        {{ end }}
+        {{ end }}
+    </section>
     {{ end }}
     {{ end }}
 </div>

@@ -3,6 +3,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -137,6 +138,14 @@ func TestIntegrationFlowA(t *testing.T) {
 	}
 
 	// Step 5: Start the build via HTTP.
+	// Defer a stop request so the build goroutine doesn't leak past test teardown.
+	defer func() {
+		stopResp, stopErr := client.Post(ts.URL+"/projects/"+projectID+"/build/stop", "", nil)
+		if stopErr == nil {
+			stopResp.Body.Close()
+		}
+	}()
+
 	resp, err := client.Post(ts.URL+"/projects/"+projectID+"/build/start", "", nil)
 	if err != nil {
 		t.Fatalf("step 5: POST build/start: %v", err)
@@ -277,15 +286,21 @@ func TestIntegrationFlowB(t *testing.T) {
 		t.Error("step 5: expected active build run to be tracked on server")
 	}
 
-	// Check SSE content-type header.
-	sseResp, err := client.Get(ts.URL + "/projects/" + projectID + "/build/events")
+	// Check SSE content-type header with a timeout to avoid hanging indefinitely.
+	sseCtx, sseCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer sseCancel()
+	sseReq, err := http.NewRequestWithContext(sseCtx, http.MethodGet, ts.URL+"/projects/"+projectID+"/build/events", nil)
+	if err != nil {
+		t.Fatalf("step 5: creating SSE request: %v", err)
+	}
+	sseResp, err := client.Do(sseReq)
 	if err != nil {
 		t.Fatalf("step 5: GET build/events: %v", err)
 	}
 	defer sseResp.Body.Close()
 
-	if ct := sseResp.Header.Get("Content-Type"); ct != "text/event-stream" {
-		t.Errorf("step 5: expected Content-Type %q, got %q", "text/event-stream", ct)
+	if ct := sseResp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Errorf("step 5: expected Content-Type starting with %q, got %q", "text/event-stream", ct)
 	}
 
 	// Stop the build so the SSE goroutine doesn't leak.

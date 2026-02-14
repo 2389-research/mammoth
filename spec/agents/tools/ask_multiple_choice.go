@@ -80,6 +80,10 @@ func (t *AskMultipleChoiceTool) Execute(_ context.Context, params map[string]any
 		}
 	}
 
+	if len(choices) == 0 {
+		return nil, fmt.Errorf("'choices' must contain at least one string value")
+	}
+
 	allowMulti := false
 	if allowMultiRaw, exists := params["allow_multi"]; exists {
 		if b, ok := allowMultiRaw.(bool); ok {
