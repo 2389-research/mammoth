@@ -35,6 +35,10 @@ type Server struct {
 	specState    *server.AppState
 	specRenderer *specweb.TemplateRenderer
 
+	// specInitMu serializes lazy spec initialization and recovery to prevent
+	// duplicate actors when concurrent requests hit the same uninitialized project.
+	specInitMu sync.Mutex
+
 	// buildsMu protects the builds map for concurrent access from handler
 	// goroutines and background engine goroutines.
 	buildsMu sync.RWMutex

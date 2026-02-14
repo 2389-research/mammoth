@@ -89,6 +89,9 @@ func (s *Server) specRouter(r chi.Router) {
 // specContextMiddleware resolves the projectID from the parent route, looks up
 // or lazily creates the associated spec actor, and injects the spec ID as a chi
 // "id" URL parameter so all spec/web handlers work unchanged.
+//
+// Uses double-checked locking via specInitMu to prevent duplicate actors when
+// concurrent requests hit the same uninitialized project.
 func (s *Server) specContextMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		projectID := chi.URLParam(r, "projectID")
@@ -98,29 +101,11 @@ func (s *Server) specContextMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		specIDStr := p.SpecID
-		if specIDStr == "" {
-			newSpecID, err := s.initializeSpec(projectID)
-			if err != nil {
-				log.Printf("spec init failed for project %s: %v", projectID, err)
-				http.Error(w, "failed to initialize spec", http.StatusInternalServerError)
-				return
-			}
-			specIDStr = newSpecID.String()
-		} else {
-			// Ensure the actor is loaded for existing specs.
-			specID, err := ulid.Parse(specIDStr)
-			if err != nil {
-				http.Error(w, "invalid spec ID on project", http.StatusInternalServerError)
-				return
-			}
-			if s.specState.GetActor(specID) == nil {
-				if err := s.recoverSpec(specID); err != nil {
-					log.Printf("spec recovery failed for %s: %v", specIDStr, err)
-					http.Error(w, "failed to recover spec", http.StatusInternalServerError)
-					return
-				}
-			}
+		specIDStr, err := s.ensureSpecActor(projectID, p.SpecID)
+		if err != nil {
+			log.Printf("spec middleware: %v", err)
+			http.Error(w, "failed to initialize spec", http.StatusInternalServerError)
+			return
 		}
 
 		// Inject spec ID as chi "id" param for spec/web handlers.
@@ -132,6 +117,56 @@ func (s *Server) specContextMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// ensureSpecActor guarantees that the project has a spec actor loaded in memory.
+// It uses double-checked locking: first a fast-path check without the mutex,
+// then a slow path that serializes initialization to prevent duplicates.
+func (s *Server) ensureSpecActor(projectID, specIDStr string) (string, error) {
+	// Fast path: spec already exists and actor is loaded.
+	if specIDStr != "" {
+		specID, err := ulid.Parse(specIDStr)
+		if err != nil {
+			return "", fmt.Errorf("invalid spec ID %q on project %s: %w", specIDStr, projectID, err)
+		}
+		if s.specState.GetActor(specID) != nil {
+			return specIDStr, nil
+		}
+	}
+
+	// Slow path: serialize init/recovery to prevent duplicate actors.
+	s.specInitMu.Lock()
+	defer s.specInitMu.Unlock()
+
+	// Re-read project under lock in case another goroutine just initialized it.
+	p, ok := s.store.Get(projectID)
+	if !ok {
+		return "", fmt.Errorf("project %s not found", projectID)
+	}
+	specIDStr = p.SpecID
+
+	if specIDStr == "" {
+		newSpecID, err := s.initializeSpec(projectID)
+		if err != nil {
+			return "", fmt.Errorf("init spec for project %s: %w", projectID, err)
+		}
+		return newSpecID.String(), nil
+	}
+
+	specID, err := ulid.Parse(specIDStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid spec ID %q on project %s: %w", specIDStr, projectID, err)
+	}
+
+	// Double-check: another request may have recovered this actor while we waited.
+	if s.specState.GetActor(specID) != nil {
+		return specIDStr, nil
+	}
+
+	if err := s.recoverSpec(specID); err != nil {
+		return "", fmt.Errorf("recover spec %s: %w", specIDStr, err)
+	}
+	return specIDStr, nil
 }
 
 // specURLRewriteMiddleware intercepts HTML responses and rewrites URLs from the
@@ -380,11 +415,17 @@ func (s *Server) initializeSpec(projectID string) (ulid.ULID, error) {
 // actor. Called when a project references a spec that is not yet in memory.
 func (s *Server) recoverSpec(specID ulid.ULID) error {
 	specDir := filepath.Join(s.specState.MammothHome, "specs", specID.String())
-	logPath := filepath.Join(specDir, "events.jsonl")
 
+	// Ensure the spec directory exists so the event persister can write to it.
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		return fmt.Errorf("create spec directory: %w", err)
+	}
+
+	logPath := filepath.Join(specDir, "events.jsonl")
 	state := core.NewSpecState()
 
 	// Replay events if the log file exists.
+	var eventCount int
 	data, err := os.ReadFile(logPath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("read event log: %w", err)
@@ -401,6 +442,7 @@ func (s *Server) recoverSpec(specID ulid.ULID) error {
 				continue
 			}
 			state.Apply(&evt)
+			eventCount++
 		}
 	}
 
@@ -409,7 +451,7 @@ func (s *Server) recoverSpec(specID ulid.ULID) error {
 	s.specState.SetActor(specID, handle)
 	s.specState.TryStartAgents(specID)
 
-	log.Printf("recovered spec %s (%d events replayed)", specID, len(bytes.Split(data, []byte("\n"))))
+	log.Printf("recovered spec %s (%d events replayed)", specID, eventCount)
 	return nil
 }
 
