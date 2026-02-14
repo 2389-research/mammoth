@@ -59,7 +59,8 @@ function initBoard() {
                 evt.item.dataset.lane = newLane;
                 evt.item.dataset.order = newOrder;
 
-                fetch('/api/specs/' + specId + '/commands', {
+                var commandsUrl = boardEl.dataset.commandsUrl || ('/api/specs/' + specId + '/commands');
+                fetch(commandsUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({

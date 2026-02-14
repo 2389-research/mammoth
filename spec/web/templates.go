@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -59,6 +60,55 @@ func NewTemplateRenderer(templatesDir string) (*TemplateRenderer, error) {
 	return &TemplateRenderer{templates: tmpl}, nil
 }
 
+// NewTemplateRendererFromFS parses all templates from an fs.FS, reading from
+// the "templates/" subtree. This allows the unified server to use the embedded
+// filesystem instead of runtime filesystem paths.
+func NewTemplateRendererFromFS(fsys fs.FS) (*TemplateRenderer, error) {
+	funcMap := buildFuncMap()
+
+	templatesFS, err := fs.Sub(fsys, "templates")
+	if err != nil {
+		return nil, fmt.Errorf("templates sub-FS: %w", err)
+	}
+
+	baseData, err := fs.ReadFile(templatesFS, "base.html")
+	if err != nil {
+		return nil, fmt.Errorf("read base.html: %w", err)
+	}
+
+	tmpl, err := template.New("base.html").Funcs(funcMap).Parse(string(baseData))
+	if err != nil {
+		return nil, fmt.Errorf("parse base.html: %w", err)
+	}
+
+	indexData, err := fs.ReadFile(templatesFS, "index.html")
+	if err != nil {
+		return nil, fmt.Errorf("read index.html: %w", err)
+	}
+	if _, err := tmpl.New("index.html").Parse(string(indexData)); err != nil {
+		return nil, fmt.Errorf("parse index.html: %w", err)
+	}
+
+	entries, err := fs.ReadDir(templatesFS, "partials")
+	if err != nil {
+		return nil, fmt.Errorf("read partials dir: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".html") {
+			continue
+		}
+		data, err := fs.ReadFile(templatesFS, "partials/"+entry.Name())
+		if err != nil {
+			return nil, fmt.Errorf("read partial %s: %w", entry.Name(), err)
+		}
+		if _, err := tmpl.New(entry.Name()).Parse(string(data)); err != nil {
+			return nil, fmt.Errorf("parse partial %s: %w", entry.Name(), err)
+		}
+	}
+
+	return &TemplateRenderer{templates: tmpl}, nil
+}
+
 // Render executes a named template (full page) and writes the result to w.
 // The template is rendered inside the base layout.
 func (r *TemplateRenderer) Render(w http.ResponseWriter, templateName string, data any) {
@@ -91,14 +141,14 @@ func buildFuncMap() template.FuncMap {
 }
 
 // markdownToHTML converts a markdown string to HTML using goldmark.
-// Raw HTML in the input is stripped to prevent XSS.
+// The output is sanitized to remove script tags and dangerous URL schemes.
 func markdownToHTML(input string) template.HTML {
 	var buf bytes.Buffer
 	md := goldmark.New()
 	if err := md.Convert([]byte(input), &buf); err != nil {
 		return template.HTML(template.HTMLEscapeString(input))
 	}
-	return template.HTML(buf.String())
+	return template.HTML(sanitizeHTML(buf.String()))
 }
 
 // timeAgo formats a time as a relative duration string (e.g. "5m ago", "2h ago").
@@ -199,11 +249,46 @@ func dict(pairs ...any) (map[string]any, error) {
 
 // RenderMarkdown is an exported helper that converts markdown to HTML.
 // Used by handlers that need pre-rendered HTML before template execution.
+// The output is sanitized to remove script tags and dangerous URL schemes.
 func RenderMarkdown(input string) string {
 	var buf bytes.Buffer
 	md := goldmark.New()
 	if err := md.Convert([]byte(input), &buf); err != nil {
 		return template.HTMLEscapeString(input)
 	}
-	return buf.String()
+	return sanitizeHTML(buf.String())
+}
+
+// scriptTagPattern matches <script> tags and their contents (case-insensitive).
+var scriptTagPattern = regexp.MustCompile(`(?is)<script\b[^>]*>.*?</script\s*>`)
+
+// dangerousSchemePattern matches javascript: and vbscript: URL schemes in attributes
+// (case-insensitive, allowing whitespace within the scheme).
+var dangerousSchemePattern = regexp.MustCompile(`(?i)(href|src|action)\s*=\s*["']?\s*(javascript|vbscript)\s*:`)
+
+// sanitizeHTML removes dangerous HTML constructs from goldmark-rendered output.
+// It strips <script> tags and their contents, and neutralizes javascript:/vbscript: URLs.
+func sanitizeHTML(html string) string {
+	// Remove <script> tags and their contents
+	html = scriptTagPattern.ReplaceAllString(html, "")
+
+	// Replace dangerous URL schemes with a safe empty fragment
+	html = dangerousSchemePattern.ReplaceAllStringFunc(html, func(match string) string {
+		// Find the attribute name (href, src, action) and preserve it
+		eqIdx := strings.IndexByte(match, '=')
+		if eqIdx < 0 {
+			return match
+		}
+		attr := strings.TrimSpace(match[:eqIdx])
+		// Determine the quote style used (or none)
+		rest := match[eqIdx+1:]
+		quote := ""
+		trimmed := strings.TrimLeft(rest, " \t")
+		if len(trimmed) > 0 && (trimmed[0] == '"' || trimmed[0] == '\'') {
+			quote = string(trimmed[0])
+		}
+		return attr + "=" + quote + "#blocked"
+	})
+
+	return html
 }

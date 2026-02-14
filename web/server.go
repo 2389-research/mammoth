@@ -5,7 +5,9 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -14,6 +16,8 @@ import (
 	"time"
 
 	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/mammoth/spec/server"
+	specweb "github.com/2389-research/mammoth/spec/web"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -26,6 +30,10 @@ type Server struct {
 	router    chi.Router
 	addr      string
 	dataDir   string
+
+	// Spec builder state and renderer, initialized from embedded FS.
+	specState    *server.AppState
+	specRenderer *specweb.TemplateRenderer
 
 	// buildsMu protects the builds map for concurrent access from handler
 	// goroutines and background engine goroutines.
@@ -56,12 +64,24 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		return nil, fmt.Errorf("initializing templates: %w", err)
 	}
 
+	// Initialize spec builder state with provider detection.
+	providerStatus := server.DetectProviders()
+	specState := server.NewAppState(cfg.DataDir, providerStatus)
+	setupSpecLLMClient(specState, providerStatus)
+
+	specRenderer, err := specweb.NewTemplateRendererFromFS(specweb.ContentFS)
+	if err != nil {
+		return nil, fmt.Errorf("initializing spec templates: %w", err)
+	}
+
 	s := &Server{
-		store:     store,
-		templates: tmpl,
-		addr:      cfg.Addr,
-		dataDir:   cfg.DataDir,
-		builds:    make(map[string]*BuildRun),
+		store:        store,
+		templates:    tmpl,
+		addr:         cfg.Addr,
+		dataDir:      cfg.DataDir,
+		specState:    specState,
+		specRenderer: specRenderer,
+		builds:       make(map[string]*BuildRun),
 	}
 
 	s.router = s.buildRouter()
@@ -73,9 +93,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.router.ServeHTTP(w, r)
 }
 
-// ListenAndServe starts the HTTP server on the configured address.
+// ListenAndServe starts the HTTP server on the configured address with
+// appropriate timeouts to prevent resource exhaustion from slow clients.
 func (s *Server) ListenAndServe() error {
-	return http.ListenAndServe(s.addr, s)
+	srv := &http.Server{
+		Addr:              s.addr,
+		Handler:           s,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      5 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
+	}
+	return srv.ListenAndServe()
 }
 
 // buildRouter constructs the chi router with all routes and middleware.
@@ -90,6 +119,14 @@ func (s *Server) buildRouter() chi.Router {
 	r.Get("/", s.handleHome)
 	r.Get("/health", s.handleHealth)
 
+	// Spec builder static assets served from embedded filesystem.
+	specStaticFS, err := fs.Sub(specweb.ContentFS, "static")
+	if err != nil {
+		log.Printf("WARNING: failed to create spec static sub-FS: %v", err)
+	} else {
+		r.Handle("/spec-static/*", http.StripPrefix("/spec-static/", http.FileServer(http.FS(specStaticFS))))
+	}
+
 	// Project routes
 	r.Route("/projects", func(r chi.Router) {
 		r.Get("/", s.handleProjectList)
@@ -100,8 +137,8 @@ func (s *Server) buildRouter() chi.Router {
 			r.Get("/", s.handleProjectOverview)
 			r.Get("/validate", s.handleValidate)
 
-			// Spec builder phase (delegates to spec/web handlers)
-			// r.Mount("/spec", s.specRouter())  -- stub for now
+			// Spec builder phase (delegates to spec/web handlers via adapter middleware)
+			r.Route("/spec", s.specRouter)
 
 			// DOT editor phase (delegates to editor handlers)
 			// r.Mount("/editor", s.editorRouter())  -- stub for now
@@ -163,7 +200,14 @@ func (s *Server) handleProjectNew(w http.ResponseWriter, r *http.Request) {
 // handleProjectCreate parses a project name from the form body, creates the
 // project, and redirects to the project overview.
 func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
+	// Cap request body at 1MB to prevent oversized payloads.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 	if err := r.ParseForm(); err != nil {
+		if isMaxBytesError(err) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -184,14 +228,25 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 // wantsJSON returns true if the request prefers JSON over HTML based on
-// the Accept header. Defaults to JSON when no Accept header is set, to
-// preserve backward compatibility with API clients.
+// the Accept header. Defaults to JSON when no Accept header is set or when
+// Accept contains */* (wildcard), to preserve backward compatibility with
+// API clients.
 func wantsJSON(r *http.Request) bool {
 	accept := r.Header.Get("Accept")
 	if accept == "" {
 		return true
 	}
-	return strings.Contains(accept, "application/json") && !strings.Contains(accept, "text/html")
+	if strings.Contains(accept, "text/html") {
+		return false
+	}
+	return strings.Contains(accept, "application/json") || strings.Contains(accept, "*/*")
+}
+
+// isMaxBytesError reports whether err (or any error in its chain) is an
+// *http.MaxBytesError, indicating the request body exceeded the size limit.
+func isMaxBytesError(err error) bool {
+	var maxErr *http.MaxBytesError
+	return errors.As(err, &maxErr)
 }
 
 // handleProjectOverview renders the project overview page as HTML, or returns
@@ -374,6 +429,10 @@ func (s *Server) handleBuildView(w http.ResponseWriter, r *http.Request) {
 // from the build's event channel.
 func (s *Server) handleBuildEvents(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "projectID")
+	if _, ok := s.store.Get(projectID); !ok {
+		http.Error(w, "project not found", http.StatusNotFound)
+		return
+	}
 
 	s.buildsMu.RLock()
 	run, exists := s.builds[projectID]
