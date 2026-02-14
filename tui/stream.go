@@ -715,6 +715,11 @@ func toInt(v any) int {
 			return int(*n)
 		}
 		return 0
+	case *float64:
+		if n != nil {
+			return int(*n)
+		}
+		return 0
 	default:
 		return 0
 	}

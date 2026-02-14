@@ -5,6 +5,7 @@ digraph build_htmx_blog {
         goal="Build an HTMX-based blog platform using Flask, SQLite, and Markdown rendering",
         retry_target="implement_backend",
         default_max_retry=2,
+        default_node_timeout="30m",
         model_stylesheet="
             * { llm_model: claude-sonnet-4-5; llm_provider: anthropic; }
             .code { llm_model: claude-opus-4-6; llm_provider: anthropic; }
@@ -91,6 +92,7 @@ No CSS frameworks - hand-written only."
     smoke_test [
         label="Smoke Test",
         class="code",
+        timeout="10m",
         prompt="Start the Flask app in the background, wait for it to be ready, then:
 1. GET / - expect 200
 2. GET /posts/1 - expect 200

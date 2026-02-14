@@ -1951,6 +1951,232 @@ func TestEngineStageCompletedNoDataForNonCodergen(t *testing.T) {
 	}
 }
 
+// --- Node timeout tests ---
+
+func TestResolveNodeTimeout(t *testing.T) {
+	tests := []struct {
+		name           string
+		nodeAttrs      map[string]string
+		graphAttrs     map[string]string
+		configDefault  time.Duration
+		expectedResult time.Duration
+	}{
+		{
+			name:           "node attr wins over graph and config",
+			nodeAttrs:      map[string]string{"timeout": "5m"},
+			graphAttrs:     map[string]string{"default_node_timeout": "30m"},
+			configDefault:  1 * time.Hour,
+			expectedResult: 5 * time.Minute,
+		},
+		{
+			name:           "graph attr wins over config",
+			nodeAttrs:      map[string]string{},
+			graphAttrs:     map[string]string{"default_node_timeout": "15m"},
+			configDefault:  1 * time.Hour,
+			expectedResult: 15 * time.Minute,
+		},
+		{
+			name:           "config default used as fallback",
+			nodeAttrs:      map[string]string{},
+			graphAttrs:     map[string]string{},
+			configDefault:  20 * time.Minute,
+			expectedResult: 20 * time.Minute,
+		},
+		{
+			name:           "zero when nothing set",
+			nodeAttrs:      map[string]string{},
+			graphAttrs:     map[string]string{},
+			configDefault:  0,
+			expectedResult: 0,
+		},
+		{
+			name:           "invalid node attr falls through to graph attr",
+			nodeAttrs:      map[string]string{"timeout": "not-a-duration"},
+			graphAttrs:     map[string]string{"default_node_timeout": "10m"},
+			configDefault:  0,
+			expectedResult: 10 * time.Minute,
+		},
+		{
+			name:           "invalid graph attr falls through to config",
+			nodeAttrs:      map[string]string{},
+			graphAttrs:     map[string]string{"default_node_timeout": "bogus"},
+			configDefault:  7 * time.Minute,
+			expectedResult: 7 * time.Minute,
+		},
+		{
+			name:           "nil node attrs handled",
+			nodeAttrs:      nil,
+			graphAttrs:     map[string]string{"default_node_timeout": "12m"},
+			configDefault:  0,
+			expectedResult: 12 * time.Minute,
+		},
+		{
+			name:           "nil graph attrs handled",
+			nodeAttrs:      map[string]string{},
+			graphAttrs:     nil,
+			configDefault:  3 * time.Minute,
+			expectedResult: 3 * time.Minute,
+		},
+		{
+			name:           "seconds duration",
+			nodeAttrs:      map[string]string{"timeout": "30s"},
+			graphAttrs:     map[string]string{},
+			configDefault:  0,
+			expectedResult: 30 * time.Second,
+		},
+		{
+			name:           "hours duration",
+			nodeAttrs:      map[string]string{"timeout": "2h"},
+			graphAttrs:     map[string]string{},
+			configDefault:  0,
+			expectedResult: 2 * time.Hour,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := &Node{ID: "test", Attrs: tt.nodeAttrs}
+			graph := &Graph{Attrs: tt.graphAttrs}
+			result := resolveNodeTimeout(node, graph, tt.configDefault)
+			if result != tt.expectedResult {
+				t.Errorf("expected %v, got %v", tt.expectedResult, result)
+			}
+		})
+	}
+}
+
+func TestEngineNodeTimeout(t *testing.T) {
+	g := &Graph{
+		Name:         "timeout_test",
+		Nodes:        make(map[string]*Node),
+		Edges:        make([]*Edge, 0),
+		Attrs:        map[string]string{"default_node_timeout": "50ms"},
+		NodeDefaults: make(map[string]string),
+		EdgeDefaults: make(map[string]string),
+	}
+	g.Nodes["start"] = &Node{ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}}
+	g.Nodes["slow"] = &Node{ID: "slow", Attrs: map[string]string{"shape": "box", "label": "Slow"}}
+	g.Nodes["exit"] = &Node{ID: "exit", Attrs: map[string]string{"shape": "Msquare"}}
+	g.Edges = append(g.Edges,
+		&Edge{From: "start", To: "slow", Attrs: map[string]string{}},
+		// Only a success edge — fail outcome has no outgoing edge
+		&Edge{From: "slow", To: "exit", Attrs: map[string]string{"condition": "outcome = success"}},
+	)
+
+	startH := newSuccessHandler("start")
+	// Handler that blocks until context is cancelled (simulating a hung node)
+	codergenH := &testHandler{
+		typeName: "codergen",
+		executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, codergenH, exitH)
+
+	engine := NewEngine(EngineConfig{
+		Handlers:     reg,
+		Backend:      testBackend(),
+		DefaultRetry: RetryPolicyNone(),
+	})
+
+	start := time.Now()
+	_, err := engine.RunGraph(context.Background(), g)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error from timed-out node")
+	}
+	if !strings.Contains(err.Error(), "fail") {
+		t.Errorf("expected fail error from timed-out node, got: %v", err)
+	}
+	// Should finish well under 5 seconds (timeout is 50ms)
+	if elapsed > 5*time.Second {
+		t.Errorf("expected fast timeout, but took %v", elapsed)
+	}
+}
+
+func TestEngineNodeTimeoutPerNodeOverride(t *testing.T) {
+	g := &Graph{
+		Name:         "per_node_timeout",
+		Nodes:        make(map[string]*Node),
+		Edges:        make([]*Edge, 0),
+		Attrs:        map[string]string{"default_node_timeout": "10s"},
+		NodeDefaults: make(map[string]string),
+		EdgeDefaults: make(map[string]string),
+	}
+	g.Nodes["start"] = &Node{ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}}
+	g.Nodes["fast_timeout"] = &Node{ID: "fast_timeout", Attrs: map[string]string{
+		"shape":   "box",
+		"label":   "Fast Timeout",
+		"timeout": "50ms",
+	}}
+	g.Nodes["exit"] = &Node{ID: "exit", Attrs: map[string]string{"shape": "Msquare"}}
+	g.Edges = append(g.Edges,
+		&Edge{From: "start", To: "fast_timeout", Attrs: map[string]string{}},
+		// Only success edge — fail has no route
+		&Edge{From: "fast_timeout", To: "exit", Attrs: map[string]string{"condition": "outcome = success"}},
+	)
+
+	startH := newSuccessHandler("start")
+	codergenH := &testHandler{
+		typeName: "codergen",
+		executeFn: func(ctx context.Context, node *Node, pctx *Context, store *ArtifactStore) (*Outcome, error) {
+			// Block until context deadline - the per-node 50ms should kick in,
+			// not the graph-level 10s
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, codergenH, exitH)
+
+	engine := NewEngine(EngineConfig{
+		Handlers:     reg,
+		Backend:      testBackend(),
+		DefaultRetry: RetryPolicyNone(),
+	})
+
+	start := time.Now()
+	_, err := engine.RunGraph(context.Background(), g)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error from timed-out node")
+	}
+	// Per-node timeout is 50ms, graph default is 10s.
+	// If per-node override works, this should complete in well under 1s.
+	if elapsed > 2*time.Second {
+		t.Errorf("per-node timeout should be 50ms, but took %v (graph default 10s may have been used)", elapsed)
+	}
+}
+
+func TestEngineNodeTimeoutDoesNotAffectFastNodes(t *testing.T) {
+	// Nodes that finish before the timeout should succeed normally
+	g := buildLinearGraph()
+	g.Attrs["default_node_timeout"] = "5s"
+
+	startH := newSuccessHandler("start")
+	codergenH := newSuccessHandler("codergen")
+	exitH := newSuccessHandler("exit")
+	reg := buildTestRegistry(startH, codergenH, exitH)
+
+	engine := NewEngine(EngineConfig{
+		Handlers:     reg,
+		Backend:      testBackend(),
+		DefaultRetry: RetryPolicyNone(),
+	})
+
+	result, err := engine.RunGraph(context.Background(), g)
+	if err != nil {
+		t.Fatalf("expected no error for fast nodes with timeout, got: %v", err)
+	}
+	if len(result.CompletedNodes) != 4 {
+		t.Errorf("expected 4 completed nodes, got %d", len(result.CompletedNodes))
+	}
+}
+
 func TestAgentEventsEmittedThroughEngine(t *testing.T) {
 	var events []EngineEvent
 	engine := NewEngine(EngineConfig{

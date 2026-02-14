@@ -37,7 +37,7 @@ Pre-built binaries for macOS and Linux (amd64/arm64) are available on the [relea
 ```bash
 # Example: Linux amd64 — replace VERSION with the desired release (e.g. 0.1.0)
 VERSION="0.1.0"
-curl -sL "https://github.com/2389-research/mammoth/releases/latest/download/mammoth_${VERSION}_Linux_x86_64.tar.gz" | tar xz
+curl -sL "https://github.com/2389-research/mammoth/releases/download/v${VERSION}/mammoth_${VERSION}_Linux_x86_64.tar.gz" | tar xz
 sudo mv mammoth /usr/local/bin/
 ```
 
