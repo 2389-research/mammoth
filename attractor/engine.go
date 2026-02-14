@@ -59,6 +59,7 @@ type EngineConfig struct {
 	Backend            CodergenBackend   // backend for codergen nodes (nil = stub behavior)
 	BaseURL            string            // default API base URL for codergen nodes (overridable per-node)
 	RestartConfig      *RestartConfig    // loop restart configuration (nil = DefaultRestartConfig)
+	DefaultNodeTimeout time.Duration     // global fallback timeout for node execution (0 = no timeout)
 }
 
 // NodeHandlerUnwrapper allows handler wrappers to expose their inner handler.
@@ -475,14 +476,25 @@ func (e *Engine) executeGraph(
 
 		e.emitEvent(EngineEvent{Type: EventStageStarted, NodeID: node.ID})
 
+		// Apply per-node timeout if configured
+		nodeTimeout := resolveNodeTimeout(node, graph, e.config.DefaultNodeTimeout)
+		nodeCtx := ctx
+		var cancelTimeout context.CancelFunc
+		if nodeTimeout > 0 {
+			nodeCtx, cancelTimeout = context.WithTimeout(ctx, nodeTimeout)
+		} else {
+			cancelTimeout = func() {}
+		}
+
 		retryPolicy := buildRetryPolicy(node, graph, e.config.DefaultRetry)
-		outcome, err := executeWithRetry(ctx, handler, node, pctx, store, retryPolicy, nodeRetries, func(attempt int) {
+		outcome, err := executeWithRetry(nodeCtx, handler, node, pctx, store, retryPolicy, nodeRetries, func(attempt int) {
 			e.emitEvent(EngineEvent{
 				Type:   EventStageRetrying,
 				NodeID: node.ID,
 				Data:   map[string]any{"attempt": attempt},
 			})
 		})
+		cancelTimeout()
 		if err != nil {
 			e.emitEvent(EngineEvent{Type: EventStageFailed, NodeID: node.ID, Data: map[string]any{"reason": err.Error()}})
 			return nil, fmt.Errorf("node %q execution error: %w", node.ID, err)

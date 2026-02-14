@@ -144,6 +144,32 @@ func buildRetryPolicy(node *Node, graph *Graph, defaultPolicy RetryPolicy) Retry
 	return defaultPolicy
 }
 
+// resolveNodeTimeout determines the execution timeout for a node by checking,
+// in order: node "timeout" attribute, graph "default_node_timeout" attribute,
+// and finally the config default. Returns 0 (no timeout) if nothing is set.
+func resolveNodeTimeout(node *Node, graph *Graph, configDefault time.Duration) time.Duration {
+	// Check node attribute first
+	if node.Attrs != nil {
+		if timeoutStr, ok := node.Attrs["timeout"]; ok && timeoutStr != "" {
+			if d, err := time.ParseDuration(timeoutStr); err == nil {
+				return d
+			}
+		}
+	}
+
+	// Check graph attribute
+	if graph.Attrs != nil {
+		if timeoutStr, ok := graph.Attrs["default_node_timeout"]; ok && timeoutStr != "" {
+			if d, err := time.ParseDuration(timeoutStr); err == nil {
+				return d
+			}
+		}
+	}
+
+	// Fall back to config default
+	return configDefault
+}
+
 // isTerminal returns true if the node is a terminal/exit node.
 // Recognized via shape=Msquare, node_type=exit, or type=exit.
 func isTerminal(node *Node) bool {
