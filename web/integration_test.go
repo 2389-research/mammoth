@@ -354,13 +354,17 @@ func TestIntegrationFlowC(t *testing.T) {
 	// so we accept "running", "failed", or "completed" as valid build statuses.
 	srv.buildsMu.RLock()
 	run, buildExists := srv.builds[projectID]
+	var runStatus string
+	if buildExists {
+		runStatus = run.State.Status
+	}
 	srv.buildsMu.RUnlock()
 	if !buildExists {
 		t.Fatal("step 4: expected active build run")
 	}
 	validStatuses := map[string]bool{"running": true, "failed": true, "completed": true}
-	if !validStatuses[run.State.Status] {
-		t.Errorf("step 4: expected run status to be running/failed/completed, got %q", run.State.Status)
+	if !validStatuses[runStatus] {
+		t.Errorf("step 4: expected run status to be running/failed/completed, got %q", runStatus)
 	}
 
 	// Verify build view renders.
@@ -455,11 +459,17 @@ func TestIntegrationBuildStopCancellation(t *testing.T) {
 	// Verify run state is cancelled.
 	srv.buildsMu.RLock()
 	stoppedRun := srv.builds[projectID]
-	srv.buildsMu.RUnlock()
-	if stoppedRun.State.Status != "cancelled" {
-		t.Errorf("expected run status %q, got %q", "cancelled", stoppedRun.State.Status)
+	var stoppedStatus string
+	var hasCompletedAt bool
+	if stoppedRun != nil {
+		stoppedStatus = stoppedRun.State.Status
+		hasCompletedAt = stoppedRun.State.CompletedAt != nil
 	}
-	if stoppedRun.State.CompletedAt == nil {
+	srv.buildsMu.RUnlock()
+	if stoppedStatus != "cancelled" {
+		t.Errorf("expected run status %q, got %q", "cancelled", stoppedStatus)
+	}
+	if !hasCompletedAt {
 		t.Error("expected CompletedAt to be set after stop")
 	}
 }

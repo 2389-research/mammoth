@@ -68,12 +68,16 @@ func TestBuildStartValidDOT(t *testing.T) {
 	// A build run should be tracked on the server.
 	srv.buildsMu.RLock()
 	run, exists := srv.builds[p.ID]
+	var runStatus string
+	if exists {
+		runStatus = run.State.Status
+	}
 	srv.buildsMu.RUnlock()
 	if !exists {
 		t.Fatal("expected build run to be tracked on server")
 	}
-	if run.State.Status != "running" {
-		t.Errorf("expected run status %q, got %q", "running", run.State.Status)
+	if runStatus != "running" {
+		t.Errorf("expected run status %q, got %q", "running", runStatus)
 	}
 }
 
@@ -348,12 +352,16 @@ func TestBuildStop(t *testing.T) {
 	// Run state should be updated.
 	srv.buildsMu.RLock()
 	run, exists := srv.builds[p.ID]
+	var stopStatus string
+	if exists {
+		stopStatus = run.State.Status
+	}
 	srv.buildsMu.RUnlock()
 	if !exists {
 		t.Fatal("expected build run to still exist after stop")
 	}
-	if run.State.Status != "cancelled" {
-		t.Errorf("expected run status %q, got %q", "cancelled", run.State.Status)
+	if stopStatus != "cancelled" {
+		t.Errorf("expected run status %q, got %q", "cancelled", stopStatus)
 	}
 }
 
