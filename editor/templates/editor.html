@@ -1,32 +1,51 @@
 {{define "content"}}
-<div class="editor" data-session-id="{{.SessionID}}">
+<div class="editor" data-session-id="{{.SessionID}}" data-base-path="{{.BasePath}}">
     <div class="toolbar">
+        <div class="editor-toolbar-group">
         <button id="undo-btn"
-                hx-post="/sessions/{{.SessionID}}/undo"
+                hx-post="{{.BasePath}}/sessions/{{.SessionID}}/undo"
                 hx-target="#editor-panels"
                 hx-swap="none"
                 title="Undo (Ctrl+Z)">
             ↶ Undo
         </button>
         <button id="redo-btn"
-                hx-post="/sessions/{{.SessionID}}/redo"
+                hx-post="{{.BasePath}}/sessions/{{.SessionID}}/redo"
                 hx-target="#editor-panels"
                 hx-swap="none"
                 title="Redo (Ctrl+Shift+Z)">
             ↷ Redo
         </button>
         <button id="validate-btn"
-                hx-get="/sessions/{{.SessionID}}/validate"
+                hx-get="{{.BasePath}}/sessions/{{.SessionID}}/validate"
                 hx-target="#diagnostics"
                 hx-swap="outerHTML"
                 title="Validate (Ctrl+Enter)">
             ✓ Validate
         </button>
-        <a href="/sessions/{{.SessionID}}/export"
+        <a href="{{.BasePath}}/sessions/{{.SessionID}}/export"
            class="export-btn"
            title="Export DOT (Ctrl+S)">
             ⬇ Export
         </a>
+        </div>
+        <div class="editor-toolbar-group">
+        {{if .BuildStartPath}}
+        <form method="POST" action="{{.BuildStartPath}}" style="display: inline;">
+            <button type="submit" class="export-btn" style="margin-left: 0.5rem;" title="Validate and continue to Build">
+                ▶ Continue to Build
+            </button>
+        </form>
+        {{end}}
+        {{if .ProjectPath}}
+        <a href="{{.ProjectPath}}" class="export-btn" style="margin-left: 0.5rem;" title="Back to project overview">
+            ↩ Project
+        </a>
+        {{end}}
+        <button id="shortcuts-toggle-btn" type="button" title="Keyboard shortcuts (?)">
+            ⌨ Shortcuts
+        </button>
+        </div>
         <div class="toolbar-spacer"></div>
         <div class="legend">
             <span class="legend-item"><span class="shape-indicator shape-start"></span> Start</span>
@@ -37,6 +56,25 @@
             <span class="legend-item"><span class="shape-indicator shape-tool"></span> Tool</span>
         </div>
     </div>
+    <div class="editor-tips-bar">
+        <div class="editor-tip-item"><strong>Flow:</strong> validate before export/build to catch graph issues early.</div>
+        <div class="editor-tip-item"><strong>Selection:</strong> click a node/edge in the graph to edit properties instantly.</div>
+        <div class="editor-tip-item"><strong>Diagnostics:</strong> click an error entry to highlight the exact target.</div>
+    </div>
+    <aside id="shortcuts-panel" class="shortcuts-panel" hidden>
+        <div class="shortcuts-head">
+            <h3>Keyboard Shortcuts</h3>
+            <button id="shortcuts-close-btn" type="button" class="close-btn">Close</button>
+        </div>
+        <ul class="shortcuts-list">
+            <li><kbd>Ctrl/Cmd</kbd> + <kbd>Z</kbd> <span>Undo</span></li>
+            <li><kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> <span>Redo</span></li>
+            <li><kbd>Ctrl/Cmd</kbd> + <kbd>Enter</kbd> <span>Validate</span></li>
+            <li><kbd>Ctrl/Cmd</kbd> + <kbd>S</kbd> <span>Export DOT</span></li>
+            <li><kbd>?</kbd> <span>Toggle shortcuts panel</span></li>
+            <li><kbd>Esc</kbd> <span>Close shortcuts panel</span></li>
+        </ul>
+    </aside>
     <div id="editor-panels" class="panels">
         <div class="panel panel-code">
             {{template "code_editor" .}}

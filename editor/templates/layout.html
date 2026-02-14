@@ -4,20 +4,51 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>mammoth-dot-editor</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Serif+Display&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/spec-static/style.css">
+    <link rel="stylesheet" href="{{.BasePath}}/static/css/style.css">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://unpkg.com/@hpcc-js/wasm@2.13.1/dist/graphviz.umd.js"></script>
     <script src="https://unpkg.com/d3-graphviz@5.0.2/build/d3-graphviz.min.js"></script>
-    <script src="/static/js/editor.js" defer></script>
-    <script src="/static/js/graph.js" defer></script>
+    <script>window.MAMMOTH_EDITOR_BASE_PATH = {{printf "%q" .BasePath}};</script>
+    <script src="{{.BasePath}}/static/js/editor.js" defer></script>
+    <script src="{{.BasePath}}/static/js/graph.js" defer></script>
 </head>
 <body>
-    <header>
-        <h1>🦣 mammoth-dot-editor</h1>
-    </header>
-    <main>
-        {{template "content" .}}
-    </main>
+    <div class="app-layout editor-shell">
+        <nav class="nav-rail">
+            <div class="rail-header">
+                <span>mammoth editor</span>
+            </div>
+            <div class="editor-rail-links">
+                {{if .ProjectPath}}
+                <a href="{{.ProjectPath}}" class="editor-rail-link">&larr; Project</a>
+                {{end}}
+                {{if .BuildStartPath}}
+                <form method="POST" action="{{.BuildStartPath}}">
+                    <button type="submit" class="editor-rail-link editor-rail-button">Continue to Build</button>
+                </form>
+                {{end}}
+                <a href="{{.BasePath}}/" class="editor-rail-link">New Session</a>
+            </div>
+            <div class="rail-footer"></div>
+        </nav>
+        <div class="workspace">
+            <header class="command-bar">
+                <div class="command-bar-left">
+                    <span class="command-bar-title">DOT Editor Studio</span>
+                </div>
+                <div class="command-bar-right">
+                    <span class="editor-shell-note">Visual graph editing with live validation</span>
+                </div>
+            </header>
+            <main class="canvas editor-canvas">
+                {{template "content" .}}
+            </main>
+        </div>
+    </div>
 </body>
 </html>{{end}}

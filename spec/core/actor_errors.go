@@ -27,6 +27,9 @@ var (
 
 	// ErrActorBusy indicates the actor's command buffer is full.
 	ErrActorBusy = errors.New("actor command buffer full")
+
+	// ErrUnknownCommand indicates the command type is not recognized by the actor.
+	ErrUnknownCommand = errors.New("unknown command type")
 )
 
 // CardNotFoundError indicates the referenced card doesn't exist.

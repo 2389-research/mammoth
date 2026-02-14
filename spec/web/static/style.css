@@ -576,9 +576,9 @@ html, body {
 
 /* --- Document view --- */
 .document {
-    max-width: 640px;
+    max-width: 760px;
     margin: 0 auto;
-    padding: 48px 32px;
+    padding: 42px 28px 56px 28px;
 }
 
 .document h1 {
@@ -593,7 +593,7 @@ html, body {
     font-size: 15px;
     color: var(--text-muted);
     line-height: 1.6;
-    margin: 0 0 40px 0;
+    margin: 0 0 24px 0;
     padding: 0;
     border: none;
     font-style: normal;
@@ -604,6 +604,27 @@ html, body {
     height: 1px;
     background: var(--border);
     margin: 0 0 40px 0;
+}
+
+.doc-section {
+    margin-top: 12px;
+    padding: 12px 0 2px 0;
+}
+
+.doc-lane-block {
+    margin-bottom: 8px;
+}
+
+.doc-card-entry {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--bg-surface) 92%, #fff 8%);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+}
+
+.doc-card-entry .card-meta {
+    margin-top: 6px;
 }
 
 .document h2 {
@@ -630,6 +651,10 @@ html, body {
     margin-bottom: var(--spacing-md);
 }
 
+.doc-content p:last-child {
+    margin-bottom: 0;
+}
+
 /* ========================================================================
    ACTIVITY PANEL — Chat-style message layout
    ======================================================================== */
@@ -644,11 +669,55 @@ html, body {
 .activity-feed {
     flex: 1;
     overflow-y: auto;
-    padding: var(--spacing-md);
+    padding: 10px var(--spacing-md) var(--spacing-md) var(--spacing-md);
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
     scroll-behavior: smooth;
+}
+
+.activity-priority-banner {
+    margin: 10px 14px 8px 14px;
+    border: 1px solid color-mix(in srgb, var(--warning) 52%, var(--border) 48%);
+    border-radius: var(--radius-lg);
+    background: linear-gradient(155deg, color-mix(in srgb, #fff7ed 86%, #fff 14%), #fff);
+    padding: 9px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.activity-priority-badge {
+    border-radius: 999px;
+    padding: 3px 8px;
+    background: color-mix(in srgb, var(--warning) 18%, #fff 82%);
+    color: color-mix(in srgb, #92400e 76%, var(--text-primary) 24%);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.activity-priority-text {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.activity-priority-link {
+    margin-left: auto;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    padding: 5px 9px;
+    font-size: 11px;
+    text-decoration: none;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.activity-priority-link:hover {
+    border-color: var(--text-muted);
 }
 
 /* --- Message layout --- */
@@ -1493,8 +1562,22 @@ html, body {
     color: var(--text-secondary);
     font-size: 13px;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--spacing-sm);
+    flex-wrap: wrap;
+}
+
+.document-notice-text {
+    flex: 1;
+    min-width: 200px;
+}
+
+.document-notice-actions {
+    margin-left: auto;
+    display: flex;
+    gap: var(--spacing-xs);
+    align-items: center;
+    flex-wrap: wrap;
 }
 
 .notice-icon {

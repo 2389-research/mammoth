@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/2389-research/mammoth/spec/core"
+	"github.com/oklog/ulid/v2"
 )
 
 // RecoverSpec recovers a spec's state from its storage directory.
@@ -25,6 +26,17 @@ func RecoverSpec(specDir string) (*core.SpecState, uint64, error) {
 	eventsPath := filepath.Join(specDir, "events.jsonl")
 	snapshotsDir := filepath.Join(specDir, "snapshots")
 	indexPath := filepath.Join(specDir, "index.db")
+
+	// Derive the expected SpecID from the directory basename. Spec directories
+	// are named by their ULID (e.g. home/specs/{ulid}). If the basename is not
+	// a valid ULID (e.g. during tests with arbitrary names), we skip SpecID
+	// filtering and accept all events.
+	var expectedSpecID ulid.ULID
+	var filterBySpecID bool
+	if parsed, err := ulid.Parse(filepath.Base(specDir)); err == nil {
+		expectedSpecID = parsed
+		filterBySpecID = true
+	}
 
 	// Step 1: Try to load latest snapshot
 	snapshot, err := LoadLatestSnapshot(snapshotsDir)
@@ -54,12 +66,22 @@ func RecoverSpec(specDir string) (*core.SpecState, uint64, error) {
 		log.Printf("INFO: repaired JSONL: %d valid events", repairedCount)
 	}
 
-	// Step 3: Replay events from the JSONL log
+	// Step 3: Replay events from the JSONL log, filtering by SpecID when the
+	// directory name is a valid ULID. Events belonging to a different spec are
+	// rejected to prevent cross-contamination from a mixed or corrupt log.
 	var allEvents []core.Event
 	if _, err := os.Stat(eventsPath); err == nil {
-		allEvents, err = ReplayJsonl(eventsPath)
-		if err != nil {
-			return nil, 0, fmt.Errorf("replay jsonl: %w", err)
+		rawEvents, replayErr := ReplayJsonl(eventsPath)
+		if replayErr != nil {
+			return nil, 0, fmt.Errorf("replay jsonl: %w", replayErr)
+		}
+		for i := range rawEvents {
+			if filterBySpecID && rawEvents[i].SpecID != expectedSpecID {
+				log.Printf("WARNING: skipping event %d with mismatched spec_id %s (expected %s)",
+					rawEvents[i].EventID, rawEvents[i].SpecID, expectedSpecID)
+				continue
+			}
+			allEvents = append(allEvents, rawEvents[i])
 		}
 	}
 
@@ -77,7 +99,10 @@ func RecoverSpec(specDir string) (*core.SpecState, uint64, error) {
 
 	lastEventID := state.LastEventID
 
-	// Step 5 & 6: Check SQLite integrity and rebuild if needed
+	// Step 5 & 6: Check SQLite integrity and rebuild if needed.
+	// When a snapshot exists but the event log is empty or missing, trust the
+	// snapshot state and set last_event_id from the snapshot rather than
+	// rebuilding an empty index (which would reset last_event_id to 0).
 	index, err := OpenSqlite(indexPath)
 	if err != nil {
 		return nil, 0, fmt.Errorf("open sqlite index: %w", err)
@@ -91,6 +116,13 @@ func RecoverSpec(specDir string) (*core.SpecState, uint64, error) {
 
 	if found && sqliteLastID == lastEventID {
 		log.Printf("INFO: SQLite index is up to date at event %d", sqliteLastID)
+	} else if len(allEvents) == 0 && snapshot != nil {
+		// No events on disk but a snapshot exists: trust the snapshot and
+		// set the SQLite last_event_id to match, without rebuilding empty.
+		log.Printf("INFO: no events on disk, trusting snapshot at event %d", lastEventID)
+		if err := index.SetLastEventID(lastEventID); err != nil {
+			return nil, 0, fmt.Errorf("set sqlite last_event_id from snapshot: %w", err)
+		}
 	} else if found {
 		log.Printf("WARNING: SQLite index stale (at event %d, expected %d), rebuilding",
 			sqliteLastID, lastEventID)

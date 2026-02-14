@@ -261,6 +261,9 @@ func (s *SpecState) Apply(event *Event) {
 			if p.Refs != nil {
 				card.Refs = *p.Refs
 			}
+			if p.UpdatedBy != "" {
+				card.UpdatedBy = p.UpdatedBy
+			}
 			card.UpdatedAt = event.Timestamp
 			s.Cards.Set(p.CardID, card)
 		}
@@ -282,6 +285,9 @@ func (s *SpecState) Apply(event *Event) {
 
 			card.Lane = p.Lane
 			card.Order = p.Order
+			if p.UpdatedBy != "" {
+				card.UpdatedBy = p.UpdatedBy
+			}
 			card.UpdatedAt = event.Timestamp
 			s.Cards.Set(p.CardID, card)
 		}
@@ -289,6 +295,10 @@ func (s *SpecState) Apply(event *Event) {
 	case CardDeletedPayload:
 		card, ok := s.Cards.Get(p.CardID)
 		if ok {
+			// Apply UpdatedBy before capturing the card for undo inverse
+			if p.UpdatedBy != "" {
+				card.UpdatedBy = p.UpdatedBy
+			}
 			inverse := []EventPayload{
 				CardCreatedPayload{Card: card},
 			}
@@ -379,6 +389,9 @@ func (s *SpecState) applyWithoutUndo(event *Event) {
 			if p.Refs != nil {
 				card.Refs = *p.Refs
 			}
+			if p.UpdatedBy != "" {
+				card.UpdatedBy = p.UpdatedBy
+			}
 			card.UpdatedAt = event.Timestamp
 			s.Cards.Set(p.CardID, card)
 		}
@@ -388,6 +401,9 @@ func (s *SpecState) applyWithoutUndo(event *Event) {
 		if ok {
 			card.Lane = p.Lane
 			card.Order = p.Order
+			if p.UpdatedBy != "" {
+				card.UpdatedBy = p.UpdatedBy
+			}
 			card.UpdatedAt = event.Timestamp
 			s.Cards.Set(p.CardID, card)
 		}

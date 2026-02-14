@@ -96,7 +96,12 @@ func (sd *SnapshotData) UnmarshalJSON(data []byte) error {
 	state.Transcript = j.State.Transcript
 	state.UndoStack = j.State.UndoStack
 	state.LastEventID = j.State.LastEventID
-	state.Lanes = j.State.Lanes
+	// Only overwrite the default lanes from NewSpecState() when the JSON
+	// contains a non-nil value, so that older snapshot files missing the
+	// "lanes" field preserve the defaults rather than setting them to nil.
+	if j.State.Lanes != nil {
+		state.Lanes = j.State.Lanes
+	}
 
 	// Rebuild OrderedMap from the deserialized map
 	for keyStr, card := range j.State.Cards {
@@ -163,6 +168,13 @@ func SaveSnapshot(dir string, data *SnapshotData) error {
 
 	if err := os.Rename(tmpPath, finalPath); err != nil {
 		return fmt.Errorf("rename snapshot: %w", err)
+	}
+
+	// Fsync the parent directory to ensure the rename metadata is durable,
+	// matching the crash-safety pattern used in RepairJsonl.
+	if dirFd, err := os.Open(dir); err == nil {
+		_ = dirFd.Sync()
+		_ = dirFd.Close()
 	}
 
 	return nil

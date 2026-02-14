@@ -1,6 +1,6 @@
 {{/* ABOUTME: Kanban board with swim lanes rendered from spec data. */}}
 {{/* ABOUTME: Each lane contains draggable cards; SortableJS is initialized via board.js. */}}
-<div class="board" id="board" data-spec-id="{{ .SpecID }}">
+<div class="board" id="board" data-spec-id="{{ .SpecID }}" data-commands-url="/api/specs/{{ .SpecID }}/commands">
     {{ range .Lanes }}
     <div class="lane">
         <div class="lane-header">
@@ -11,9 +11,15 @@
             {{ range .Cards }}
             {{ template "card" . }}
             {{ end }}
+            {{ if not .Cards }}
+            <div class="spec-lane-empty">
+                <p class="spec-lane-empty-title">No cards in {{ .Name }} yet</p>
+                <p class="spec-lane-empty-hint">Use “New Card” to seed this lane with ideas, tasks, or decisions.</p>
+            </div>
+            {{ end }}
         </div>
     </div>
     {{ end }}
 </div>
 
-<script src="/static/board.js"></script>
+<script src="/spec-static/board.js"></script>

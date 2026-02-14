@@ -4,8 +4,46 @@
 (function() {
     'use strict';
 
+    function isTypingTarget(target) {
+        if (!target) {
+            return false;
+        }
+        var tag = (target.tagName || '').toLowerCase();
+        return tag === 'input' || tag === 'textarea' || target.isContentEditable;
+    }
+
+    function toggleShortcutsPanel(forceOpen) {
+        const panel = document.getElementById('shortcuts-panel');
+        if (!panel) {
+            return;
+        }
+        const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : panel.hidden;
+        panel.hidden = !shouldOpen;
+    }
+
+    document.addEventListener('click', (e) => {
+        if (e.target && e.target.id === 'shortcuts-toggle-btn') {
+            toggleShortcutsPanel();
+        }
+        if (e.target && e.target.id === 'shortcuts-close-btn') {
+            toggleShortcutsPanel(false);
+        }
+    });
+
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
+        // ? toggles shortcuts panel (when not typing)
+        if (e.key === '?' && !isTypingTarget(e.target)) {
+            e.preventDefault();
+            toggleShortcutsPanel();
+            return;
+        }
+
+        // Esc closes shortcuts panel
+        if (e.key === 'Escape') {
+            toggleShortcutsPanel(false);
+        }
+
         // Ctrl+Z or Cmd+Z: Undo
         if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
             e.preventDefault();

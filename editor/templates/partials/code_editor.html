@@ -5,7 +5,7 @@
         id="dot-textarea"
         name="dot"
         rows="30"
-        hx-post="/sessions/{{.SessionID}}/dot"
+        hx-post="{{.BasePath}}/sessions/{{.SessionID}}/dot"
         hx-trigger="input changed delay:500ms"
         hx-target="#editor-panels"
         hx-swap="none">{{.Session.RawDOT}}</textarea>

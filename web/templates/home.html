@@ -1,37 +1,124 @@
 {{define "content"}}
-<h1>Welcome to mammoth</h1>
-<p style="color: var(--text-muted); margin-bottom: 2rem;">
-    Build attractor pipelines from idea to execution.
-</p>
+<style>
+    .home-shell {
+        display: grid;
+        gap: 16px;
+    }
+    .home-hero {
+        position: relative;
+        overflow: hidden;
+        border-radius: var(--radius-2xl);
+        border: 1px solid color-mix(in srgb, var(--border) 86%, #14b8a6 14%);
+        background:
+            radial-gradient(circle at 84% 18%, color-mix(in srgb, #22d3ee 18%, transparent), transparent 40%),
+            radial-gradient(circle at 20% 0%, color-mix(in srgb, #34d399 14%, transparent), transparent 34%),
+            linear-gradient(150deg, color-mix(in srgb, var(--bg-card) 82%, #f8fafc 18%), var(--bg-card));
+        box-shadow: 0 24px 65px color-mix(in srgb, #0f172a 10%, transparent);
+        padding: 22px 24px;
+    }
+    .home-hero-title {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: clamp(1.7rem, 3.5vw, 2.4rem);
+        line-height: 1.06;
+        letter-spacing: 0.01em;
+    }
+    .home-hero-copy {
+        margin: 10px 0 0 0;
+        max-width: 70ch;
+        color: var(--text-secondary);
+        font-size: 14px;
+    }
+    .home-cards {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+    }
+    .home-card {
+        text-decoration: none;
+        color: inherit;
+        border-radius: var(--radius-2xl);
+        border: 1px solid var(--border);
+        background: var(--bg-card);
+        box-shadow: 0 14px 35px color-mix(in srgb, #0f172a 7%, transparent);
+        padding: 16px;
+        display: grid;
+        gap: 8px;
+        transition: transform 180ms ease, border-color 180ms ease;
+    }
+    .home-card:hover {
+        transform: translateY(-1px);
+        border-color: color-mix(in srgb, var(--border) 70%, #06b6d4 30%);
+    }
+    .home-card h3 {
+        margin: 0;
+    }
+    .home-card p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 13px;
+    }
+    .home-projects {
+        display: grid;
+        gap: 10px;
+    }
+    .home-project-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        text-decoration: none;
+        color: inherit;
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg-card) 92%, #fff 8%);
+        padding: 12px 14px;
+    }
+    .home-project-row:hover {
+        border-color: color-mix(in srgb, var(--border) 74%, #0ea5e9 26%);
+    }
+    @media (max-width: 980px) {
+        .home-cards {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
 
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem;">
-    <a href="/projects/new" class="card" style="text-decoration: none; color: inherit;">
-        <h3>New from Idea</h3>
-        <p>Describe what you want to build and let mammoth generate the pipeline spec.</p>
-    </a>
-    <a href="/projects/new?mode=dot" class="card" style="text-decoration: none; color: inherit;">
-        <h3>Upload DOT</h3>
-        <p>Already have a DOT pipeline definition? Upload it and start editing.</p>
-    </a>
-</div>
+<section class="home-shell">
+    <section class="home-hero">
+        <h1 class="home-hero-title">Welcome to mammoth</h1>
+        <p class="home-hero-copy">Design, refine, and run production-grade workflows from a plain-language prompt or an imported spec.</p>
+    </section>
 
-<h2 style="margin-bottom: 1rem;">Recent Projects</h2>
+    <section class="home-cards">
+        <a href="/projects/new" class="home-card">
+            <h3>Start New Project</h3>
+            <p>Kick off from a product prompt, then refine in Spec, inspect in DOT, and execute with live pipeline telemetry.</p>
+        </a>
+        <a href="/projects/new" class="home-card">
+            <h3>Import Existing Work</h3>
+            <p>Upload DOT/spec files and continue editing without losing structure, diagnostics, or run visibility.</p>
+        </a>
+    </section>
 
-{{if .Projects}}
-<div>
-    {{range .Projects}}
-    <a href="/projects/{{.ID}}" class="card" style="display: flex; align-items: center; justify-content: space-between; text-decoration: none; color: inherit;">
-        <div>
-            <h3>{{.Name}}</h3>
-            <p>Created {{.CreatedAt.Format "Jan 2, 2006"}}</p>
-        </div>
-        <span class="phase-badge phase-{{.Phase}}">{{.Phase}}</span>
-    </a>
+    <h2 style="margin: 8px 0 0 0; font-family: var(--font-display);">Recent Projects</h2>
+
+    {{if .Projects}}
+    <section class="home-projects">
+        {{range .Projects}}
+        <a href="/projects/{{.ID}}" class="home-project-row">
+            <div class="web-stack" style="gap: 4px;">
+                <h3 style="margin: 0;">{{.Name}}</h3>
+                <p class="web-note">Created {{.CreatedAt.Format "Jan 2, 2006"}}</p>
+            </div>
+            <span class="web-phase-pill web-phase-{{.Phase}}">{{.Phase}}</span>
+        </a>
+        {{end}}
+    </section>
+    {{else}}
+    <div class="card">
+        <p>No projects yet. Start one above to begin.</p>
+    </div>
     {{end}}
-</div>
-{{else}}
-<div class="card">
-    <p>No projects yet. Create one above to get started.</p>
-</div>
-{{end}}
+</section>
 {{end}}

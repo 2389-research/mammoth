@@ -86,14 +86,24 @@ func ExportGraph(state *core.SpecState) *dot.Graph {
 		return c.CardType == "open_question"
 	})
 
-	// Determine which tasks have conditional language
-	var conditionalTasks []core.Card
-	var regularTasks []core.Card
+	// Split task cards into ordered segments: groups of regular tasks separated by
+	// conditional tasks. This preserves the original card ordering so conditionals
+	// appear at their natural position in the pipeline rather than always at the end.
+	type segment struct {
+		isConditional bool
+		cards         []core.Card
+	}
+	var segments []segment
 	for _, tc := range taskCards {
 		if hasConditionalLanguage(tc) {
-			conditionalTasks = append(conditionalTasks, tc)
+			segments = append(segments, segment{isConditional: true, cards: []core.Card{tc}})
 		} else {
-			regularTasks = append(regularTasks, tc)
+			// Accumulate consecutive regular tasks into one segment
+			if len(segments) > 0 && !segments[len(segments)-1].isConditional {
+				segments[len(segments)-1].cards = append(segments[len(segments)-1].cards, tc)
+			} else {
+				segments = append(segments, segment{isConditional: false, cards: []core.Card{tc}})
+			}
 		}
 	}
 
@@ -101,7 +111,7 @@ func ExportGraph(state *core.SpecState) *dot.Graph {
 	// Track the "last" set of node IDs that need to connect to the next section
 	var lastNodeIDs []string
 
-	if len(regularTasks) == 0 && len(conditionalTasks) == 0 {
+	if len(segments) == 0 {
 		// Empty spec: start -> implement -> exit
 		implNode := &dot.Node{
 			ID: "implement",
@@ -116,73 +126,106 @@ func ExportGraph(state *core.SpecState) *dot.Graph {
 		g.AddEdge(&dot.Edge{From: "start", To: "implement"})
 		lastNodeIDs = []string{"implement"}
 	} else {
-		// Analyze dependency structure among regular tasks
-		sequential, independent := classifyTasks(regularTasks)
+		// Track counters for unique node ID prefixes across segments
+		taskCounter := 0
+		indCounter := 0
+		condCounter := 0
 
-		if len(sequential) > 0 && len(independent) == 0 {
-			// All tasks form a sequential chain
-			lastNodeIDs = buildSequentialChain(g, sequential, "start")
-		} else if len(independent) > 0 && len(sequential) == 0 {
-			// All tasks are independent (parallel)
-			lastNodeIDs = buildParallelBranch(g, independent, "start")
-		} else {
-			// Mix of sequential and independent
-			// Sequential tasks first, then parallel for independents
-			if len(sequential) > 0 {
-				lastNodeIDs = buildSequentialChain(g, sequential, "start")
-			}
-			if len(independent) > 0 {
+		lastNodeIDs = []string{"start"}
+
+		for _, seg := range segments {
+			if seg.isConditional {
+				// Insert a conditional diamond node at this position in the pipeline
+				ct := seg.cards[0]
+				condID := fmt.Sprintf("condition_%d", condCounter)
+				condNode := &dot.Node{
+					ID: condID,
+					Attrs: map[string]string{
+						"shape": "diamond",
+						"type":  "conditional",
+						"label": truncatePrompt(ct.Title),
+					},
+				}
+				g.AddNode(condNode)
+
+				// Connect from last nodes
+				for _, prevID := range lastNodeIDs {
+					g.AddEdge(&dot.Edge{From: prevID, To: condID})
+				}
+
+				// Conditional has success and fail branches
+				// Success goes forward, fail goes to exit
+				successID := fmt.Sprintf("cond_impl_%d", condCounter)
+				g.AddNode(&dot.Node{
+					ID: successID,
+					Attrs: map[string]string{
+						"shape":  "box",
+						"type":   "codergen",
+						"label":  truncatePrompt(ct.Title),
+						"prompt": synthesizePrompt(ct),
+					},
+				})
+				g.AddEdge(&dot.Edge{
+					From:  condID,
+					To:    successID,
+					Attrs: map[string]string{"label": "success", "condition": "outcome = SUCCESS"},
+				})
+				g.AddEdge(&dot.Edge{
+					From:  condID,
+					To:    "exit",
+					Attrs: map[string]string{"label": "fail", "condition": "outcome = FAIL"},
+				})
+
+				lastNodeIDs = []string{successID}
+				condCounter++
+			} else {
+				// Regular task group: classify into sequential and independent
+				sequential, independent := classifyTasks(seg.cards)
+
 				fromID := "start"
 				if len(lastNodeIDs) == 1 {
 					fromID = lastNodeIDs[0]
 				}
-				lastNodeIDs = buildParallelBranch(g, independent, fromID)
+
+				if len(sequential) > 0 && len(independent) == 0 {
+					// All tasks in this segment form a sequential chain
+					prefix := fmt.Sprintf("task_%d", taskCounter)
+					lastNodeIDs = buildSequentialChain(g, sequential, fromID, prefix)
+					taskCounter++
+				} else if len(independent) > 0 && len(sequential) == 0 {
+					// All tasks in this segment are independent (parallel)
+					lastNodeIDs = buildParallelBranchWithCounter(g, independent, fromID, &indCounter)
+				} else {
+					// Mix of sequential and independent within this segment
+					// Sequential chain from the current position; independent tasks fork
+					// from the same position. Both converge before downstream nodes.
+					seqPrefix := fmt.Sprintf("task_%d", taskCounter)
+					seqEndIDs := buildSequentialChain(g, sequential, fromID, seqPrefix)
+					taskCounter++
+					indEndIDs := buildParallelBranchWithCounter(g, independent, fromID, &indCounter)
+
+					// Merge both branches into a single set of last node IDs
+					mergedIDs := append(seqEndIDs, indEndIDs...)
+					if len(mergedIDs) > 1 {
+						mergeID := fmt.Sprintf("merge_%d", taskCounter)
+						g.AddNode(&dot.Node{
+							ID: mergeID,
+							Attrs: map[string]string{
+								"shape": "diamond",
+								"type":  "parallel.fan_in",
+								"label": "Merge",
+							},
+						})
+						for _, endID := range mergedIDs {
+							g.AddEdge(&dot.Edge{From: endID, To: mergeID})
+						}
+						lastNodeIDs = []string{mergeID}
+					} else {
+						lastNodeIDs = mergedIDs
+					}
+				}
 			}
 		}
-	}
-
-	// Add conditional diamond nodes for tasks with if/when language
-	for i, ct := range conditionalTasks {
-		condID := fmt.Sprintf("condition_%d", i)
-		condNode := &dot.Node{
-			ID: condID,
-			Attrs: map[string]string{
-				"shape": "diamond",
-				"type":  "conditional",
-				"label": truncatePrompt(ct.Title),
-			},
-		}
-		g.AddNode(condNode)
-
-		// Connect from last nodes
-		for _, prevID := range lastNodeIDs {
-			g.AddEdge(&dot.Edge{From: prevID, To: condID})
-		}
-
-		// Conditional has success and fail branches
-		// Success goes forward, fail goes to exit
-		successID := fmt.Sprintf("cond_impl_%d", i)
-		g.AddNode(&dot.Node{
-			ID: successID,
-			Attrs: map[string]string{
-				"shape":  "box",
-				"type":   "codergen",
-				"label":  truncatePrompt(ct.Title),
-				"prompt": synthesizePrompt(ct),
-			},
-		})
-		g.AddEdge(&dot.Edge{
-			From:  condID,
-			To:    successID,
-			Attrs: map[string]string{"label": "success", "condition": "outcome = SUCCESS"},
-		})
-		g.AddEdge(&dot.Edge{
-			From:  condID,
-			To:    "exit",
-			Attrs: map[string]string{"label": "fail", "condition": "outcome = FAIL"},
-		})
-
-		lastNodeIDs = []string{successID}
 	}
 
 	// Add verification gate if there are risk cards
@@ -453,10 +496,11 @@ func topoSortTasks(tasks []core.Card) []core.Card {
 }
 
 // buildSequentialChain adds nodes in sequence, returning the last node ID.
-func buildSequentialChain(g *dot.Graph, tasks []core.Card, fromID string) []string {
+// The prefix parameter controls node ID generation (e.g., "task" produces task_0, task_1).
+func buildSequentialChain(g *dot.Graph, tasks []core.Card, fromID string, prefix string) []string {
 	prevID := fromID
 	for i, t := range tasks {
-		nodeID := fmt.Sprintf("task_%d", i)
+		nodeID := fmt.Sprintf("%s_%d", prefix, i)
 		g.AddNode(&dot.Node{
 			ID: nodeID,
 			Attrs: map[string]string{
@@ -472,14 +516,17 @@ func buildSequentialChain(g *dot.Graph, tasks []core.Card, fromID string) []stri
 	return []string{prevID}
 }
 
-// buildParallelBranch adds a fork node, parallel task nodes, and a join node.
-func buildParallelBranch(g *dot.Graph, tasks []core.Card, fromID string) []string {
+// buildParallelBranchWithCounter adds a fork node, parallel task nodes, and a join node.
+// The counter parameter generates unique node IDs across multiple calls.
+func buildParallelBranchWithCounter(g *dot.Graph, tasks []core.Card, fromID string, counter *int) []string {
 	if len(tasks) == 1 {
 		// Single independent task doesn't need fork/join
-		return buildSequentialChain(g, tasks, fromID)
+		prefix := fmt.Sprintf("ind_%d", *counter)
+		*counter++
+		return buildSequentialChain(g, tasks, fromID, prefix)
 	}
 
-	forkID := "fork"
+	forkID := fmt.Sprintf("fork_%d", *counter)
 	g.AddNode(&dot.Node{
 		ID: forkID,
 		Attrs: map[string]string{
@@ -490,7 +537,7 @@ func buildParallelBranch(g *dot.Graph, tasks []core.Card, fromID string) []strin
 	})
 	g.AddEdge(&dot.Edge{From: fromID, To: forkID})
 
-	joinID := "join"
+	joinID := fmt.Sprintf("join_%d", *counter)
 	g.AddNode(&dot.Node{
 		ID: joinID,
 		Attrs: map[string]string{
@@ -501,7 +548,7 @@ func buildParallelBranch(g *dot.Graph, tasks []core.Card, fromID string) []strin
 	})
 
 	for i, t := range tasks {
-		nodeID := fmt.Sprintf("par_%d", i)
+		nodeID := fmt.Sprintf("par_%d_%d", *counter, i)
 		g.AddNode(&dot.Node{
 			ID: nodeID,
 			Attrs: map[string]string{
@@ -515,6 +562,7 @@ func buildParallelBranch(g *dot.Graph, tasks []core.Card, fromID string) []strin
 		g.AddEdge(&dot.Edge{From: nodeID, To: joinID})
 	}
 
+	*counter++
 	return []string{joinID}
 }
 

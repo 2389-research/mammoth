@@ -12,19 +12,19 @@ import (
 
 // validShapes is the set of recognized DOT shape values for pipeline nodes.
 var validShapes = map[string]bool{
-	"Mdiamond":       true,
-	"Msquare":        true,
-	"box":            true,
-	"diamond":        true,
-	"hexagon":        true,
-	"parallelogram":  true,
-	"component":      true,
-	"ellipse":        true,
-	"circle":         true,
-	"doublecircle":   true,
-	"plaintext":      true,
-	"record":         true,
-	"oval":           true,
+	"Mdiamond":      true,
+	"Msquare":       true,
+	"box":           true,
+	"diamond":       true,
+	"hexagon":       true,
+	"parallelogram": true,
+	"component":     true,
+	"ellipse":       true,
+	"circle":        true,
+	"doublecircle":  true,
+	"plaintext":     true,
+	"record":        true,
+	"oval":          true,
 }
 
 // validFidelities is the set of recognized fidelity mode strings.

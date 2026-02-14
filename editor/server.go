@@ -14,14 +14,18 @@ import (
 
 // TemplateData holds the data passed to HTML templates for rendering pages and partials.
 type TemplateData struct {
-	Session   *Session
-	SessionID string
-	Error     string
+	Session        *Session
+	SessionID      string
+	BasePath       string
+	ProjectPath    string
+	BuildStartPath string
+	Error          string
 }
 
 // NodeEditData holds the data passed to the node_edit_form template partial.
 type NodeEditData struct {
 	SessionID string
+	BasePath  string
 	NodeID    string
 	Node      *dot.Node
 }
@@ -29,6 +33,7 @@ type NodeEditData struct {
 // EdgeEditData holds the data passed to the edge_edit_form template partial.
 type EdgeEditData struct {
 	SessionID string
+	BasePath  string
 	EdgeID    string
 	Edge      *dot.Edge
 }

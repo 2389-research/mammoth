@@ -6,7 +6,7 @@
     <div class="quick-start">
         <h3>Quick Start Examples</h3>
         <div class="example-buttons">
-            <form method="POST" action="/sessions" class="example-form">
+            <form method="POST" action="{{.BasePath}}/sessions" class="example-form">
                 <input type="hidden" name="dot" value="digraph simple {
     start [shape=Mdiamond, label=&quot;Start&quot;]
     process [shape=box, prompt=&quot;Process data&quot;, label=&quot;Process&quot;]
@@ -16,7 +16,7 @@
 }">
                 <button type="submit">Simple Pipeline</button>
             </form>
-            <form method="POST" action="/sessions" class="example-form">
+            <form method="POST" action="{{.BasePath}}/sessions" class="example-form">
                 <input type="hidden" name="dot" value="digraph conditional {
     start [shape=Mdiamond, label=&quot;Start&quot;]
     analyze [shape=box, prompt=&quot;Analyze input&quot;, label=&quot;Analyze&quot;]
@@ -33,7 +33,7 @@
 }">
                 <button type="submit">Conditional Pipeline</button>
             </form>
-            <form method="POST" action="/sessions" class="example-form">
+            <form method="POST" action="{{.BasePath}}/sessions" class="example-form">
                 <input type="hidden" name="dot" value="digraph complex {
     start [shape=Mdiamond, label=&quot;Start&quot;]
     fetch [shape=box, prompt=&quot;Fetch data&quot;, label=&quot;Fetch&quot;]
@@ -59,7 +59,7 @@
         <span>or</span>
     </div>
 
-    <form method="POST" action="/sessions" enctype="multipart/form-data" id="upload-form">
+    <form method="POST" action="{{.BasePath}}/sessions" enctype="multipart/form-data" id="upload-form">
         <div class="form-group">
             <label for="dot">Paste DOT source:</label>
             <textarea name="dot" id="dot" rows="10" placeholder="digraph example { ... }"></textarea>

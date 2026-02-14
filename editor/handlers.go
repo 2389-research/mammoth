@@ -14,9 +14,30 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+const basePathHeader = "X-Mammoth-Editor-Base-Path"
+const projectPathHeader = "X-Mammoth-Project-Path"
+const buildStartPathHeader = "X-Mammoth-Build-Start-Path"
+
+func basePathFromRequest(r *http.Request) string {
+	base := strings.TrimSpace(r.Header.Get(basePathHeader))
+	base = strings.TrimSuffix(base, "/")
+	if base == "/" {
+		return ""
+	}
+	return base
+}
+
+func templateDataFromRequest(r *http.Request) TemplateData {
+	return TemplateData{
+		BasePath:       basePathFromRequest(r),
+		ProjectPath:    strings.TrimSpace(r.Header.Get(projectPathHeader)),
+		BuildStartPath: strings.TrimSpace(r.Header.Get(buildStartPathHeader)),
+	}
+}
+
 // handleLanding renders the landing page with the upload form.
 func (s *Server) handleLanding(w http.ResponseWriter, r *http.Request) {
-	data := TemplateData{}
+	data := templateDataFromRequest(r)
 	s.renderPage(w, data, http.StatusOK)
 }
 
@@ -66,7 +87,8 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/sessions/"+sess.ID, http.StatusSeeOther)
+	base := basePathFromRequest(r)
+	http.Redirect(w, r, base+"/sessions/"+sess.ID, http.StatusSeeOther)
 }
 
 // handleEditorPage renders the editor for an existing session.
@@ -78,14 +100,22 @@ func (s *Server) handleEditorPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sess.RLock()
+	defer sess.RUnlock()
+
 	data := TemplateData{
 		Session:   sess,
 		SessionID: id,
 	}
+	reqData := templateDataFromRequest(r)
+	data.BasePath = reqData.BasePath
+	data.ProjectPath = reqData.ProjectPath
+	data.BuildStartPath = reqData.BuildStartPath
 	s.renderEditor(w, data, http.StatusOK)
 }
 
 // handleExport returns the raw DOT as a downloadable file.
+// Sanitizes the graph name for use as a filename to prevent path traversal and injection.
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	sess, ok := s.store.Get(id)
@@ -94,15 +124,15 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filename := sess.Graph.Name + ".dot"
-	if sess.Graph.Name == "" {
-		filename = "graph.dot"
-	}
+	sess.RLock()
+	filename := sanitizeFilename(sess.Graph.Name)
+	rawDOT := sess.RawDOT
+	sess.RUnlock()
 
 	w.Header().Set("Content-Type", "text/vnd.graphviz")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(sess.RawDOT))
+	w.Write([]byte(rawDOT))
 }
 
 // handleValidate re-runs the linter and returns diagnostics.
@@ -123,10 +153,15 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 		Session:   sess,
 		SessionID: id,
 	}
+	reqData := templateDataFromRequest(r)
+	data.BasePath = reqData.BasePath
+	data.ProjectPath = reqData.ProjectPath
+	data.BuildStartPath = reqData.BuildStartPath
 	s.renderPartial(w, "diagnostics", data, http.StatusOK)
 }
 
 // handleUpdateDOT replaces the session's DOT source.
+// Enforces a 10MB body limit matching createSession.
 func (s *Server) handleUpdateDOT(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	sess, ok := s.store.Get(id)
@@ -135,18 +170,26 @@ func (s *Server) handleUpdateDOT(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enforce 10MB body limit to prevent oversized updates
+	const maxBodySize = 10 << 20
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
+
 	if err := r.ParseForm(); err != nil {
-		s.renderError(w, id, sess, "failed to parse form")
+		if err.Error() == "http: request body too large" {
+			http.Error(w, "Request body too large (max 10MB)", http.StatusRequestEntityTooLarge)
+			return
+		}
+		s.renderError(w, r, id, sess, "failed to parse form")
 		return
 	}
 	dotSource := r.FormValue("dot")
 
 	if err := sess.UpdateDOT(dotSource); err != nil {
-		s.renderError(w, id, sess, fmt.Sprintf("Update failed: %v", err))
+		s.renderError(w, r, id, sess, fmt.Sprintf("Update failed: %v", err))
 		return
 	}
 
-	s.renderAllPartials(w, id, sess)
+	s.renderAllPartials(w, r, id, sess)
 }
 
 // handleUpdateNode updates attributes on an existing node.
@@ -160,17 +203,17 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.renderError(w, id, sess, "failed to parse form")
+		s.renderError(w, r, id, sess, "failed to parse form")
 		return
 	}
 	attrs := extractAttrs(r)
 
 	if err := sess.UpdateNode(nodeID, attrs); err != nil {
-		s.renderError(w, id, sess, fmt.Sprintf("Update node failed: %v", err))
+		s.renderError(w, r, id, sess, fmt.Sprintf("Update node failed: %v", err))
 		return
 	}
 
-	s.renderAllPartials(w, id, sess)
+	s.renderAllPartials(w, r, id, sess)
 }
 
 // handleAddNode adds a new node to the graph.
@@ -183,18 +226,18 @@ func (s *Server) handleAddNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.renderError(w, id, sess, "failed to parse form")
+		s.renderError(w, r, id, sess, "failed to parse form")
 		return
 	}
 	nodeID := r.FormValue("id")
 	attrs := extractAttrs(r)
 
 	if err := sess.AddNode(nodeID, attrs); err != nil {
-		s.renderError(w, id, sess, fmt.Sprintf("Add node failed: %v", err))
+		s.renderError(w, r, id, sess, fmt.Sprintf("Add node failed: %v", err))
 		return
 	}
 
-	s.renderAllPartials(w, id, sess)
+	s.renderAllPartials(w, r, id, sess)
 }
 
 // handleDeleteNode removes a node and its connected edges.
@@ -208,11 +251,11 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := sess.RemoveNode(nodeID); err != nil {
-		s.renderError(w, id, sess, fmt.Sprintf("Delete node failed: %v", err))
+		s.renderError(w, r, id, sess, fmt.Sprintf("Delete node failed: %v", err))
 		return
 	}
 
-	s.renderAllPartials(w, id, sess)
+	s.renderAllPartials(w, r, id, sess)
 }
 
 // handleAddEdge adds a new edge between two nodes.
@@ -225,7 +268,7 @@ func (s *Server) handleAddEdge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.renderError(w, id, sess, "failed to parse form")
+		s.renderError(w, r, id, sess, "failed to parse form")
 		return
 	}
 	from := r.FormValue("from")
@@ -233,11 +276,11 @@ func (s *Server) handleAddEdge(w http.ResponseWriter, r *http.Request) {
 	attrs := extractAttrs(r)
 
 	if err := sess.AddEdge(from, to, attrs); err != nil {
-		s.renderError(w, id, sess, fmt.Sprintf("Add edge failed: %v", err))
+		s.renderError(w, r, id, sess, fmt.Sprintf("Add edge failed: %v", err))
 		return
 	}
 
-	s.renderAllPartials(w, id, sess)
+	s.renderAllPartials(w, r, id, sess)
 }
 
 // handleUpdateEdge updates attributes on an existing edge.
@@ -251,17 +294,17 @@ func (s *Server) handleUpdateEdge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.renderError(w, id, sess, "failed to parse form")
+		s.renderError(w, r, id, sess, "failed to parse form")
 		return
 	}
 	attrs := extractAttrs(r)
 
 	if err := sess.UpdateEdge(edgeID, attrs); err != nil {
-		s.renderError(w, id, sess, fmt.Sprintf("Update edge failed: %v", err))
+		s.renderError(w, r, id, sess, fmt.Sprintf("Update edge failed: %v", err))
 		return
 	}
 
-	s.renderAllPartials(w, id, sess)
+	s.renderAllPartials(w, r, id, sess)
 }
 
 // handleDeleteEdge removes an edge by its stable ID.
@@ -275,11 +318,11 @@ func (s *Server) handleDeleteEdge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := sess.RemoveEdge(edgeID); err != nil {
-		s.renderError(w, id, sess, fmt.Sprintf("Delete edge failed: %v", err))
+		s.renderError(w, r, id, sess, fmt.Sprintf("Delete edge failed: %v", err))
 		return
 	}
 
-	s.renderAllPartials(w, id, sess)
+	s.renderAllPartials(w, r, id, sess)
 }
 
 // handleUpdateGraphAttrs updates graph-level attributes.
@@ -292,17 +335,17 @@ func (s *Server) handleUpdateGraphAttrs(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.renderError(w, id, sess, "failed to parse form")
+		s.renderError(w, r, id, sess, "failed to parse form")
 		return
 	}
 	attrs := extractAttrs(r)
 
 	if err := sess.UpdateGraphAttrs(attrs); err != nil {
-		s.renderError(w, id, sess, fmt.Sprintf("Update attrs failed: %v", err))
+		s.renderError(w, r, id, sess, fmt.Sprintf("Update attrs failed: %v", err))
 		return
 	}
 
-	s.renderAllPartials(w, id, sess)
+	s.renderAllPartials(w, r, id, sess)
 }
 
 // handleUndo reverts the last mutation.
@@ -315,12 +358,17 @@ func (s *Server) handleUndo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := sess.Undo(); err != nil {
-		data := TemplateData{Session: sess, SessionID: id, Error: err.Error()}
+		sess.RLock()
+		data := templateDataFromRequest(r)
+		data.Session = sess
+		data.SessionID = id
+		data.Error = err.Error()
 		s.renderPartial(w, "diagnostics", data, http.StatusUnprocessableEntity)
+		sess.RUnlock()
 		return
 	}
 
-	s.renderAllPartials(w, id, sess)
+	s.renderAllPartials(w, r, id, sess)
 }
 
 // handleRedo reapplies a previously undone mutation.
@@ -333,12 +381,17 @@ func (s *Server) handleRedo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := sess.Redo(); err != nil {
-		data := TemplateData{Session: sess, SessionID: id, Error: err.Error()}
+		sess.RLock()
+		data := templateDataFromRequest(r)
+		data.Session = sess
+		data.SessionID = id
+		data.Error = err.Error()
 		s.renderPartial(w, "diagnostics", data, http.StatusUnprocessableEntity)
+		sess.RUnlock()
 		return
 	}
 
-	s.renderAllPartials(w, id, sess)
+	s.renderAllPartials(w, r, id, sess)
 }
 
 // handleNodeEditForm returns the node_edit_form partial for inline editing of a node.
@@ -351,6 +404,9 @@ func (s *Server) handleNodeEditForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sess.RLock()
+	defer sess.RUnlock()
+
 	node, found := sess.Graph.Nodes[nodeID]
 	if !found {
 		http.NotFound(w, r)
@@ -359,6 +415,7 @@ func (s *Server) handleNodeEditForm(w http.ResponseWriter, r *http.Request) {
 
 	data := NodeEditData{
 		SessionID: id,
+		BasePath:  basePathFromRequest(r),
 		NodeID:    nodeID,
 		Node:      node,
 	}
@@ -375,6 +432,9 @@ func (s *Server) handleEdgeEditForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sess.RLock()
+	defer sess.RUnlock()
+
 	var edge *dot.Edge
 	for _, e := range sess.Graph.Edges {
 		if e.ID == edgeID {
@@ -389,10 +449,35 @@ func (s *Server) handleEdgeEditForm(w http.ResponseWriter, r *http.Request) {
 
 	data := EdgeEditData{
 		SessionID: id,
+		BasePath:  basePathFromRequest(r),
 		EdgeID:    edgeID,
 		Edge:      edge,
 	}
 	s.renderPartial(w, "edge_edit_form", data, http.StatusOK)
+}
+
+// sanitizeFilename strips path separators, control chars, and quotes from a graph name
+// to produce a safe filename. Falls back to "graph.dot" if the result is empty.
+func sanitizeFilename(name string) string {
+	if name == "" {
+		return "graph.dot"
+	}
+
+	// Strip path separators, control characters, and quotes
+	var b strings.Builder
+	for _, r := range name {
+		if r == '/' || r == '\\' || r == '"' || r == '\'' || r < 32 || r == 127 {
+			continue
+		}
+		b.WriteRune(r)
+	}
+
+	sanitized := strings.TrimSpace(b.String())
+	if sanitized == "" {
+		return "graph.dot"
+	}
+
+	return sanitized + ".dot"
 }
 
 // extractAttrs pulls key-value pairs from form data where keys are prefixed with "attr_".
@@ -430,11 +515,19 @@ func (s *Server) renderEditor(w http.ResponseWriter, data TemplateData, status i
 }
 
 // renderAllPartials renders all htmx partials concatenated for swap responses.
-func (s *Server) renderAllPartials(w http.ResponseWriter, sessionID string, sess *Session) {
+// Holds a read lock on the session to prevent concurrent map iteration panics.
+func (s *Server) renderAllPartials(w http.ResponseWriter, r *http.Request, sessionID string, sess *Session) {
+	sess.RLock()
+	defer sess.RUnlock()
+
 	data := TemplateData{
 		Session:   sess,
 		SessionID: sessionID,
 	}
+	reqData := templateDataFromRequest(r)
+	data.BasePath = reqData.BasePath
+	data.ProjectPath = reqData.ProjectPath
+	data.BuildStartPath = reqData.BuildStartPath
 
 	var buf bytes.Buffer
 	partials := []string{"code_editor", "graph_viewer", "property_panel", "diagnostics"}
@@ -463,12 +556,20 @@ func (s *Server) renderPartial(w http.ResponseWriter, name string, data interfac
 }
 
 // renderError renders partials with an error message and a 422 status.
-func (s *Server) renderError(w http.ResponseWriter, sessionID string, sess *Session, errMsg string) {
+// Holds a read lock on the session to prevent concurrent map iteration panics.
+func (s *Server) renderError(w http.ResponseWriter, r *http.Request, sessionID string, sess *Session, errMsg string) {
+	sess.RLock()
+	defer sess.RUnlock()
+
 	data := TemplateData{
 		Session:   sess,
 		SessionID: sessionID,
 		Error:     errMsg,
 	}
+	reqData := templateDataFromRequest(r)
+	data.BasePath = reqData.BasePath
+	data.ProjectPath = reqData.ProjectPath
+	data.BuildStartPath = reqData.BuildStartPath
 	w.WriteHeader(http.StatusUnprocessableEntity)
 
 	var buf bytes.Buffer

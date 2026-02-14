@@ -100,11 +100,12 @@ func (p CardCreatedPayload) eventPayloadSeal()        {}
 // CardUpdatedPayload indicates a card was updated.
 // Body uses OptionalField for 3-state semantics.
 type CardUpdatedPayload struct {
-	CardID   ulid.ULID             `json:"card_id"`
-	Title    *string               `json:"title,omitempty"`
-	Body     OptionalField[string] `json:"-"` // Custom marshal
-	CardType *string               `json:"card_type,omitempty"`
-	Refs     *[]string             `json:"refs,omitempty"`
+	CardID    ulid.ULID             `json:"card_id"`
+	Title     *string               `json:"title,omitempty"`
+	Body      OptionalField[string] `json:"-"` // Custom marshal
+	CardType  *string               `json:"card_type,omitempty"`
+	Refs      *[]string             `json:"refs,omitempty"`
+	UpdatedBy string                `json:"updated_by,omitempty"`
 }
 
 func (p CardUpdatedPayload) EventPayloadType() string { return "CardUpdated" }
@@ -112,19 +113,21 @@ func (p CardUpdatedPayload) eventPayloadSeal()        {}
 
 // cardUpdatedJSON is the wire format for CardUpdatedPayload.
 type cardUpdatedJSON struct {
-	Type     string           `json:"type"`
-	CardID   ulid.ULID        `json:"card_id"`
-	Title    *string          `json:"title,omitempty"`
-	Body     *json.RawMessage `json:"body,omitempty"`
-	CardType *string          `json:"card_type,omitempty"`
-	Refs     *[]string        `json:"refs,omitempty"`
+	Type      string           `json:"type"`
+	CardID    ulid.ULID        `json:"card_id"`
+	Title     *string          `json:"title,omitempty"`
+	Body      *json.RawMessage `json:"body,omitempty"`
+	CardType  *string          `json:"card_type,omitempty"`
+	Refs      *[]string        `json:"refs,omitempty"`
+	UpdatedBy string           `json:"updated_by,omitempty"`
 }
 
 // CardMovedPayload indicates a card was moved to a new lane/position.
 type CardMovedPayload struct {
-	CardID ulid.ULID `json:"card_id"`
-	Lane   string    `json:"lane"`
-	Order  float64   `json:"order"`
+	CardID    ulid.ULID `json:"card_id"`
+	Lane      string    `json:"lane"`
+	Order     float64   `json:"order"`
+	UpdatedBy string    `json:"updated_by,omitempty"`
 }
 
 func (p CardMovedPayload) EventPayloadType() string { return "CardMoved" }
@@ -132,7 +135,8 @@ func (p CardMovedPayload) eventPayloadSeal()        {}
 
 // CardDeletedPayload indicates a card was removed.
 type CardDeletedPayload struct {
-	CardID ulid.ULID `json:"card_id"`
+	CardID    ulid.ULID `json:"card_id"`
+	UpdatedBy string    `json:"updated_by,omitempty"`
 }
 
 func (p CardDeletedPayload) EventPayloadType() string { return "CardDeleted" }
@@ -269,11 +273,12 @@ func UnmarshalEventPayload(data []byte) (EventPayload, error) {
 
 func marshalCardUpdated(p CardUpdatedPayload) ([]byte, error) {
 	j := cardUpdatedJSON{
-		Type:     "CardUpdated",
-		CardID:   p.CardID,
-		Title:    p.Title,
-		CardType: p.CardType,
-		Refs:     p.Refs,
+		Type:      "CardUpdated",
+		CardID:    p.CardID,
+		Title:     p.Title,
+		CardType:  p.CardType,
+		Refs:      p.Refs,
+		UpdatedBy: p.UpdatedBy,
 	}
 	if p.Body.Set {
 		if p.Body.Valid {
@@ -297,10 +302,11 @@ func unmarshalCardUpdated(data []byte) (CardUpdatedPayload, error) {
 	}
 
 	p := CardUpdatedPayload{
-		CardID:   j.CardID,
-		Title:    j.Title,
-		CardType: j.CardType,
-		Refs:     j.Refs,
+		CardID:    j.CardID,
+		Title:     j.Title,
+		CardType:  j.CardType,
+		Refs:      j.Refs,
+		UpdatedBy: j.UpdatedBy,
 	}
 
 	// Check the raw JSON map to distinguish absent body from null body,

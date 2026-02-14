@@ -87,6 +87,8 @@ func (t *WriteCommandsTool) Execute(_ context.Context, params map[string]any) (*
 			continue
 		}
 
+		cmd = enforceCommandIdentity(cmd, t.AgentID)
+
 		events, err := t.Actor.SendCommand(cmd)
 		if err != nil {
 			log.Printf("agent %s: command %d execution failed: %v", t.AgentID, i, err)
@@ -106,6 +108,31 @@ func (t *WriteCommandsTool) Execute(_ context.Context, params map[string]any) (*
 	}
 
 	return tool.NewResult("write_commands", true, summary, ""), nil
+}
+
+// enforceCommandIdentity overrides identity fields (CreatedBy, UpdatedBy, Sender)
+// on commands to the given agent ID. This prevents the LLM from spoofing
+// identity or omitting audit fields.
+func enforceCommandIdentity(cmd core.Command, agentID string) core.Command {
+	switch c := cmd.(type) {
+	case core.CreateCardCommand:
+		c.CreatedBy = agentID
+		return c
+	case core.UpdateCardCommand:
+		c.UpdatedBy = agentID
+		return c
+	case core.MoveCardCommand:
+		c.UpdatedBy = agentID
+		return c
+	case core.DeleteCardCommand:
+		c.UpdatedBy = agentID
+		return c
+	case core.AppendTranscriptCommand:
+		c.Sender = agentID
+		return c
+	default:
+		return cmd
+	}
 }
 
 // joinStrings joins strings with a separator.

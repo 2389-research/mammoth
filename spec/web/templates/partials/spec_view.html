@@ -7,7 +7,7 @@
     <div class="command-bar-left">
         <span class="command-bar-title">{{ .Title }}</span>
         <span class="command-bar-chevron">&#8250;</span>
-        <span class="command-bar-subtitle">{{ .OneLiner }}</span>
+        <span class="command-bar-subtitle">{{ if .OneLiner }}{{ .OneLiner }}{{ else }}Refine this spec with cards, decisions, and constraints.{{ end }}</span>
     </div>
     <div class="view-toggles-capsule">
         <button class="view-toggle active" data-view="document"
@@ -54,6 +54,28 @@
 </div>
 
 <script>
+    (function() {
+        var canvas = document.getElementById('canvas');
+        if (!canvas) return;
+
+        document.body.addEventListener('htmx:beforeRequest', function(evt) {
+            if (evt.detail && evt.detail.target && evt.detail.target.id === 'canvas') {
+                canvas.classList.add('spec-canvas-loading');
+            }
+        });
+
+        document.body.addEventListener('htmx:afterSwap', function(evt) {
+            if (evt.detail && evt.detail.target && evt.detail.target.id === 'canvas') {
+                canvas.classList.remove('spec-canvas-loading');
+                canvas.classList.remove('spec-canvas-enter');
+                // Force reflow so repeated swaps replay the animation.
+                void canvas.offsetWidth;
+                canvas.classList.add('spec-canvas-enter');
+                setTimeout(function() { canvas.classList.remove('spec-canvas-enter'); }, 220);
+            }
+        });
+    })();
+
     // View toggle active state management
     document.querySelectorAll('.view-toggles-capsule .view-toggle').forEach(function(btn) {
         btn.addEventListener('click', function() {

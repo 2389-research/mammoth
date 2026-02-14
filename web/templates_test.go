@@ -84,12 +84,9 @@ func TestHomeRender(t *testing.T) {
 
 	body := rec.Body.String()
 
-	// Should show the three entry paths.
-	if !strings.Contains(body, "New from Idea") {
-		t.Error("expected 'New from Idea' entry card")
-	}
-	if !strings.Contains(body, "Upload DOT") {
-		t.Error("expected 'Upload DOT' entry card")
+	// Should show start card.
+	if !strings.Contains(body, "Start New Project") {
+		t.Error("expected 'Start New Project' entry card")
 	}
 
 	// Should show project names.
@@ -151,9 +148,12 @@ func TestProjectNewRender(t *testing.T) {
 		t.Error("expected form action /projects")
 	}
 
-	// Should have name field.
-	if !strings.Contains(body, "name") {
-		t.Error("expected name field in form")
+	// Should have prompt and file-upload fields.
+	if !strings.Contains(body, "prompt") {
+		t.Error("expected prompt field in form")
+	}
+	if !strings.Contains(body, "import_file") {
+		t.Error("expected import_file field in form")
 	}
 }
 
@@ -174,9 +174,9 @@ func TestProjectNewRenderDOTMode(t *testing.T) {
 
 	body := rec.Body.String()
 
-	// In DOT mode, should have a textarea for DOT content.
-	if !strings.Contains(body, "dot") {
-		t.Error("expected DOT textarea in dot mode")
+	// DOT mode is now unified into the same prompt/file import form.
+	if !strings.Contains(body, "import_file") {
+		t.Error("expected file upload field in dot mode")
 	}
 }
 

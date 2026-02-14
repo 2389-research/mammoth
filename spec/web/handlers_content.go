@@ -317,7 +317,16 @@ func AnswerQuestion(state *server.AppState, renderer *TemplateRenderer) http.Han
 			return
 		}
 
-		answer := r.FormValue("answer")
+		// Use r.Form["answer"] to collect all selected values (checkboxes send
+		// multiple values with the same name). Join with commas for multi-select;
+		// fall back to the single value for radio/freeform inputs.
+		answers := r.Form["answer"]
+		var answer string
+		if len(answers) > 1 {
+			answer = strings.Join(answers, ",")
+		} else {
+			answer = r.FormValue("answer")
+		}
 
 		cmd := core.AnswerQuestionCommand{
 			QuestionID: questionID,

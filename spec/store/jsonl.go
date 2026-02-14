@@ -78,8 +78,8 @@ func ReplayJsonl(path string) ([]core.Event, error) {
 
 	var events []core.Event
 	scanner := bufio.NewScanner(file)
-	// Increase scanner buffer for potentially large event lines.
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	// Increase scanner buffer for potentially large event lines (10 MB max).
+	scanner.Buffer(make([]byte, 0, 64*1024), 10<<20)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -111,7 +111,8 @@ func RepairJsonl(path string) (int, error) {
 
 	var validLines []string
 	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	// Increase scanner buffer for potentially large event lines (10 MB max).
+	scanner.Buffer(make([]byte, 0, 64*1024), 10<<20)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
