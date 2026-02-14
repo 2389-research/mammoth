@@ -527,7 +527,7 @@ func wrapSpecHTML(inner, projectID string) string {
 		"</div>" +
 		inner +
 		"<script>(function(){var pid='" + html.EscapeString(projectID) + "';var el=document.getElementById('spec-shell-next-action');if(!el)return;" +
-		"function setAction(text,href,method){el.textContent=text;el.setAttribute('href',href||'#');if(method==='POST'){el.onclick=function(e){e.preventDefault();fetch(href,{method:'POST'}).then(function(){window.location.href='/projects/'+pid+'/editor';});};}else{el.onclick=null;}}" +
+		"function setAction(text,href,method){el.textContent=text;el.setAttribute('href',href||'#');if(method==='POST'){el.onclick=function(e){e.preventDefault();fetch(href,{method:'POST'}).then(function(resp){if(resp&&resp.ok){window.location.href='/projects/'+pid+'/editor';return;}window.location.href='/projects/'+pid;}).catch(function(){window.location.href='/projects/'+pid;});};}else{el.onclick=null;}}" +
 		"fetch('/projects/'+pid,{headers:{'Accept':'application/json'}}).then(function(r){return r.json();}).then(function(p){if(!p||!p.phase){return;}" +
 		"if(p.phase==='spec'){setAction('Generate DOT and continue', '/projects/'+pid+'/spec/continue','POST');return;}" +
 		"if(p.phase==='edit'){setAction('Open DOT editor', '/projects/'+pid+'/editor','GET');return;}" +

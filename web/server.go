@@ -99,6 +99,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		return nil, fmt.Errorf("resolving editor assets: %w", err)
 	}
 	editorStore := editor.NewStore(200, 24*time.Hour)
+	editorStore.StartCleanup(15 * time.Minute)
 	editorServer := editor.NewServer(editorStore, editorTemplateDir, editorStaticDir)
 
 	s := &Server{
@@ -731,7 +732,9 @@ func (s *Server) handleBuildState(w http.ResponseWriter, r *http.Request) {
 			if len(p.Diagnostics) > 0 {
 				resp.Status = "failed"
 			} else {
-				resp.Status = "running"
+				// Build phase can outlive in-memory run state after restarts.
+				// Without an active run object, report idle to avoid phantom running UI.
+				resp.Status = "idle"
 			}
 		case PhaseEdit:
 			resp.Status = "idle"
