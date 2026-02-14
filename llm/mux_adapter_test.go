@@ -15,11 +15,11 @@ import (
 // stubMuxClient implements muxllm.Client for testing without mocks.
 // It records the request and returns a preconfigured response.
 type stubMuxClient struct {
-	lastRequest    *muxllm.Request
-	response       *muxllm.Response
-	err            error
-	streamEvents   []muxllm.StreamEvent
-	streamErr      error
+	lastRequest  *muxllm.Request
+	response     *muxllm.Response
+	err          error
+	streamEvents []muxllm.StreamEvent
+	streamErr    error
 }
 
 func (s *stubMuxClient) CreateMessage(ctx context.Context, req *muxllm.Request) (*muxllm.Response, error) {
@@ -69,7 +69,7 @@ func TestMuxAdapter_Close(t *testing.T) {
 
 func TestConvertRequest_BasicTextMessages(t *testing.T) {
 	req := Request{
-		Model:    "claude-sonnet-4-20250514",
+		Model: "claude-sonnet-4-20250514",
 		Messages: []Message{
 			UserMessage("Hello"),
 			AssistantMessage("Hi there"),
@@ -257,7 +257,7 @@ func TestConvertRequest_ThinkingAndRedactedDropped(t *testing.T) {
 func TestConvertRequest_ToolDefinitions(t *testing.T) {
 	params := json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`)
 	req := Request{
-		Model: "test-model",
+		Model:    "test-model",
 		Messages: []Message{UserMessage("hello")},
 		Tools: []ToolDefinition{
 			{
@@ -415,9 +415,9 @@ func TestConvertResponse_WithToolCalls(t *testing.T) {
 
 func TestConvertResponse_StopReasonMapping(t *testing.T) {
 	tests := []struct {
-		muxReason    muxllm.StopReason
-		wantReason   string
-		wantRaw      string
+		muxReason  muxllm.StopReason
+		wantReason string
+		wantRaw    string
 	}{
 		{muxllm.StopReasonEndTurn, FinishStop, "end_turn"},
 		{muxllm.StopReasonToolUse, FinishToolCalls, "tool_use"},

@@ -206,12 +206,12 @@ func TestScenarioAutoResumeFindResumableWithFailedRun(t *testing.T) {
 	// Write a checkpoint in the run directory
 	cpPath := filepath.Join(store.baseDir, state.ID, "checkpoint.json")
 	cp := &Checkpoint{
-		Timestamp:     time.Now(),
-		CurrentNode:   "plan",
+		Timestamp:      time.Now(),
+		CurrentNode:    "plan",
 		CompletedNodes: []string{"start", "plan"},
-		NodeRetries:   map[string]int{},
-		ContextValues: map[string]any{"last_stage": "plan", "outcome": "success"},
-		Logs:          []string{},
+		NodeRetries:    map[string]int{},
+		ContextValues:  map[string]any{"last_stage": "plan", "outcome": "success"},
+		Logs:           []string{},
 	}
 	if err := cp.Save(cpPath); err != nil {
 		t.Fatalf("Save checkpoint failed: %v", err)
@@ -252,11 +252,11 @@ func TestScenarioAutoResumeCompletedRunNotResumed(t *testing.T) {
 
 	cpPath := filepath.Join(store.baseDir, state.ID, "checkpoint.json")
 	cp := &Checkpoint{
-		Timestamp:     time.Now(),
-		CurrentNode:   "implement",
+		Timestamp:      time.Now(),
+		CurrentNode:    "implement",
 		CompletedNodes: state.CompletedNodes,
-		NodeRetries:   map[string]int{},
-		ContextValues: map[string]any{},
+		NodeRetries:    map[string]int{},
+		ContextValues:  map[string]any{},
 	}
 	if err := cp.Save(cpPath); err != nil {
 		t.Fatalf("Save checkpoint failed: %v", err)
@@ -294,11 +294,11 @@ func TestScenarioAutoResumeChangedDOTFileStartsFresh(t *testing.T) {
 
 	cpPath := filepath.Join(store.baseDir, state.ID, "checkpoint.json")
 	cp := &Checkpoint{
-		Timestamp:     time.Now(),
-		CurrentNode:   "plan",
+		Timestamp:      time.Now(),
+		CurrentNode:    "plan",
 		CompletedNodes: []string{"start", "plan"},
-		NodeRetries:   map[string]int{},
-		ContextValues: map[string]any{},
+		NodeRetries:    map[string]int{},
+		ContextValues:  map[string]any{},
 	}
 	if err := cp.Save(cpPath); err != nil {
 		t.Fatalf("Save checkpoint failed: %v", err)
@@ -340,11 +340,11 @@ func TestScenarioAutoResumeMostRecentRunSelected(t *testing.T) {
 		t.Fatalf("Create older failed: %v", err)
 	}
 	olderCP := &Checkpoint{
-		Timestamp:     time.Now().Add(-1 * time.Hour),
-		CurrentNode:   "start",
+		Timestamp:      time.Now().Add(-1 * time.Hour),
+		CurrentNode:    "start",
 		CompletedNodes: []string{"start"},
-		NodeRetries:   map[string]int{},
-		ContextValues: map[string]any{},
+		NodeRetries:    map[string]int{},
+		ContextValues:  map[string]any{},
 	}
 	if err := olderCP.Save(filepath.Join(store.baseDir, older.ID, "checkpoint.json")); err != nil {
 		t.Fatalf("Save older checkpoint failed: %v", err)
@@ -365,11 +365,11 @@ func TestScenarioAutoResumeMostRecentRunSelected(t *testing.T) {
 		t.Fatalf("Create newer failed: %v", err)
 	}
 	newerCP := &Checkpoint{
-		Timestamp:     time.Now().Add(-5 * time.Minute),
-		CurrentNode:   "plan",
+		Timestamp:      time.Now().Add(-5 * time.Minute),
+		CurrentNode:    "plan",
 		CompletedNodes: []string{"start", "plan"},
-		NodeRetries:   map[string]int{},
-		ContextValues: map[string]any{},
+		NodeRetries:    map[string]int{},
+		ContextValues:  map[string]any{},
 	}
 	if err := newerCP.Save(filepath.Join(store.baseDir, newer.ID, "checkpoint.json")); err != nil {
 		t.Fatalf("Save newer checkpoint failed: %v", err)
@@ -641,11 +641,11 @@ func TestScenarioAutoResumeInterruptedRunStatus(t *testing.T) {
 
 	cpPath := filepath.Join(store.baseDir, state.ID, "checkpoint.json")
 	cp := &Checkpoint{
-		Timestamp:     time.Now().Add(-10 * time.Minute),
-		CurrentNode:   "plan",
+		Timestamp:      time.Now().Add(-10 * time.Minute),
+		CurrentNode:    "plan",
 		CompletedNodes: []string{"start", "plan"},
-		NodeRetries:   map[string]int{},
-		ContextValues: map[string]any{"outcome": "success"},
+		NodeRetries:    map[string]int{},
+		ContextValues:  map[string]any{"outcome": "success"},
 	}
 	if err := cp.Save(cpPath); err != nil {
 		t.Fatalf("Save checkpoint failed: %v", err)
@@ -685,11 +685,11 @@ func TestScenarioAutoResumeCancelledRunStatus(t *testing.T) {
 
 	cpPath := filepath.Join(store.baseDir, state.ID, "checkpoint.json")
 	cp := &Checkpoint{
-		Timestamp:     time.Now().Add(-5 * time.Minute),
-		CurrentNode:   "plan",
+		Timestamp:      time.Now().Add(-5 * time.Minute),
+		CurrentNode:    "plan",
 		CompletedNodes: []string{"start", "plan"},
-		NodeRetries:   map[string]int{},
-		ContextValues: map[string]any{"outcome": "success"},
+		NodeRetries:    map[string]int{},
+		ContextValues:  map[string]any{"outcome": "success"},
 	}
 	if err := cp.Save(cpPath); err != nil {
 		t.Fatalf("Save checkpoint failed: %v", err)

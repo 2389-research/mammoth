@@ -157,11 +157,11 @@ func TestAddMultipleEdges(t *testing.T) {
 
 func TestFindNode(t *testing.T) {
 	tests := []struct {
-		name     string
-		graph    *Graph
-		nodeID   string
-		wantNil  bool
-		wantID   string
+		name    string
+		graph   *Graph
+		nodeID  string
+		wantNil bool
+		wantID  string
 	}{
 		{
 			name:    "nil nodes map",
@@ -431,9 +431,9 @@ func TestNodeIDs(t *testing.T) {
 			name: "sorted output",
 			graph: &Graph{
 				Nodes: map[string]*Node{
-					"zebra":    {ID: "zebra"},
-					"alpha":    {ID: "alpha"},
-					"middle":   {ID: "middle"},
+					"zebra":  {ID: "zebra"},
+					"alpha":  {ID: "alpha"},
+					"middle": {ID: "middle"},
 				},
 			},
 			want: []string{"alpha", "middle", "zebra"},
