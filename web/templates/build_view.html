@@ -95,7 +95,7 @@
     .build-metrics {
         margin-top: 16px;
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
         gap: 10px;
     }
     .build-metric {
@@ -311,6 +311,14 @@
                 <p class="build-metric-label">Tool Calls</p>
                 <p id="metric-tool-calls" class="build-metric-value">0</p>
             </div>
+            <div class="build-metric">
+                <p class="build-metric-label">Elapsed</p>
+                <p id="metric-elapsed" class="build-metric-value">00:00</p>
+            </div>
+            <div class="build-metric">
+                <p class="build-metric-label">Last Activity</p>
+                <p id="metric-last-activity" class="build-metric-value">Waiting</p>
+            </div>
         </div>
     </section>
 
@@ -349,6 +357,8 @@
     var metricCompletedCount = document.getElementById('metric-completed-count');
     var metricConnection = document.getElementById('metric-connection');
     var metricToolCalls = document.getElementById('metric-tool-calls');
+    var metricElapsed = document.getElementById('metric-elapsed');
+    var metricLastActivity = document.getElementById('metric-last-activity');
     var statusPill = document.getElementById('build-status-pill');
     var statusText = document.getElementById('build-status-text');
     var connectionBadge = document.getElementById('connection-badge');
@@ -361,6 +371,11 @@
     var isTerminal = false;
     var toolCallsSeen = {};
     var toolCallCount = 0;
+    var shouldReconnect = false;
+    var elapsedTimer = null;
+    var activityTimer = null;
+    var startedAt = null;
+    var lastActivityAt = null;
 
     function setStatus(status) {
         statusPill.classList.remove('running', 'completed', 'failed', 'cancelled');
@@ -376,6 +391,12 @@
         }
         statusText.textContent = text;
         isTerminal = status === 'completed' || status === 'failed' || status === 'cancelled';
+        if (status === 'running') {
+            startElapsedTimer();
+        } else {
+            stopElapsedTimer();
+            stopActivityTimer();
+        }
     }
 
     function setConnection(state) {
@@ -396,7 +417,7 @@
     }
 
     function connectStream() {
-        if (isTerminal) {
+        if (isTerminal || !shouldReconnect) {
             return;
         }
         if (source) {
@@ -486,9 +507,15 @@
 
         source.onerror = function() {
             closeStream();
+            if (!shouldReconnect) {
+                setConnection('offline');
+                return;
+            }
             setConnection('reconnecting');
             refreshState();
-            scheduleReconnect();
+            if (shouldReconnect) {
+                scheduleReconnect();
+            }
         };
     }
 
@@ -514,10 +541,12 @@
             .then(function(r) { return r.json(); })
             .then(function(state) {
                 renderState(state);
-                if (state.active && !isTerminal && !source) {
+                shouldReconnect = Boolean(state && state.active && !isTerminal);
+                if (shouldReconnect && !source) {
                     connectStream();
                 }
-                if (!state.active && isTerminal) {
+                if (!shouldReconnect) {
+                    closeStream();
                     setConnection('offline');
                 }
             })
@@ -534,6 +563,13 @@
             setStatus(state.status);
         }
         if (state.run_state) {
+            if (state.run_state.started_at) {
+                var parsedStart = new Date(state.run_state.started_at);
+                if (!Number.isNaN(parsedStart.getTime())) {
+                    startedAt = parsedStart;
+                    updateElapsedMetric();
+                }
+            }
             if (state.run_state.current_node) {
                 metricCurrentNode.textContent = state.run_state.current_node;
             }
@@ -663,6 +699,8 @@
         if (!text) {
             return;
         }
+        lastActivityAt = new Date();
+        updateLastActivityMetric();
         if (eventsDiv.querySelector('.build-empty')) {
             eventsDiv.innerHTML = '';
         }
@@ -690,8 +728,68 @@
         eventsDiv.scrollTop = eventsDiv.scrollHeight;
     }
 
+    function startElapsedTimer() {
+        if (!startedAt) {
+            startedAt = new Date();
+        }
+        if (elapsedTimer) {
+            return;
+        }
+        updateElapsedMetric();
+        elapsedTimer = setInterval(updateElapsedMetric, 1000);
+        startActivityTimer();
+    }
+
+    function stopElapsedTimer() {
+        if (!elapsedTimer) {
+            return;
+        }
+        clearInterval(elapsedTimer);
+        elapsedTimer = null;
+    }
+
+    function startActivityTimer() {
+        if (activityTimer) {
+            return;
+        }
+        updateLastActivityMetric();
+        activityTimer = setInterval(updateLastActivityMetric, 1000);
+    }
+
+    function stopActivityTimer() {
+        if (!activityTimer) {
+            return;
+        }
+        clearInterval(activityTimer);
+        activityTimer = null;
+    }
+
+    function updateElapsedMetric() {
+        if (!startedAt) {
+            metricElapsed.textContent = '00:00';
+            return;
+        }
+        var seconds = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
+        var mins = Math.floor(seconds / 60);
+        var secs = seconds % 60;
+        metricElapsed.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+    }
+
+    function updateLastActivityMetric() {
+        if (!lastActivityAt) {
+            metricLastActivity.textContent = 'Waiting';
+            return;
+        }
+        var seconds = Math.max(0, Math.floor((Date.now() - lastActivityAt.getTime()) / 1000));
+        if (seconds < 5) {
+            metricLastActivity.textContent = 'Just now';
+            return;
+        }
+        metricLastActivity.textContent = seconds + 's ago';
+    }
+
     refreshState();
-    connectStream();
+    startActivityTimer();
 })();
 </script>
 {{end}}

@@ -442,6 +442,54 @@ func TestBuildStateFromProjectFallback(t *testing.T) {
 	}
 }
 
+func TestBuildStateResumesPendingBuild(t *testing.T) {
+	srv := newTestServer(t)
+
+	p, err := srv.store.Create("state-resume")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	p.Phase = PhaseBuild
+	p.RunID = "resume-run-1"
+	p.DOT = validTestDOT
+	p.Diagnostics = nil
+	if err := srv.store.Update(p); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/"+p.ID+"/build/state", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var body struct {
+		Active bool   `json:"active"`
+		Status string `json:"status"`
+		RunID  string `json:"run_id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.RunID != "resume-run-1" {
+		t.Fatalf("expected run_id resume-run-1, got %q", body.RunID)
+	}
+	if !body.Active && body.Status == "idle" {
+		t.Fatalf("expected pending build to be resumed, got idle inactive state")
+	}
+
+	srv.buildsMu.RLock()
+	run := srv.builds[p.ID]
+	srv.buildsMu.RUnlock()
+	if run == nil || run.State == nil || run.State.ID != "resume-run-1" {
+		t.Fatalf("expected in-memory resumed run with ID resume-run-1")
+	}
+
+	waitForBuildToSettle(t, srv, p.ID, 2*time.Second)
+}
+
 func TestBuildStop(t *testing.T) {
 	srv := newTestServer(t)
 

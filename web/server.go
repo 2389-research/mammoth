@@ -527,7 +527,45 @@ func (s *Server) handleBuildStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create the build run with a cancellable context.
+	s.startBuildExecution(projectID, p, runID, false)
+
+	http.Redirect(w, r, "/projects/"+projectID+"/build", http.StatusSeeOther)
+}
+
+// stopProjectSpecSwarm stops the project's spec swarm if one is running.
+func (s *Server) stopProjectSpecSwarm(p *Project) {
+	if p == nil || p.SpecID == "" {
+		return
+	}
+	specID, err := ulid.Parse(p.SpecID)
+	if err != nil {
+		log.Printf("stop spec swarm: invalid spec id %q: %v", p.SpecID, err)
+		return
+	}
+	s.specState.StopSwarm(specID)
+}
+
+// maybeResumeBuild restarts a pending build-phase project after process restart.
+// A project is considered pending when it is in build phase, has a run ID, and
+// has no terminal diagnostics persisted yet.
+func (s *Server) maybeResumeBuild(projectID string, p *Project) {
+	if p == nil || p.Phase != PhaseBuild || p.RunID == "" || len(p.Diagnostics) > 0 {
+		return
+	}
+	s.buildsMu.RLock()
+	existing, exists := s.builds[projectID]
+	s.buildsMu.RUnlock()
+	if exists && existing != nil && existing.State != nil && existing.State.Status == "running" {
+		return
+	}
+	log.Printf("build resume: restarting pending build for project %s (run=%s)", projectID, p.RunID)
+	s.startBuildExecution(projectID, p, p.RunID, true)
+}
+
+// startBuildExecution creates in-memory run tracking and launches the engine.
+// When resumeFromCheckpoint is true, it attempts ResumeFromCheckpoint using the
+// run's checkpoint file and falls back to a fresh Run when unavailable.
+func (s *Server) startBuildExecution(projectID string, p *Project, runID string, resumeFromCheckpoint bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	events := make(chan SSEEvent, 100)
 	now := time.Now()
@@ -550,16 +588,16 @@ func (s *Server) handleBuildStart(w http.ResponseWriter, r *http.Request) {
 	s.builds[projectID] = run
 	s.buildsMu.Unlock()
 
-	// Create the attractor engine and start it in a background goroutine.
 	artifactDir := filepath.Join(s.dataDir, projectID, "artifacts", runID)
+	checkpointPath := filepath.Join(artifactDir, "checkpoint.json")
 	engine := attractor.NewEngine(attractor.EngineConfig{
-		ArtifactDir: artifactDir,
-		RunID:       runID,
-		Backend:     detectBackendFromEnv(false),
+		ArtifactDir:        artifactDir,
+		RunID:              runID,
+		AutoCheckpointPath: checkpointPath,
+		Backend:            detectBackendFromEnv(false),
 		EventHandler: func(evt attractor.EngineEvent) {
 			sseEvt := engineEventToSSE(evt)
 
-			// Update run state based on event type.
 			s.buildsMu.Lock()
 			if evt.NodeID != "" {
 				state.CurrentNode = evt.NodeID
@@ -569,7 +607,6 @@ func (s *Server) handleBuildStart(w http.ResponseWriter, r *http.Request) {
 			}
 			s.buildsMu.Unlock()
 
-			// Send to channel; drop if channel is full to avoid blocking the engine.
 			select {
 			case events <- sseEvt:
 			default:
@@ -593,7 +630,22 @@ func (s *Server) handleBuildStart(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 
-		_, runErr := engine.Run(ctx, p.DOT)
+		var runErr error
+		if resumeFromCheckpoint {
+			if _, err := os.Stat(checkpointPath); err == nil {
+				graph, parseErr := attractor.Parse(p.DOT)
+				if parseErr != nil {
+					runErr = fmt.Errorf("parse DOT for resume: %w", parseErr)
+				} else {
+					_, runErr = engine.ResumeFromCheckpoint(ctx, graph, checkpointPath)
+				}
+			} else {
+				log.Printf("build resume: checkpoint not found for project %s run=%s; starting fresh", projectID, runID)
+				_, runErr = engine.Run(ctx, p.DOT)
+			}
+		} else {
+			_, runErr = engine.Run(ctx, p.DOT)
+		}
 
 		s.buildsMu.Lock()
 		completedAt := time.Now()
@@ -611,21 +663,6 @@ func (s *Server) handleBuildStart(w http.ResponseWriter, r *http.Request) {
 		s.buildsMu.Unlock()
 		s.persistBuildOutcome(projectID, state)
 	}()
-
-	http.Redirect(w, r, "/projects/"+projectID+"/build", http.StatusSeeOther)
-}
-
-// stopProjectSpecSwarm stops the project's spec swarm if one is running.
-func (s *Server) stopProjectSpecSwarm(p *Project) {
-	if p == nil || p.SpecID == "" {
-		return
-	}
-	specID, err := ulid.Parse(p.SpecID)
-	if err != nil {
-		log.Printf("stop spec swarm: invalid spec id %q: %v", p.SpecID, err)
-		return
-	}
-	s.specState.StopSwarm(specID)
 }
 
 // handleBuildView renders the build progress page for a project.
@@ -636,6 +673,7 @@ func (s *Server) handleBuildView(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "project not found", http.StatusNotFound)
 		return
 	}
+	s.maybeResumeBuild(projectID, p)
 
 	data := PageData{
 		Title:       p.Name + " - Build",
@@ -710,6 +748,7 @@ func (s *Server) handleBuildState(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "project not found", http.StatusNotFound)
 		return
 	}
+	s.maybeResumeBuild(projectID, p)
 
 	type buildStateResponse struct {
 		ProjectID   string     `json:"project_id"`

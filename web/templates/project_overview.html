@@ -105,7 +105,13 @@
             {{end}}
             {{if eq (lower (print .Project.Phase)) "build"}}
                 <div class="web-inline-actions">
-                    <a href="/projects/{{.Project.ID}}/build" class="btn btn-primary">View Build</a>
+                    <a href="/projects/{{.Project.ID}}/build" class="btn btn-primary">
+                        {{if .Project.RunID}}Continue Building{{else}}View Build{{end}}
+                    </a>
+                </div>
+            {{else if and (eq (lower (print .Project.Phase)) "done") .Project.RunID}}
+                <div class="web-inline-actions">
+                    <a href="/projects/{{.Project.ID}}/build" class="btn">View Last Build</a>
                 </div>
             {{else if not .Project.DOT}}
                 <div class="web-inline-actions">
