@@ -1,0 +1,62 @@
+/* ABOUTME: Project overview styles — hero, 3-column card grid, diagnostics. */
+/* ABOUTME: Extracted from web/templates/project_overview.html inline styles. */
+
+.overview-shell {
+    display: grid;
+    gap: 14px;
+}
+.overview-hero {
+    border-radius: var(--radius-2xl);
+    border: 1px solid color-mix(in srgb, var(--border) 84%, #0ea5e9 16%);
+    background:
+        radial-gradient(circle at 88% 15%, color-mix(in srgb, #38bdf8 20%, transparent), transparent 38%),
+        linear-gradient(150deg, color-mix(in srgb, var(--bg-card) 90%, #eff6ff 10%), var(--bg-card));
+    box-shadow: 0 18px 48px color-mix(in srgb, #0f172a 9%, transparent);
+    padding: 18px 20px;
+}
+.overview-hero h1 {
+    margin: 0;
+    font-family: var(--font-display);
+}
+.overview-hero p {
+    margin: 7px 0 0 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+.overview-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+.overview-card {
+    border-radius: var(--radius-2xl);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    box-shadow: 0 14px 36px color-mix(in srgb, #0f172a 7%, transparent);
+    padding: 14px;
+}
+.overview-card h3 {
+    margin: 0;
+}
+.overview-card p {
+    margin: 7px 0 0 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+.overview-hero-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.overview-hero-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+@media (max-width: 1024px) {
+    .overview-grid {
+        grid-template-columns: 1fr;
+    }
+}

@@ -1,0 +1,174 @@
+/* ABOUTME: Final/post-build view styles — hero, graph, timeline, artifact browser. */
+/* ABOUTME: Extracted from web/templates/final_view.html inline styles. */
+
+.final-shell { display: grid; gap: 14px; }
+.final-hero {
+    border-radius: var(--radius-2xl);
+    border: 1px solid color-mix(in srgb, var(--border) 84%, #22c55e 16%);
+    background:
+        radial-gradient(circle at 88% 20%, color-mix(in srgb, #22c55e 20%, transparent), transparent 44%),
+        radial-gradient(circle at 8% 10%, color-mix(in srgb, #0ea5e9 16%, transparent), transparent 34%),
+        linear-gradient(145deg, color-mix(in srgb, var(--bg-card) 82%, #ecfdf5 18%), var(--bg-card));
+    padding: 18px;
+    box-shadow: 0 16px 44px color-mix(in srgb, #0f172a 10%, transparent);
+}
+.final-title { margin: 0; font-family: var(--font-display); font-size: clamp(1.35rem, 2.2vw, 1.8rem); }
+.final-sub { margin: 6px 0 0 0; font-size: 13px; color: var(--text-secondary); }
+
+.final-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.final-card {
+    border-radius: var(--radius-2xl);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    box-shadow: 0 12px 30px color-mix(in srgb, #0f172a 6%, transparent);
+    overflow: hidden;
+}
+.final-card-head {
+    border-bottom: 1px solid var(--border);
+    padding: 12px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+.final-card-title {
+    margin: 0;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+}
+
+.final-graph {
+    max-height: 520px;
+    overflow: auto;
+    background: color-mix(in srgb, var(--bg-secondary) 90%, #fff 10%);
+    padding: 10px;
+}
+.final-graph-empty {
+    margin: 8px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-xl);
+    padding: 12px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+.final-graph svg { width: 100%; min-width: 640px; }
+.final-graph svg g.node.is-active ellipse,
+.final-graph svg g.node.is-active polygon,
+.final-graph svg g.node.is-active path {
+    stroke: #f59e0b !important;
+    stroke-width: 3 !important;
+    fill: color-mix(in srgb, #fef3c7 72%, white 28%) !important;
+    filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.35));
+}
+
+.timeline-list { margin: 0; padding: 10px; list-style: none; display: grid; gap: 8px; max-height: 520px; overflow: auto; }
+.timeline-item {
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-secondary) 88%, #fff 12%);
+    padding: 10px 11px;
+    display: grid;
+    gap: 6px;
+    cursor: pointer;
+}
+.timeline-item:hover { border-color: color-mix(in srgb, #0ea5e9 35%, var(--border)); }
+.timeline-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.timeline-node { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+.timeline-status { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+.timeline-meta { font-size: 12px; color: var(--text-secondary); display: flex; gap: 8px; flex-wrap: wrap; }
+.timeline-chip {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 8px;
+    font-size: 11px;
+    background: color-mix(in srgb, var(--bg-card) 86%, #fff 14%);
+    color: var(--text-secondary);
+}
+.timeline-error {
+    font-size: 12px;
+    color: #991b1b;
+    background: color-mix(in srgb, #fee2e2 70%, var(--bg-card) 30%);
+    border: 1px solid color-mix(in srgb, #ef4444 45%, var(--border));
+    border-radius: var(--radius-lg);
+    padding: 6px 8px;
+}
+.timeline-ops {
+    border-top: 1px dashed var(--border);
+    padding-top: 8px;
+    display: none;
+    gap: 6px;
+}
+.timeline-item.open .timeline-ops { display: grid; }
+.timeline-op {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-card) 90%, #fff 10%);
+    padding: 7px 8px;
+    display: grid;
+    gap: 4px;
+}
+.timeline-op-top {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+}
+.timeline-op-type {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+.timeline-op-time {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+.timeline-op-summary {
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.file-toolbar {
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-secondary) 92%, #fff 8%);
+    padding: 10px 12px;
+    display: grid;
+    gap: 8px;
+}
+.file-path { font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.file-breadcrumbs { display: flex; gap: 6px; flex-wrap: wrap; }
+.crumb {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    padding: 4px 9px;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.file-browser { display: grid; grid-template-columns: 340px 1fr; min-height: 520px; }
+.file-list { margin: 0; padding: 8px; list-style: none; overflow: auto; border-right: 1px solid var(--border); background: color-mix(in srgb, var(--bg-secondary) 92%, #fff 8%); }
+.file-btn {
+    width: 100%;
+    text-align: left;
+    border: 1px solid transparent;
+    border-radius: var(--radius-lg);
+    background: transparent;
+    color: var(--text-primary);
+    padding: 8px 10px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    cursor: pointer;
+}
+.file-btn:hover { background: var(--bg-card); border-color: var(--border); }
+.file-btn.active { background: color-mix(in srgb, #0ea5e9 12%, var(--bg-card) 88%); border-color: color-mix(in srgb, #0ea5e9 38%, var(--border)); }
+.file-view { margin: 0; padding: 12px; overflow: auto; white-space: pre; font-size: 12px; line-height: 1.45; background: #0b1020; color: #dbe6ff; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+@media (max-width: 980px) {
+    .file-browser { grid-template-columns: 1fr; }
+    .file-list { border-right: 0; border-bottom: 1px solid var(--border); max-height: 220px; }
+}

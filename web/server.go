@@ -167,6 +167,14 @@ func (s *Server) buildRouter() chi.Router {
 		r.Handle("/spec-static/*", http.StripPrefix("/spec-static/", http.FileServer(http.FS(specStaticFS))))
 	}
 
+	// Shared web static assets (tokens, base, layout CSS + viz-render JS).
+	webStaticFS, err := fs.Sub(StaticFS, "static")
+	if err != nil {
+		log.Printf("component=web.server action=init_web_static_failed err=%v", err)
+	} else {
+		r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(webStaticFS))))
+	}
+
 	// Project routes
 	r.Route("/projects", func(r chi.Router) {
 		r.Get("/", s.handleProjectList)

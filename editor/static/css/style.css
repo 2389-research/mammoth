@@ -2,29 +2,8 @@
    ABOUTME: node/edge color legend, diagnostics, and responsive design */
 /* mammoth-dot-editor styles */
 
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-}
-
-:root {
-    --bg-primary: hsl(40, 20%, 97%);
-    --bg-secondary: hsl(30, 12%, 93%);
-    --bg-card: #fff;
-    --text-primary: hsl(20, 14%, 12%);
-    --text-secondary: hsl(20, 10%, 30%);
-    --text-muted: hsl(20, 6%, 52%);
-    --accent: hsl(30, 12%, 91%);
-    --accent-hover: hsl(30, 12%, 85%);
-    --border: hsl(30, 10%, 90%);
-    --success: hsl(162, 30%, 48%);
-    --warning: hsl(38, 50%, 55%);
-    --danger: hsl(0, 60%, 50%);
-    --radius-xl: 16px;
-    --radius-2xl: 22px;
-    --font-body: 'DM Sans', system-ui, sans-serif;
-}
+/* Tokens, reset, and base styles are provided by the shared
+   /static/css/tokens.css and /static/css/base.css. */
 
 body {
     font-family: var(--font-body);
@@ -155,17 +134,6 @@ body {
     background: var(--bg-primary);
     padding: 0 1rem;
     color: var(--text-muted);
-}
-
-.form-group {
-    margin-bottom: 1.5rem;
-}
-
-.form-group label {
-    display: block;
-    margin-bottom: 0.5rem;
-    color: var(--text-secondary);
-    font-weight: 500;
 }
 
 .file-upload-zone {
@@ -708,50 +676,6 @@ body {
     margin-top: 0.75rem;
 }
 
-.btn-primary {
-    background: var(--text-primary);
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 500;
-    transition: background 0.2s ease;
-}
-
-.btn-primary:hover {
-    background: var(--text-secondary);
-}
-
-.btn-primary:disabled {
-    background: #555;
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-
-.btn-danger {
-    background: var(--danger);
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 500;
-    transition: background 0.2s ease;
-}
-
-.btn-danger:hover {
-    background: var(--danger);
-}
-
-.btn-danger:disabled {
-    background: #555;
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-
 .new-attr-group {
     border-top: 1px solid var(--border);
     padding-top: 0.75rem;
@@ -988,28 +912,6 @@ textarea {
 textarea:focus {
     outline: none;
     border-color: var(--text-primary);
-}
-
-button {
-    background: var(--text-primary);
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-    margin-top: 0.5rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    transition: background 0.2s ease;
-}
-
-button:hover {
-    background: var(--text-secondary);
-}
-
-button:disabled {
-    background: #555;
-    cursor: not-allowed;
 }
 
 input[type="file"] {

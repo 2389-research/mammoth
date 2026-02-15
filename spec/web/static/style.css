@@ -1,95 +1,9 @@
 /* ABOUTME: Core stylesheet for the barnstormer web UI — warm light palette. */
 /* ABOUTME: Cream/parchment tones, DM Serif Display headings + DM Sans body, mission control layout. */
 
-/* --- Reset & base --- */
-*, *::before, *::after {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-}
-
-:root {
-    /* Warm light palette */
-    --bg-primary: hsl(40, 20%, 97%);        /* #F7F5F2 warm off-white */
-    --bg-secondary: hsl(30, 12%, 93%);      /* #EDE9E4 warm light gray */
-    --bg-surface: hsl(0, 0%, 100%);         /* #FFFFFF white */
-    --bg-card: hsl(0, 0%, 100%);            /* #FFFFFF white */
-    --text-primary: hsl(20, 14%, 12%);      /* #231F1B warm near-black */
-    --text-secondary: hsl(20, 10%, 30%);    /* #4A4340 warm dark gray */
-    --text-muted: hsl(20, 6%, 52%);         /* #8A8480 warm medium gray */
-    --accent: hsl(30, 12%, 91%);            /* #E8E4DF warm accent */
-    --accent-hover: hsl(30, 12%, 85%);      /* slightly darker */
-    --border: hsl(30, 10%, 90%);            /* #E6E2DD warm border */
-    --border-subtle: hsl(30, 10%, 93%);     /* #EDEBE8 lighter border */
-    --success: hsl(162, 30%, 48%);          /* teal green */
-    --warning: hsl(38, 50%, 55%);           /* warm amber */
-    --danger: hsl(0, 60%, 50%);             /* red */
-
-    /* Role/agent colors */
-    --badge-manager: hsl(20, 14%, 12%);     /* dark - orchestrator */
-    --badge-brainstormer: hsl(162, 30%, 48%); /* teal - researcher */
-    --badge-planner: hsl(250, 30%, 55%);    /* purple - architect */
-    --badge-dot_generator: hsl(162, 30%, 48%);
-    --badge-critic: hsl(38, 50%, 55%);
-    --badge-agent: hsl(20, 6%, 52%);
-
-    /* Chat-specific colors — lighter, warmer versions */
-    --human-bg: hsl(30, 12%, 93%);          /* secondary bg for human messages */
-    --human-border: hsl(30, 10%, 90%);
-    --human-accent: hsl(20, 14%, 12%);      /* dark for human accent */
-    --agent-bg: hsl(0, 0%, 100%);           /* white for agent messages */
-    --agent-border: hsl(30, 10%, 90%);
-    --agent-accent: hsl(250, 30%, 55%);     /* purple for agent accent */
-
-    --nav-width: 220px;
-    --chat-rail-width: 380px;
-    --spacing-xs: 4px;
-    --spacing-sm: 8px;
-    --spacing-md: 16px;
-    --spacing-lg: 24px;
-    --spacing-xl: 32px;
-    --radius: 8px;
-    --radius-lg: 12px;
-    --radius-bubble: 16px;
-    --radius-xl: 16px;
-
-    --font-display: 'DM Serif Display', Georgia, serif;
-    --font-body: 'DM Sans', system-ui, sans-serif;
-}
-
-html, body {
-    height: 100%;
-    font-family: var(--font-body);
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    line-height: 1.55;
-    font-size: 14px;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-}
-
-/* --- Two-panel layout --- */
-.app-layout {
-    display: grid;
-    grid-template-columns: var(--nav-width) 1fr;
-    height: 100vh;
-    overflow: hidden;
-}
-
-.nav-rail {
-    background: var(--bg-card);
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
-
-.workspace {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    overflow: hidden;
-}
+/* Tokens, reset, base layout, buttons, forms, and scrollbar styles
+   are provided by the shared /static/css/tokens.css and /static/css/base.css.
+   Spec-specific styles begin below. */
 
 .spec-compositor {
     display: flex;
@@ -106,12 +20,6 @@ html, body {
     overflow: hidden;
 }
 
-.canvas {
-    flex: 1;
-    overflow-y: auto;
-    padding: var(--spacing-lg);
-}
-
 .chat-rail {
     width: var(--chat-rail-width);
     flex-shrink: 0;
@@ -119,53 +27,6 @@ html, body {
     overflow: hidden;
     display: flex;
     flex-direction: column;
-}
-
-/* --- Command bar --- */
-.command-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-lg);
-    padding: 0 20px;
-    height: 56px;
-    background: var(--bg-card);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-}
-.command-bar-left {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    min-width: 0;
-    overflow: hidden;
-}
-.command-bar-title {
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.command-bar-chevron {
-    color: var(--text-muted);
-    opacity: 0.5;
-    font-size: 14px;
-    flex-shrink: 0;
-}
-.command-bar-subtitle {
-    font-size: 15px;
-    color: var(--text-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.command-bar-right {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-shrink: 0;
 }
 
 /* --- View toggles (capsule) --- */
@@ -367,107 +228,6 @@ html, body {
 
 .new-spec-btn:hover {
     background: var(--accent);
-}
-
-/* --- Buttons --- */
-.btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--spacing-sm) var(--spacing-md);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    cursor: pointer;
-    font-family: var(--font-body);
-    font-size: 0.82rem;
-    font-weight: 500;
-    text-decoration: none;
-    transition: all 0.2s ease;
-    gap: var(--spacing-xs);
-}
-
-.btn:hover {
-    background: var(--border);
-    border-color: var(--text-muted);
-}
-
-.btn-primary {
-    background: var(--text-primary);
-    border-color: var(--text-primary);
-    color: var(--bg-card);
-    text-align: center;
-}
-
-
-.btn-primary:hover {
-    opacity: 0.85;
-}
-
-.btn-danger {
-    color: var(--danger);
-    border-color: var(--danger);
-}
-
-.btn-danger:hover {
-    background: var(--danger);
-    color: #fff;
-}
-
-.btn-success {
-    color: var(--success);
-    border-color: var(--success);
-}
-
-.btn-success:hover {
-    background: var(--success);
-    color: #fff;
-}
-
-.btn-sm {
-    padding: var(--spacing-xs) var(--spacing-sm);
-    font-size: 0.75rem;
-}
-
-/* --- Forms --- */
-.form-group {
-    margin-bottom: var(--spacing-md);
-}
-
-.form-group label {
-    display: block;
-    font-size: 0.78rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-    margin-bottom: var(--spacing-xs);
-}
-
-.form-group input,
-.form-group textarea,
-.form-group select {
-    width: 100%;
-    padding: 10px 12px;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    color: var(--text-primary);
-    font-size: 0.85rem;
-    font-family: var(--font-body);
-    transition: border-color 0.2s ease;
-}
-
-.form-group textarea {
-    min-height: 80px;
-    resize: vertical;
-}
-
-.form-group input:focus,
-.form-group textarea:focus,
-.form-group select:focus {
-    outline: none;
-    border-color: var(--agent-accent);
-    box-shadow: 0 0 0 2px rgba(107, 163, 190, 0.15);
 }
 
 /* --- Board (kanban) --- */
@@ -1179,24 +939,6 @@ html, body {
     color: var(--danger);
     font-size: 0.8rem;
     padding: var(--spacing-sm);
-}
-
-/* --- Scrollbar styling (webkit) --- */
-::-webkit-scrollbar {
-    width: 6px;
-}
-
-::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-    background: var(--border);
-    border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: var(--text-muted);
 }
 
 /* --- Chat transcript --- */
