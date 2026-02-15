@@ -95,7 +95,7 @@
     .build-metrics {
         margin-top: 16px;
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 10px;
     }
     .build-metric {
@@ -307,6 +307,10 @@
                 <p class="build-metric-label">Connection</p>
                 <p id="metric-connection" class="build-metric-value">Connecting</p>
             </div>
+            <div class="build-metric">
+                <p class="build-metric-label">Tool Calls</p>
+                <p id="metric-tool-calls" class="build-metric-value">0</p>
+            </div>
         </div>
     </section>
 
@@ -344,6 +348,7 @@
     var metricCurrentNode = document.getElementById('metric-current-node');
     var metricCompletedCount = document.getElementById('metric-completed-count');
     var metricConnection = document.getElementById('metric-connection');
+    var metricToolCalls = document.getElementById('metric-tool-calls');
     var statusPill = document.getElementById('build-status-pill');
     var statusText = document.getElementById('build-status-text');
     var connectionBadge = document.getElementById('connection-badge');
@@ -354,6 +359,8 @@
     var seenCompletions = {};
     var seenEventKeys = {};
     var isTerminal = false;
+    var toolCallsSeen = {};
+    var toolCallCount = 0;
 
     function setStatus(status) {
         statusPill.classList.remove('running', 'completed', 'failed', 'cancelled');
@@ -422,6 +429,44 @@
             var node = data.node_id || 'unknown';
             var reason = data.reason || data.error || '';
             addEvent('Stage failed: ' + node + (reason ? ' - ' + reason : ''), 'error');
+        });
+
+        source.addEventListener('stage.retrying', function(e) {
+            var data = safeJSON(e.data);
+            var node = data.node_id || 'unknown';
+            var attempt = data.attempt || data.retry_attempt || '';
+            addEvent('Stage retrying: ' + node + (attempt ? ' (attempt ' + attempt + ')' : ''), 'muted');
+        });
+
+        source.addEventListener('stage.stalled', function(e) {
+            var data = safeJSON(e.data);
+            var node = data.node_id || 'unknown';
+            addEvent('Stage stalled: ' + node, 'error');
+        });
+
+        source.addEventListener('checkpoint.saved', function(e) {
+            var data = safeJSON(e.data);
+            var node = data.node_id || 'unknown';
+            addEvent('Checkpoint saved' + (node ? ': ' + node : ''), 'muted');
+        });
+
+        source.addEventListener('agent.tool_call.start', function(e) {
+            var data = safeJSON(e.data);
+            registerToolCallStart(data);
+            addEvent('Tool start: ' + toolSummary(data), 'normal');
+        });
+
+        source.addEventListener('agent.tool_call.end', function(e) {
+            var data = safeJSON(e.data);
+            addEvent('Tool done: ' + toolSummary(data) + toolDurationSuffix(data), 'success');
+        });
+
+        source.addEventListener('agent.llm_turn', function(e) {
+            var data = safeJSON(e.data);
+            var inTokens = data.input_tokens || 0;
+            var outTokens = data.output_tokens || 0;
+            var totalTokens = data.total_tokens || (Number(inTokens) + Number(outTokens));
+            addEvent('LLM turn: ' + totalTokens + ' tokens (in ' + inTokens + ', out ' + outTokens + ')', 'muted');
         });
 
         source.addEventListener('pipeline.completed', function() {
@@ -527,6 +572,22 @@
             addEvent('Stage started: ' + (data.node_id || 'unknown'), 'normal');
         } else if (evt.event === 'stage.failed') {
             addEvent('Stage failed: ' + (data.node_id || 'unknown'), 'error');
+        } else if (evt.event === 'stage.retrying') {
+            addEvent('Stage retrying: ' + (data.node_id || 'unknown'), 'muted');
+        } else if (evt.event === 'stage.stalled') {
+            addEvent('Stage stalled: ' + (data.node_id || 'unknown'), 'error');
+        } else if (evt.event === 'checkpoint.saved') {
+            addEvent('Checkpoint saved' + (data.node_id ? ': ' + data.node_id : ''), 'muted');
+        } else if (evt.event === 'agent.tool_call.start') {
+            registerToolCallStart(data);
+            addEvent('Tool start: ' + toolSummary(data), 'normal');
+        } else if (evt.event === 'agent.tool_call.end') {
+            addEvent('Tool done: ' + toolSummary(data) + toolDurationSuffix(data), 'success');
+        } else if (evt.event === 'agent.llm_turn') {
+            var inTokens = data.input_tokens || 0;
+            var outTokens = data.output_tokens || 0;
+            var totalTokens = data.total_tokens || (Number(inTokens) + Number(outTokens));
+            addEvent('LLM turn: ' + totalTokens + ' tokens (in ' + inTokens + ', out ' + outTokens + ')', 'muted');
         } else if (evt.event === 'pipeline.completed') {
             addEvent('Pipeline completed', 'success');
         } else if (evt.event === 'pipeline.failed') {
@@ -534,6 +595,44 @@
         } else if (evt.event === 'pipeline.started') {
             addEvent('Pipeline started', 'success');
         }
+    }
+
+    function registerToolCallStart(data) {
+        if (!data || typeof data !== 'object') {
+            return;
+        }
+        var callID = data.call_id || '';
+        if (callID && toolCallsSeen[callID]) {
+            return;
+        }
+        if (callID) {
+            toolCallsSeen[callID] = true;
+        }
+        toolCallCount += 1;
+        metricToolCalls.textContent = String(toolCallCount);
+    }
+
+    function toolSummary(data) {
+        var tool = (data && data.tool_name) ? String(data.tool_name) : 'unknown tool';
+        var node = (data && data.node_id) ? String(data.node_id) : '';
+        if (node) {
+            return tool + ' @ ' + node;
+        }
+        return tool;
+    }
+
+    function toolDurationSuffix(data) {
+        if (!data || typeof data !== 'object') {
+            return '';
+        }
+        var ms = Number(data.duration_ms || 0);
+        if (!ms || Number.isNaN(ms)) {
+            return '';
+        }
+        if (ms < 1000) {
+            return ' (' + ms + 'ms)';
+        }
+        return ' (' + (ms / 1000).toFixed(2) + 's)';
     }
 
     function appendCompletedNode(nodeID) {

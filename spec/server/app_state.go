@@ -83,6 +83,22 @@ func (s *AppState) SetSwarm(specID ulid.ULID, handle *SwarmHandle) {
 	s.Swarms[specID] = handle
 }
 
+// StopSwarm cancels and removes the swarm for a specific spec. It returns true
+// if a swarm was found and stopped.
+func (s *AppState) StopSwarm(specID ulid.ULID) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	handle, exists := s.Swarms[specID]
+	if !exists {
+		return false
+	}
+	log.Printf("stopping swarm for spec %s", specID)
+	handle.Cancel()
+	delete(s.Swarms, specID)
+	return true
+}
+
 // SetEventPersister stores a stop channel for a spec's event persister goroutine.
 func (s *AppState) SetEventPersister(specID ulid.ULID, stopCh chan struct{}) {
 	s.mu.Lock()

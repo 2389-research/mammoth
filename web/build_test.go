@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/2389-research/mammoth/spec/core"
+	specserver "github.com/2389-research/mammoth/spec/server"
 )
 
 // validTestDOT is a minimal valid DOT pipeline with start and exit nodes.
@@ -32,9 +35,15 @@ func TestBuildStartValidDOT(t *testing.T) {
 	}
 	p.Phase = PhaseEdit
 	p.DOT = validTestDOT
+	specID := core.NewULID()
+	p.SpecID = specID.String()
 	if err := srv.store.Update(p); err != nil {
 		t.Fatalf("unexpected error updating project: %v", err)
 	}
+	cancelled := false
+	srv.specState.SetSwarm(specID, &specserver.SwarmHandle{
+		Cancel: func() { cancelled = true },
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/projects/"+p.ID+"/build/start", nil)
 	rec := httptest.NewRecorder()
@@ -63,6 +72,12 @@ func TestBuildStartValidDOT(t *testing.T) {
 	// RunID should be set.
 	if updated.RunID == "" {
 		t.Error("expected RunID to be set after build start")
+	}
+	if !cancelled {
+		t.Error("expected spec swarm to be cancelled when build starts")
+	}
+	if srv.specState.GetSwarm(specID) != nil {
+		t.Error("expected spec swarm to be removed when build starts")
 	}
 
 	// A build run should be tracked on the server.

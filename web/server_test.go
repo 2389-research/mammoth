@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/2389-research/mammoth/spec/core"
+	specserver "github.com/2389-research/mammoth/spec/server"
 )
 
 func TestServerHealth(t *testing.T) {
@@ -377,6 +378,10 @@ func TestServerSpecContinueToEditor(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create spec command: %v", err)
 	}
+	cancelled := false
+	srv.specState.SetSwarm(specID, &specserver.SwarmHandle{
+		Cancel: func() { cancelled = true },
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/projects/"+p.ID+"/spec/continue", nil)
 	rec := httptest.NewRecorder()
@@ -398,6 +403,12 @@ func TestServerSpecContinueToEditor(t *testing.T) {
 	}
 	if !strings.HasPrefix(updated.DOT, "digraph") {
 		t.Fatalf("expected generated DOT, got %q", updated.DOT)
+	}
+	if !cancelled {
+		t.Fatalf("expected spec swarm to be cancelled on continue")
+	}
+	if srv.specState.GetSwarm(specID) != nil {
+		t.Fatalf("expected spec swarm to be removed after continue")
 	}
 }
 

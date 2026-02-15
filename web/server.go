@@ -24,6 +24,7 @@ import (
 	specweb "github.com/2389-research/mammoth/spec/web"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/oklog/ulid/v2"
 )
 
 // Server is the unified mammoth HTTP server that provides the wizard flow:
@@ -472,6 +473,7 @@ func (s *Server) handleSpecContinueToEditor(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "failed to export spec to DOT", http.StatusBadRequest)
 		return
 	}
+	s.stopProjectSpecSwarm(p)
 
 	http.Redirect(w, r, projectEditorBasePath(projectID), http.StatusSeeOther)
 }
@@ -505,6 +507,9 @@ func (s *Server) handleBuildStart(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/projects/"+projectID, http.StatusSeeOther)
 		return
 	}
+
+	// Leaving spec/edit for an active build should stop background spec agents.
+	s.stopProjectSpecSwarm(p)
 
 	// Generate a run ID and set up run state.
 	runID, err := attractor.GenerateRunID()
@@ -608,6 +613,19 @@ func (s *Server) handleBuildStart(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	http.Redirect(w, r, "/projects/"+projectID+"/build", http.StatusSeeOther)
+}
+
+// stopProjectSpecSwarm stops the project's spec swarm if one is running.
+func (s *Server) stopProjectSpecSwarm(p *Project) {
+	if p == nil || p.SpecID == "" {
+		return
+	}
+	specID, err := ulid.Parse(p.SpecID)
+	if err != nil {
+		log.Printf("stop spec swarm: invalid spec id %q: %v", p.SpecID, err)
+		return
+	}
+	s.specState.StopSwarm(specID)
 }
 
 // handleBuildView renders the build progress page for a project.
