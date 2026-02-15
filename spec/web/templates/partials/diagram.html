@@ -26,6 +26,41 @@
         </div>
         {{ end }}
     </div>
+    {{ if .Steps }}
+    <section class="diagram-steps">
+        <h3>Execution Steps</h3>
+        <div class="diagram-step-list">
+            {{ range .Steps }}
+            <article class="diagram-step">
+                <header class="diagram-step-head">
+                    <span class="diagram-step-index">Step {{ .Index }}</span>
+                    <span class="diagram-step-title">{{ .Label }}</span>
+                    <code class="diagram-step-id">{{ .NodeID }}</code>
+                    {{ if .NodeType }}<span class="diagram-step-type">{{ .NodeType }}</span>{{ end }}
+                </header>
+                <div class="diagram-step-body">
+                    <div class="diagram-step-prompt-label">Prompt</div>
+                    {{ if .Prompt }}
+                    <pre class="diagram-step-prompt"><code>{{ .Prompt }}</code></pre>
+                    {{ else }}
+                    <p class="diagram-step-empty">No explicit prompt on this node.</p>
+                    {{ end }}
+                    {{ if .Outgoing }}
+                    <div class="diagram-step-next">
+                        <span>Next:</span>
+                        {{ range .Outgoing }}
+                        <span class="diagram-step-edge">
+                            {{ .To }}{{ if .Label }} <em>({{ .Label }})</em>{{ end }}
+                        </span>
+                        {{ end }}
+                    </div>
+                    {{ end }}
+                </div>
+            </article>
+            {{ end }}
+        </div>
+    </section>
+    {{ end }}
 </div>
 
 <script>
