@@ -37,6 +37,45 @@
         color: var(--text-muted);
         font-size: 12px;
     }
+    .new-params {
+        margin-top: 6px;
+        display: grid;
+        gap: 8px;
+    }
+    .new-param {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--text-primary);
+    }
+    .new-param input {
+        margin-top: 2px;
+    }
+    .new-param-note {
+        margin: 2px 0 0 22px;
+        color: var(--text-muted);
+        font-size: 12px;
+    }
+    .new-submit-state {
+        display: none;
+        margin-top: 8px;
+        color: var(--text-secondary);
+        font-size: 13px;
+    }
+    .new-submit-state.active {
+        display: block;
+    }
+    .new-submit-state .dots::after {
+        content: "";
+        animation: newSubmitDots 1.1s steps(3, end) infinite;
+    }
+    @keyframes newSubmitDots {
+        0% { content: ""; }
+        33% { content: "."; }
+        66% { content: ".."; }
+        100% { content: "..."; }
+    }
 </style>
 
 <section class="new-shell">
@@ -46,10 +85,24 @@
     </section>
 
     <section class="new-form-card">
-        <form method="POST" action="/projects" enctype="multipart/form-data">
+        <form id="new-project-form" method="POST" action="/projects" enctype="multipart/form-data">
             <div class="form-group">
                 <label for="prompt">Spec Prompt</label>
                 <textarea id="prompt" name="prompt" rows="8" placeholder="Describe the product or workflow you want to build..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Spec Builder Parameters</label>
+                <div class="new-params">
+                    <label class="new-param"><input type="checkbox" name="opt_human_review" value="1" checked>Human review gates</label>
+                    <p class="new-param-note">Add explicit approval checkpoints.</p>
+
+                    <label class="new-param"><input type="checkbox" name="opt_scenario_testing" value="1" checked>Scenario testing</label>
+                    <p class="new-param-note">Require end-to-end scenario validation.</p>
+
+                    <label class="new-param"><input type="checkbox" name="opt_tdd" value="1">Test-driven development</label>
+                    <p class="new-param-note">Favor tests before implementation.</p>
+                </div>
             </div>
 
             <div class="form-group">
@@ -59,10 +112,34 @@
             </div>
 
             <div class="web-inline-actions">
-                <button type="submit" class="btn btn-primary">Create Project</button>
+                <button id="create-project-btn" type="submit" class="btn btn-primary">Create Project</button>
                 <a href="/" class="btn">Cancel</a>
             </div>
+            <p id="create-project-state" class="new-submit-state" aria-live="polite">
+                Creating project<span class="dots"></span> This can take up to a minute while parsing/import runs.
+            </p>
         </form>
     </section>
 </section>
+<script>
+(function() {
+    var form = document.getElementById('new-project-form');
+    var btn = document.getElementById('create-project-btn');
+    var state = document.getElementById('create-project-state');
+    if (!form || !btn || !state) {
+        return;
+    }
+    var isSubmitting = false;
+    form.addEventListener('submit', function(e) {
+        if (isSubmitting) {
+            e.preventDefault();
+            return;
+        }
+        isSubmitting = true;
+        btn.disabled = true;
+        btn.textContent = 'Creating project...';
+        state.classList.add('active');
+    });
+})();
+</script>
 {{end}}

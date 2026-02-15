@@ -33,6 +33,7 @@
         <div class="form-group">
             <label for="card-lane">Lane</label>
             <select id="card-lane" name="lane">
+                <option value="Backlog" {{ if eq .Lane "Backlog" }}selected{{ end }}>Backlog</option>
                 <option value="Ideas" {{ if eq .Lane "Ideas" }}selected{{ end }}>Ideas</option>
                 <option value="Plan" {{ if eq .Lane "Plan" }}selected{{ end }}>Plan</option>
                 <option value="Spec" {{ if eq .Lane "Spec" }}selected{{ end }}>Spec</option>

@@ -38,7 +38,7 @@ body {
 
 .editor-shell .editor-canvas {
     padding: 0;
-    overflow: hidden;
+    overflow: auto;
 }
 
 .editor-rail-links {
@@ -208,8 +208,8 @@ body {
 .editor {
     display: flex;
     flex-direction: column;
-    height: 100%;
-    min-height: 0;
+    height: auto;
+    min-height: 100%;
 }
 
 .toolbar {
@@ -359,22 +359,32 @@ body {
 
 .panels {
     display: grid;
-    grid-template-columns: minmax(260px, 1.05fr) minmax(420px, 1.5fr) minmax(260px, 1.05fr);
-    gap: 0;
+    grid-template-columns: minmax(320px, 1.25fr) minmax(280px, 1fr);
+    grid-template-rows: auto minmax(320px, 1fr);
+    grid-template-areas:
+        "graph graph"
+        "code props";
+    gap: 1px;
+    background: var(--border);
     flex: 1;
-    min-height: 0;
-    overflow: hidden;
+    min-height: 520px;
+    overflow: auto;
 }
 
 .panel {
     background: color-mix(in srgb, var(--bg-card) 94%, #fff 6%);
     padding: 1rem;
     overflow: auto;
-    border-right: 1px solid var(--border);
+    border: none;
 }
 
-.panel:last-child {
-    border-right: none;
+.panel-code { grid-area: code; }
+.panel-graph { grid-area: graph; }
+.panel-props { grid-area: props; }
+.panel-graph {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
 .panel h3 {
@@ -413,19 +423,77 @@ body {
 
 /* ========== Graph Viewer Panel ========== */
 
+#graph-viewer {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
+}
+
+#graph-viewer h3 {
+    margin-bottom: 0.75rem;
+}
+
 #graph-container {
     background: var(--bg-primary);
     border: 1px solid var(--border);
     border-radius: 10px;
-    min-height: 400px;
-    height: calc(100% - 3rem);
-    overflow: hidden;
+    min-height: 220px;
+    height: 300px;
+    max-height: 300px;
+    flex: 0 0 auto;
+    overflow: auto;
     position: relative;
+    padding: 10px;
+    background: color-mix(in srgb, var(--bg-secondary) 90%, #fff 10%);
 }
 
 #graph-container svg {
     width: 100%;
-    height: 100%;
+    min-width: 640px;
+    height: auto;
+}
+
+#graph-container svg .node.node-type-start polygon,
+#graph-container svg .node.node-type-start ellipse,
+#graph-container svg .node.node-type-start path {
+    fill: #dcfce7 !important;
+    stroke: #22c55e !important;
+}
+
+#graph-container svg .node.node-type-exit polygon,
+#graph-container svg .node.node-type-exit ellipse,
+#graph-container svg .node.node-type-exit path {
+    fill: #fee2e2 !important;
+    stroke: #ef4444 !important;
+}
+
+#graph-container svg .node.node-type-codegen polygon,
+#graph-container svg .node.node-type-codegen ellipse,
+#graph-container svg .node.node-type-codegen path {
+    fill: #dbeafe !important;
+    stroke: #3b82f6 !important;
+}
+
+#graph-container svg .node.node-type-conditional polygon,
+#graph-container svg .node.node-type-conditional ellipse,
+#graph-container svg .node.node-type-conditional path {
+    fill: #fef3c7 !important;
+    stroke: #f59e0b !important;
+}
+
+#graph-container svg .node.node-type-human polygon,
+#graph-container svg .node.node-type-human ellipse,
+#graph-container svg .node.node-type-human path {
+    fill: #ede9fe !important;
+    stroke: #8b5cf6 !important;
+}
+
+#graph-container svg .node.node-type-tool polygon,
+#graph-container svg .node.node-type-tool ellipse,
+#graph-container svg .node.node-type-tool path {
+    fill: #ffedd5 !important;
+    stroke: #f97316 !important;
 }
 
 #graph-container .no-graph,
@@ -797,6 +865,14 @@ body {
     overflow-y: auto;
 }
 
+.graph-diagnostics {
+    margin-top: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    border-top-width: 1px;
+    max-height: 170px;
+}
+
 .diagnostics-bar h3 {
     color: var(--text-secondary);
     margin-bottom: 0.75rem;
@@ -944,17 +1020,23 @@ input[type="file"] {
 
 @media (max-width: 1200px) {
     .panels {
-        grid-template-columns: 30% 70%;
-    }
-
-    .panel-props {
-        display: none;
+        grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(280px, auto) minmax(260px, auto);
+        grid-template-areas:
+            "graph"
+            "code"
+            "props";
     }
 }
 
 @media (max-width: 768px) {
     .panels {
         grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(260px, auto) minmax(240px, auto);
+        grid-template-areas:
+            "graph"
+            "code"
+            "props";
         height: auto;
     }
 

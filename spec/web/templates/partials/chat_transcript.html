@@ -8,7 +8,7 @@
      hx-target="#{{ .ContainerID }}"
      hx-swap="outerHTML">
     {{ if .PendingQuestion }}
-    <div class="activity-priority-banner" style="margin: 12px 20px 0 20px;">
+    <div class="activity-priority-banner chat-priority-banner">
         <span class="activity-priority-badge">Action Needed</span>
         <span class="activity-priority-text">A pending question needs your answer.</span>
         <a href="#{{ .ContainerID }}" class="activity-priority-link">Review below</a>

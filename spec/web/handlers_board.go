@@ -88,7 +88,7 @@ func CreateCardForm(state *server.AppState, renderer *TemplateRenderer) http.Han
 			Title:    "",
 			CardType: "idea",
 			Body:     "",
-			Lane:     "Ideas",
+			Lane:     "Backlog",
 		})
 	}
 }
@@ -313,7 +313,7 @@ func DeleteCard(state *server.AppState, renderer *TemplateRenderer) http.Handler
 // cardsByLane groups cards by lane for template rendering, following the
 // deterministic ordering: Ideas, Plan, Spec first, then extra lanes alphabetically.
 func cardsByLane(specID string, state *core.SpecState) []LaneData {
-	defaultLanes := []string{"Ideas", "Plan", "Spec"}
+	defaultLanes := []string{"Backlog", "Ideas", "Plan", "Spec"}
 
 	// Group cards by lane
 	byLane := make(map[string][]CardData)

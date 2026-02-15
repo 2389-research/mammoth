@@ -3,6 +3,21 @@
 
 <div class="spec-compositor" hx-ext="sse" sse-connect="/api/specs/{{ .SpecID }}/events/stream">
 
+{{ if .ShowStartAgentsBanner }}
+<div id="start-agents-banner" style="margin: 0 0 12px 0; border: 1px solid color-mix(in srgb, #0ea5e9 36%, var(--border)); background: color-mix(in srgb, #0ea5e9 10%, var(--bg-card)); border-radius: 12px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+    <span style="font-size: 13px; color: var(--text-primary);">
+        Spec planning has not started yet. Start agents to begin building this spec.
+    </span>
+    <button class="btn btn-primary"
+            hx-post="/web/specs/{{ .SpecID }}/agents/start"
+            hx-target="#agent-status"
+            hx-swap="outerHTML"
+            hx-on::after-request="if(event.detail.successful){document.getElementById('start-agents-banner')?.remove();}">
+        Start agents
+    </button>
+</div>
+{{ end }}
+
 <header class="command-bar">
     <div class="command-bar-left">
         <span class="command-bar-title">{{ .Title }}</span>
@@ -10,11 +25,11 @@
         <span class="command-bar-subtitle">{{ if .OneLiner }}{{ .OneLiner }}{{ else }}Refine this spec with cards, decisions, and constraints.{{ end }}</span>
     </div>
     <div class="view-toggles-capsule">
-        <button class="view-toggle active" data-view="document"
-                hx-get="/web/specs/{{ .SpecID }}/document"
+        <button class="view-toggle active" data-view="chat"
+                hx-get="/web/specs/{{ .SpecID }}/chat-panel"
                 hx-target="#canvas" hx-swap="innerHTML">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-            <span class="view-toggle-label">Document</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span class="view-toggle-label">Chat</span>
         </button>
         <button class="view-toggle" data-view="board"
                 hx-get="/web/specs/{{ .SpecID }}/board"
@@ -22,11 +37,29 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             <span class="view-toggle-label">Board</span>
         </button>
+        <button class="view-toggle" data-view="document"
+                hx-get="/web/specs/{{ .SpecID }}/document"
+                hx-target="#canvas" hx-swap="innerHTML">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span class="view-toggle-label">Document</span>
+        </button>
         <button class="view-toggle" data-view="diagram"
                 hx-get="/web/specs/{{ .SpecID }}/diagram"
                 hx-target="#canvas" hx-swap="innerHTML">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
             <span class="view-toggle-label">Diagram</span>
+        </button>
+        <button class="view-toggle" data-view="activity"
+                hx-get="/web/specs/{{ .SpecID }}/activity"
+                hx-target="#canvas" hx-swap="innerHTML">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            <span class="view-toggle-label">Activity</span>
+        </button>
+        <button class="view-toggle" data-view="artifacts"
+                hx-get="/web/specs/{{ .SpecID }}/artifacts"
+                hx-target="#canvas" hx-swap="innerHTML">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="7.5 4.21 12 6.81 16.5 4.21"/><polyline points="7.5 19.79 7.5 14.6 3 12"/><polyline points="21 12 16.5 14.6 16.5 19.79"/><polyline points="12 22.08 12 16.8 16.5 14.6"/><polyline points="12 16.8 7.5 14.6"/></svg>
+            <span class="view-toggle-label">Artifacts</span>
         </button>
     </div>
     <div class="command-bar-right">
@@ -42,13 +75,9 @@
          hx-trigger="sse:card_created, sse:card_updated, sse:card_moved, sse:card_deleted, sse:spec_core_updated">
     </div>
     <main class="canvas" id="canvas"
-          hx-get="/web/specs/{{ .SpecID }}/document"
+          hx-get="/web/specs/{{ .SpecID }}/chat-panel"
           hx-trigger="load" hx-swap="innerHTML">
     </main>
-    <aside class="chat-rail" id="chat-rail"
-           hx-get="/web/specs/{{ .SpecID }}/chat-panel"
-           hx-trigger="load" hx-swap="innerHTML">
-    </aside>
 </div>
 
 </div>

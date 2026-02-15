@@ -68,7 +68,7 @@ func (m *StorageManager) ListSpecDirs() ([]SpecDir, error) {
 		name := entry.Name()
 		id, err := ulid.Parse(name)
 		if err != nil {
-			log.Printf("WARNING: skipping non-ULID directory in specs/: %s", name)
+			log.Printf("component=spec.store action=list_spec_dirs_skip_non_ulid dir=%s", name)
 			continue
 		}
 		results = append(results, SpecDir{
@@ -116,10 +116,10 @@ func (m *StorageManager) RecoverAllSpecs() ([]RecoveredSpec, error) {
 	for _, sd := range specDirs {
 		state, lastEventID, err := RecoverSpec(sd.Path)
 		if err != nil {
-			log.Printf("ERROR: failed to recover spec %s: %v", sd.SpecID, err)
+			log.Printf("component=spec.store action=recover_spec_failed spec_id=%s err=%v", sd.SpecID, err)
 			continue
 		}
-		log.Printf("INFO: recovered spec %s at event %d", sd.SpecID, lastEventID)
+		log.Printf("component=spec.store action=recovered_spec spec_id=%s last_event_id=%d", sd.SpecID, lastEventID)
 		recovered = append(recovered, RecoveredSpec{
 			SpecID: sd.SpecID,
 			State:  state,

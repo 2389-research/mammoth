@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -203,6 +204,106 @@ func TestBuildStartProjectNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected status 404, got %d", rec.Code)
+	}
+}
+
+func TestDOTFixSuccess(t *testing.T) {
+	srv := newTestServer(t)
+
+	p, err := srv.store.Create("dot-fix-success")
+	if err != nil {
+		t.Fatalf("unexpected error creating project: %v", err)
+	}
+	p.Phase = PhaseEdit
+	p.DOT = "this is not valid DOT syntax"
+	p.Diagnostics = []string{"error: [parse] invalid dot"}
+	if err := srv.store.Update(p); err != nil {
+		t.Fatalf("unexpected error updating project: %v", err)
+	}
+
+	srv.dotFixer = func(_ context.Context, _ *Project) (string, error) {
+		return validTestDOT, nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/projects/"+p.ID+"/dot/fix", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected status 303, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Location") != "/projects/"+p.ID+"/editor" {
+		t.Fatalf("expected redirect to editor, got %q", rec.Header().Get("Location"))
+	}
+
+	updated, ok := srv.store.Get(p.ID)
+	if !ok {
+		t.Fatal("project not found after DOT fix")
+	}
+	if updated.DOT != validTestDOT {
+		t.Fatalf("expected DOT to be replaced by fixer output")
+	}
+	if updated.Phase != PhaseEdit {
+		t.Fatalf("expected phase to remain edit, got %q", updated.Phase)
+	}
+}
+
+func TestDOTFixFailure(t *testing.T) {
+	srv := newTestServer(t)
+
+	p, err := srv.store.Create("dot-fix-failure")
+	if err != nil {
+		t.Fatalf("unexpected error creating project: %v", err)
+	}
+	p.Phase = PhaseEdit
+	p.DOT = "digraph x { start -> done }"
+	if err := srv.store.Update(p); err != nil {
+		t.Fatalf("unexpected error updating project: %v", err)
+	}
+
+	srv.dotFixer = func(_ context.Context, _ *Project) (string, error) {
+		return "", errors.New("backend unavailable")
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/projects/"+p.ID+"/dot/fix", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected status 303, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Location") != "/projects/"+p.ID {
+		t.Fatalf("expected redirect to project overview, got %q", rec.Header().Get("Location"))
+	}
+
+	updated, ok := srv.store.Get(p.ID)
+	if !ok {
+		t.Fatal("project not found after DOT fix failure")
+	}
+	if len(updated.Diagnostics) == 0 || !strings.Contains(updated.Diagnostics[0], "[agent_fix_failed]") {
+		t.Fatalf("expected first diagnostic to include [agent_fix_failed], got %v", updated.Diagnostics)
+	}
+}
+
+func TestDOTFixNoDOT(t *testing.T) {
+	srv := newTestServer(t)
+
+	p, err := srv.store.Create("dot-fix-no-dot")
+	if err != nil {
+		t.Fatalf("unexpected error creating project: %v", err)
+	}
+	p.Phase = PhaseEdit
+	p.DOT = ""
+	if err := srv.store.Update(p); err != nil {
+		t.Fatalf("unexpected error updating project: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/projects/"+p.ID+"/dot/fix", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rec.Code)
 	}
 }
 

@@ -9,8 +9,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/2389-research/mammoth/spec/core"
 	specserver "github.com/2389-research/mammoth/spec/server"
@@ -265,6 +268,12 @@ func TestServerBuildStart(t *testing.T) {
 	if loc != expected {
 		t.Errorf("expected Location %q, got %q", expected, loc)
 	}
+
+	// Stop the run so background writers are cleaned up before TempDir teardown.
+	stopReq := httptest.NewRequest(http.MethodPost, "/projects/"+p.ID+"/build/stop", nil)
+	stopRec := httptest.NewRecorder()
+	srv.ServeHTTP(stopRec, stopReq)
+	waitForBuildToSettle(t, srv, p.ID, 2*time.Second)
 }
 
 func TestServerBuildView(t *testing.T) {
@@ -286,6 +295,193 @@ func TestServerBuildView(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, "build") {
 		t.Errorf("expected body to contain %q, got %q", "build", body)
+	}
+}
+
+func TestServerFinalView(t *testing.T) {
+	srv := newTestServer(t)
+
+	p, err := srv.store.Create("final-view-project")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	p.Phase = PhaseDone
+	p.RunID = "run-final-1"
+	p.DOT = `digraph x { start -> done }`
+	if err := srv.store.Update(p); err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/"+p.ID+"/final", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Final Graph") {
+		t.Fatalf("expected final graph section")
+	}
+	if !strings.Contains(body, "Artifacts") {
+		t.Fatalf("expected artifacts section")
+	}
+}
+
+func TestServerArtifactEndpoints(t *testing.T) {
+	srv := newTestServer(t)
+
+	p, err := srv.store.Create("artifact-project")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	p.Phase = PhaseDone
+	p.RunID = "run-artifacts-1"
+	if err := srv.store.Update(p); err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+
+	base := filepath.Join(srv.dataDir, p.ID, "artifacts", p.RunID)
+	if err := os.MkdirAll(filepath.Join(base, "logs"), 0o755); err != nil {
+		t.Fatalf("mkdir artifacts: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "logs", "output.txt"), []byte("hello artifact"), 0o644); err != nil {
+		t.Fatalf("write artifact: %v", err)
+	}
+
+	recRoot := httptest.NewRecorder()
+	reqRoot := httptest.NewRequest(http.MethodGet, "/projects/"+p.ID+"/artifacts/list", nil)
+	srv.ServeHTTP(recRoot, reqRoot)
+	if recRoot.Code != http.StatusOK {
+		t.Fatalf("artifact root list status: got %d", recRoot.Code)
+	}
+	var rootResp struct {
+		BasePath string `json:"base_path"`
+		Dir      string `json:"dir"`
+		Entries  []struct {
+			Name  string `json:"name"`
+			Path  string `json:"path"`
+			IsDir bool   `json:"is_dir"`
+		} `json:"entries"`
+		Files []string `json:"files"`
+	}
+	if err := json.NewDecoder(recRoot.Body).Decode(&rootResp); err != nil {
+		t.Fatalf("decode root response: %v", err)
+	}
+	if rootResp.BasePath == "" {
+		t.Fatalf("expected base_path in response")
+	}
+	if rootResp.Dir != "" {
+		t.Fatalf("expected root dir empty, got %q", rootResp.Dir)
+	}
+	if len(rootResp.Entries) != 1 || !rootResp.Entries[0].IsDir || rootResp.Entries[0].Path != "logs" {
+		t.Fatalf("unexpected root entries: %#v", rootResp.Entries)
+	}
+
+	recList := httptest.NewRecorder()
+	reqList := httptest.NewRequest(http.MethodGet, "/projects/"+p.ID+"/artifacts/list?dir=logs", nil)
+	srv.ServeHTTP(recList, reqList)
+	if recList.Code != http.StatusOK {
+		t.Fatalf("artifact list status: got %d", recList.Code)
+	}
+	var listResp struct {
+		Dir     string `json:"dir"`
+		Entries []struct {
+			Path  string `json:"path"`
+			IsDir bool   `json:"is_dir"`
+		} `json:"entries"`
+		Files []string `json:"files"`
+	}
+	if err := json.NewDecoder(recList.Body).Decode(&listResp); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	if listResp.Dir != "logs" {
+		t.Fatalf("expected dir logs, got %q", listResp.Dir)
+	}
+	if len(listResp.Files) != 1 || listResp.Files[0] != "logs/output.txt" {
+		t.Fatalf("unexpected artifact list files: %#v", listResp.Files)
+	}
+
+	recFile := httptest.NewRecorder()
+	reqFile := httptest.NewRequest(http.MethodGet, "/projects/"+p.ID+"/artifacts/file?path=logs/output.txt", nil)
+	srv.ServeHTTP(recFile, reqFile)
+	if recFile.Code != http.StatusOK {
+		t.Fatalf("artifact file status: got %d", recFile.Code)
+	}
+	var fileResp struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(recFile.Body).Decode(&fileResp); err != nil {
+		t.Fatalf("decode file response: %v", err)
+	}
+	if fileResp.Path != "logs/output.txt" {
+		t.Fatalf("unexpected path: %q", fileResp.Path)
+	}
+	if fileResp.Content != "hello artifact" {
+		t.Fatalf("unexpected content: %q", fileResp.Content)
+	}
+}
+
+func TestServerFinalTimeline(t *testing.T) {
+	srv := newTestServer(t)
+
+	p, err := srv.store.Create("timeline-project")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	p.Phase = PhaseDone
+	p.RunID = "run-timeline-1"
+	if err := srv.store.Update(p); err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+
+	base := filepath.Join(srv.dataDir, p.ID, "artifacts", p.RunID)
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		t.Fatalf("mkdir artifacts: %v", err)
+	}
+	progress := strings.Join([]string{
+		`{"timestamp":"2026-02-14T19:30:00Z","type":"stage.started","node_id":"start"}`,
+		`{"timestamp":"2026-02-14T19:30:01Z","type":"stage.completed","node_id":"start"}`,
+		`{"timestamp":"2026-02-14T19:30:02Z","type":"stage.started","node_id":"plan"}`,
+		`{"timestamp":"2026-02-14T19:30:04Z","type":"stage.failed","node_id":"plan","data":{"error":"boom"}}`,
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(base, "progress.ndjson"), []byte(progress), 0o644); err != nil {
+		t.Fatalf("write progress: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/"+p.ID+"/final/timeline", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("timeline status: got %d", rec.Code)
+	}
+
+	var resp struct {
+		Steps []struct {
+			NodeID     string `json:"node_id"`
+			Status     string `json:"status"`
+			DurationMS int64  `json:"duration_ms"`
+			Error      string `json:"error"`
+			Operations []struct {
+				Type string `json:"type"`
+			} `json:"operations"`
+		} `json:"steps"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode timeline: %v", err)
+	}
+	if len(resp.Steps) != 2 {
+		t.Fatalf("expected 2 steps, got %d", len(resp.Steps))
+	}
+	if resp.Steps[0].NodeID != "start" || resp.Steps[0].Status != "completed" || resp.Steps[0].DurationMS != 1000 {
+		t.Fatalf("unexpected first step: %#v", resp.Steps[0])
+	}
+	if len(resp.Steps[0].Operations) < 2 {
+		t.Fatalf("expected operations on first step, got %#v", resp.Steps[0].Operations)
+	}
+	if resp.Steps[1].NodeID != "plan" || resp.Steps[1].Status != "failed" || resp.Steps[1].Error != "boom" {
+		t.Fatalf("unexpected second step: %#v", resp.Steps[1])
 	}
 }
 
@@ -352,6 +548,44 @@ func TestServerProjectEditorRoute(t *testing.T) {
 	}
 	if !strings.Contains(rec2.Body.String(), "/projects/"+p.ID+"/build/start") {
 		t.Fatalf("expected editor toolbar to target project build route")
+	}
+}
+
+func TestServerProjectEditorNodeEditRoute(t *testing.T) {
+	srv := newTestServer(t)
+
+	p, err := srv.store.Create("editor-node-route")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	p.DOT = `digraph x { start [label="Start"]; done [shape=Msquare]; start -> done }`
+	p.Phase = PhaseEdit
+	if err := srv.store.Update(p); err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/"+p.ID+"/editor", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected status 303, got %d", rec.Code)
+	}
+	loc := rec.Header().Get("Location")
+
+	sessionPath := strings.TrimPrefix(loc, "/projects/"+p.ID+"/editor/sessions/")
+	sessionID := strings.SplitN(sessionPath, "/", 2)[0]
+	if sessionID == "" {
+		t.Fatalf("expected session id in %q", loc)
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/projects/"+p.ID+"/editor/sessions/"+sessionID+"/node-edit?id=start", nil)
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for node-edit, got %d body=%s", rec2.Code, rec2.Body.String())
+	}
+	if !strings.Contains(rec2.Body.String(), "start") {
+		t.Fatalf("expected node edit form body to include node id")
 	}
 }
 
@@ -434,6 +668,9 @@ func TestServerStartSpecInitializesCore(t *testing.T) {
 	if !strings.Contains(body, "spec-compositor") {
 		t.Fatalf("expected spec compositor HTML")
 	}
+	if !strings.Contains(body, "Spec planning has not started yet") {
+		t.Fatalf("expected start-agents banner on fresh spec")
+	}
 
 	updated, ok := srv.store.Get(p.ID)
 	if !ok {
@@ -448,6 +685,7 @@ func TestServerStartSpecInitializesCore(t *testing.T) {
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	t.Setenv("MAMMOTH_BACKEND", "")
+	t.Setenv("MAMMOTH_DISABLE_PROGRESS_LOG", "1")
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("GEMINI_API_KEY", "")

@@ -11,7 +11,96 @@
     'use strict';
 
     function editorBasePath() {
-        return window.MAMMOTH_EDITOR_BASE_PATH || '';
+        if (window.MAMMOTH_EDITOR_BASE_PATH) {
+            return window.MAMMOTH_EDITOR_BASE_PATH;
+        }
+        const editorEl = document.querySelector('.editor');
+        if (editorEl && editorEl.dataset && editorEl.dataset.basePath) {
+            return editorEl.dataset.basePath;
+        }
+        const path = window.location.pathname || '';
+        const idx = path.indexOf('/sessions/');
+        if (idx > 0) {
+            return path.slice(0, idx);
+        }
+        return '';
+    }
+
+    function normalizeElementId(rawId) {
+        let id = (rawId || '').trim();
+        if (!id) {
+            return '';
+        }
+        if ((id.startsWith('"') && id.endsWith('"')) || (id.startsWith("'") && id.endsWith("'"))) {
+            id = id.slice(1, -1);
+        }
+        return id.trim();
+    }
+
+    function parseNodeAttrs(dotSource) {
+        const nodeAttrs = {};
+        if (!dotSource) {
+            return nodeAttrs;
+        }
+
+        const nodeStmt = /^\s*("([^"\\]|\\.)*"|[A-Za-z_][A-Za-z0-9_.:-]*)\s*\[([^\]]*)\]\s*;?/gm;
+        let m;
+        while ((m = nodeStmt.exec(dotSource)) !== null) {
+            const id = normalizeElementId(m[1]);
+            const attrText = m[3] || '';
+            if (!id) {
+                continue;
+            }
+            const attrs = {};
+            const attrRe = /([A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*("[^"]*"|'[^']*'|[^,\]]+)/g;
+            let a;
+            while ((a = attrRe.exec(attrText)) !== null) {
+                const key = (a[1] || '').trim().toLowerCase();
+                const val = normalizeElementId(a[2]);
+                if (key) {
+                    attrs[key] = val;
+                }
+            }
+            nodeAttrs[id] = attrs;
+        }
+        return nodeAttrs;
+    }
+
+    function inferNodeType(attrs) {
+        const shape = String((attrs && attrs.shape) || '').toLowerCase();
+        const nodeType = String((attrs && attrs.type) || '').toLowerCase();
+        const hasPrompt = !!String((attrs && attrs.prompt) || '').trim();
+        const hasTool = !!String((attrs && attrs.tool) || '').trim();
+        const hasInterviewer = !!String((attrs && attrs.interviewer) || '').trim();
+
+        if (shape === 'mdiamond') return 'start';
+        if (shape === 'msquare') return 'exit';
+        if (shape === 'diamond') return 'conditional';
+        if (nodeType === 'wait.human' || shape === 'hexagon' || hasInterviewer) return 'human';
+        if (nodeType === 'tool' || hasTool || shape === 'parallelogram') return 'tool';
+        if (nodeType === 'codergen' || hasPrompt) return 'codegen';
+        return '';
+    }
+
+    function applyNodeTypeClasses(dotSource) {
+        const svg = document.querySelector('#graph-container svg');
+        if (!svg) {
+            return;
+        }
+        const nodeAttrs = parseNodeAttrs(dotSource);
+        svg.querySelectorAll('.node').forEach(node => {
+            node.classList.remove('node-type-start', 'node-type-exit', 'node-type-codegen', 'node-type-conditional', 'node-type-human', 'node-type-tool');
+            const title = node.querySelector('title');
+            if (!title) {
+                return;
+            }
+            const nodeId = normalizeElementId(title.textContent);
+            const attrs = nodeAttrs[nodeId] || {};
+            const nodeType = inferNodeType(attrs);
+            if (nodeType) {
+                node.classList.add('node-type-' + nodeType);
+            }
+        });
     }
 
     let graphviz = null;
@@ -24,6 +113,8 @@
             console.warn('Graph container not found, skipping initialization');
             return;
         }
+        const width = Math.max(320, container.clientWidth || 0);
+        const height = Math.max(220, container.clientHeight || 0);
 
         if (!graphviz) {
             graphviz = d3.select('#graph-container')
@@ -31,8 +122,8 @@
                 .zoom(true)
                 .fit(true)
                 .scale(1.0)
-                .width(container.clientWidth)
-                .height(container.clientHeight || 600)
+                .width(width)
+                .height(height)
                 .on('initEnd', () => {
                     console.log('Graphviz initialized');
                     renderGraph();
@@ -61,12 +152,16 @@
             initGraphviz();
             return;
         }
+        graphviz
+            .width(Math.max(320, container.clientWidth || 0))
+            .height(Math.max(220, container.clientHeight || 0));
 
         try {
             graphviz
                 .renderDot(dot)
                 .on('end', () => {
                     console.log('Graph rendered');
+                    applyNodeTypeClasses(dot);
                     attachClickHandlers();
                 });
         } catch (err) {
@@ -94,7 +189,7 @@
                 e.stopPropagation();
                 const title = node.querySelector('title');
                 if (title) {
-                    const nodeId = title.textContent;
+                    const nodeId = normalizeElementId(title.textContent);
                     handleNodeClick(nodeId, node);
                 }
             });
@@ -107,7 +202,7 @@
                 e.stopPropagation();
                 const title = edge.querySelector('title');
                 if (title) {
-                    const edgeId = title.textContent;
+                    const edgeId = normalizeElementId(title.textContent);
                     handleEdgeClick(edgeId, edge);
                 }
             });
@@ -127,7 +222,10 @@
         selectedElement = element;
         element.classList.add('selected');
         const sessionID = document.querySelector('.editor').dataset.sessionId;
-        htmx.ajax('GET', `${editorBasePath()}/sessions/${sessionID}/nodes/${encodeURIComponent(nodeId)}/edit`, {target: '#selection-props', swap: 'innerHTML'});
+        const textEl = element.querySelector('text');
+        const nodeLabel = textEl ? String(textEl.textContent || '').trim() : '';
+        const query = `id=${encodeURIComponent(nodeId)}${nodeLabel ? `&label=${encodeURIComponent(nodeLabel)}` : ''}`;
+        htmx.ajax('GET', `${editorBasePath()}/sessions/${sessionID}/node-edit?${query}`, {target: '#selection-props', swap: 'innerHTML'});
     }
 
     // Handle edge click - fetch edit form via htmx
@@ -136,8 +234,7 @@
         selectedElement = element;
         element.classList.add('selected');
         const sessionID = document.querySelector('.editor').dataset.sessionId;
-        // Edge IDs contain -> which needs URL encoding
-        htmx.ajax('GET', `${editorBasePath()}/sessions/${sessionID}/edges/${encodeURIComponent(edgeId)}/edit`, {target: '#selection-props', swap: 'innerHTML'});
+        htmx.ajax('GET', `${editorBasePath()}/sessions/${sessionID}/edge-edit?id=${encodeURIComponent(edgeId)}`, {target: '#selection-props', swap: 'innerHTML'});
     }
 
     // Clear current selection

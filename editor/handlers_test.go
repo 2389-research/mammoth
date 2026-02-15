@@ -535,6 +535,54 @@ func TestNodeEditFormReturns200WithFormContent(t *testing.T) {
 	}
 }
 
+func TestNodeEditFormAcceptsQuotedNodeID(t *testing.T) {
+	srv, store := newTestServer(t)
+	sessID := createTestSession(t, store)
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/"+sessID+"/nodes/%22start%22/edit", nil)
+	w := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d: %s", resp.StatusCode, string(body))
+	}
+}
+
+func TestNodeEditFormByQueryReturns200(t *testing.T) {
+	srv, store := newTestServer(t)
+	sessID := createTestSession(t, store)
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/"+sessID+"/node-edit?id=start", nil)
+	w := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d: %s", resp.StatusCode, string(body))
+	}
+}
+
+func TestNodeEditFormByQueryAcceptsQuotedNodeID(t *testing.T) {
+	srv, store := newTestServer(t)
+	sessID := createTestSession(t, store)
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/"+sessID+"/node-edit?id=%22start%22", nil)
+	w := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d: %s", resp.StatusCode, string(body))
+	}
+}
+
 func TestNodeEditFormReturns404ForMissingNode(t *testing.T) {
 	srv, store := newTestServer(t)
 	sessID := createTestSession(t, store)
@@ -595,6 +643,45 @@ func TestEdgeEditFormReturns200WithFormContent(t *testing.T) {
 	escapedEdgeID := strings.ReplaceAll(edgeID, ">", "&gt;")
 	if !strings.Contains(bodyStr, escapedEdgeID) {
 		t.Fatalf("expected response body to contain edge ID %q (escaped: %q), got: %s", edgeID, escapedEdgeID, bodyStr)
+	}
+}
+
+func TestEdgeEditFormAcceptsQuotedEdgeID(t *testing.T) {
+	srv, store := newTestServer(t)
+	sessID := createTestSession(t, store)
+
+	// Use the stable ID form expected by edge lookup.
+	req := httptest.NewRequest(http.MethodGet, "/sessions/"+sessID+"/edges/%22start-%3Eend%22/edit", nil)
+	w := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d: %s", resp.StatusCode, string(body))
+	}
+}
+
+func TestEdgeEditFormByQueryReturns200(t *testing.T) {
+	srv, store := newTestServer(t)
+	sessID := createTestSession(t, store)
+
+	sess, _ := store.Get(sessID)
+	if len(sess.Graph.Edges) == 0 {
+		t.Fatal("expected at least one edge in test session")
+	}
+	edgeID := sess.Graph.Edges[0].ID
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/"+sessID+"/edge-edit?id="+url.QueryEscape(edgeID), nil)
+	w := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d: %s", resp.StatusCode, string(body))
 	}
 }
 

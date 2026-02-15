@@ -15,6 +15,7 @@ import (
 const editorBasePathHeader = "X-Mammoth-Editor-Base-Path"
 const editorProjectPathHeader = "X-Mammoth-Project-Path"
 const editorBuildStartHeader = "X-Mammoth-Build-Start-Path"
+const editorDotFixHeader = "X-Mammoth-Dot-Fix-Path"
 
 func (s *Server) editorRouter(r chi.Router) {
 	r.Get("/", s.handleProjectEditorEntry)
@@ -67,6 +68,7 @@ func (s *Server) editorProxyHandler() http.Handler {
 		r2.Header.Set(editorBasePathHeader, basePath)
 		r2.Header.Set(editorProjectPathHeader, "/projects/"+projectID)
 		r2.Header.Set(editorBuildStartHeader, "/projects/"+projectID+"/build/start")
+		r2.Header.Set(editorDotFixHeader, "/projects/"+projectID+"/dot/fix")
 
 		rw := &editorProxyResponseWriter{ResponseWriter: w}
 		s.editorServer.ServeHTTP(rw, r2)

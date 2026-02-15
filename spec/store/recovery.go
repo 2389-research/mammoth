@@ -48,11 +48,11 @@ func RecoverSpec(specDir string) (*core.SpecState, uint64, error) {
 	var snapshotEventID uint64
 
 	if snapshot != nil {
-		log.Printf("INFO: loaded snapshot at event %d", snapshot.LastEventID)
+		log.Printf("component=spec.store action=recover_loaded_snapshot event_id=%d", snapshot.LastEventID)
 		state = snapshot.State
 		snapshotEventID = snapshot.LastEventID
 	} else {
-		log.Printf("INFO: no snapshot found, starting from empty state")
+		log.Printf("component=spec.store action=recover_no_snapshot")
 		state = core.NewSpecState()
 		snapshotEventID = 0
 	}
@@ -63,7 +63,7 @@ func RecoverSpec(specDir string) (*core.SpecState, uint64, error) {
 		if err != nil {
 			return nil, 0, fmt.Errorf("repair jsonl: %w", err)
 		}
-		log.Printf("INFO: repaired JSONL: %d valid events", repairedCount)
+		log.Printf("component=spec.store action=recover_jsonl_repaired valid_events=%d", repairedCount)
 	}
 
 	// Step 3: Replay events from the JSONL log, filtering by SpecID when the
@@ -77,7 +77,7 @@ func RecoverSpec(specDir string) (*core.SpecState, uint64, error) {
 		}
 		for i := range rawEvents {
 			if filterBySpecID && rawEvents[i].SpecID != expectedSpecID {
-				log.Printf("WARNING: skipping event %d with mismatched spec_id %s (expected %s)",
+				log.Printf("component=spec.store action=recover_skip_mismatched_spec event_id=%d found_spec_id=%s expected_spec_id=%s",
 					rawEvents[i].EventID, rawEvents[i].SpecID, expectedSpecID)
 				continue
 			}
@@ -94,7 +94,7 @@ func RecoverSpec(specDir string) (*core.SpecState, uint64, error) {
 		}
 	}
 
-	log.Printf("INFO: replayed %d events after snapshot (total %d events on disk)",
+	log.Printf("component=spec.store action=recover_replayed_events replayed=%d total_on_disk=%d",
 		tailCount, len(allEvents))
 
 	lastEventID := state.LastEventID
@@ -115,22 +115,22 @@ func RecoverSpec(specDir string) (*core.SpecState, uint64, error) {
 	}
 
 	if found && sqliteLastID == lastEventID {
-		log.Printf("INFO: SQLite index is up to date at event %d", sqliteLastID)
+		log.Printf("component=spec.store action=recover_sqlite_uptodate event_id=%d", sqliteLastID)
 	} else if len(allEvents) == 0 && snapshot != nil {
 		// No events on disk but a snapshot exists: trust the snapshot and
 		// set the SQLite last_event_id to match, without rebuilding empty.
-		log.Printf("INFO: no events on disk, trusting snapshot at event %d", lastEventID)
+		log.Printf("component=spec.store action=recover_trust_snapshot_no_events event_id=%d", lastEventID)
 		if err := index.SetLastEventID(lastEventID); err != nil {
 			return nil, 0, fmt.Errorf("set sqlite last_event_id from snapshot: %w", err)
 		}
 	} else if found {
-		log.Printf("WARNING: SQLite index stale (at event %d, expected %d), rebuilding",
+		log.Printf("component=spec.store action=recover_sqlite_stale_rebuilding sqlite_event_id=%d expected_event_id=%d",
 			sqliteLastID, lastEventID)
 		if err := index.RebuildFromEvents(allEvents); err != nil {
 			return nil, 0, fmt.Errorf("rebuild sqlite: %w", err)
 		}
 	} else {
-		log.Printf("INFO: SQLite index empty, building from events")
+		log.Printf("component=spec.store action=recover_sqlite_empty_rebuilding")
 		if err := index.RebuildFromEvents(allEvents); err != nil {
 			return nil, 0, fmt.Errorf("build sqlite: %w", err)
 		}

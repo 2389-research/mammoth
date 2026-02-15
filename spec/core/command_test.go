@@ -101,6 +101,42 @@ func TestUpdateSpecCoreCommand_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestUpdateSpecCoreCommand_UnmarshalArrayFields(t *testing.T) {
+	data := []byte(`{
+		"type":"UpdateSpecCore",
+		"constraints":["Must run offline","No external SaaS"],
+		"success_criteria":["Works end-to-end","Latency under 200ms"]
+	}`)
+
+	got, err := core.UnmarshalCommand(data)
+	if err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	cmd, ok := got.(core.UpdateSpecCoreCommand)
+	if !ok {
+		t.Fatalf("expected UpdateSpecCoreCommand, got %T", got)
+	}
+	if cmd.Constraints == nil || *cmd.Constraints != "Must run offline\nNo external SaaS" {
+		t.Fatalf("constraints: got %v", cmd.Constraints)
+	}
+	if cmd.SuccessCriteria == nil || *cmd.SuccessCriteria != "Works end-to-end\nLatency under 200ms" {
+		t.Fatalf("success_criteria: got %v", cmd.SuccessCriteria)
+	}
+}
+
+func TestUpdateSpecCoreCommand_UnmarshalRejectsInvalidFieldType(t *testing.T) {
+	data := []byte(`{
+		"type":"UpdateSpecCore",
+		"constraints":{"k":"v"}
+	}`)
+
+	_, err := core.UnmarshalCommand(data)
+	if err == nil {
+		t.Fatal("expected error for invalid constraints type")
+	}
+}
+
 func TestCreateCardCommand_RoundTrip(t *testing.T) {
 	body := "Card body content"
 	lane := "Doing"

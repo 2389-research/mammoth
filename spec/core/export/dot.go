@@ -61,6 +61,7 @@ func ExportDOT(state *core.SpecState) string {
 	if state.Core != nil && state.Core.Constraints != nil {
 		specConstraints = *state.Core.Constraints
 	}
+	pipelineOpts, cleanedSpecConstraints := parsePipelineOptions(specConstraints)
 
 	successCriteria := ""
 	if state.Core != nil && state.Core.SuccessCriteria != nil {
@@ -103,7 +104,7 @@ func ExportDOT(state *core.SpecState) string {
 	})
 
 	// Build synthesized prompts for each pipeline phase
-	planPrompt := buildPlanPrompt(goal, ideas, constraints, specConstraints)
+	planPrompt := buildPlanPrompt(goal, ideas, constraints, cleanedSpecConstraints)
 	setupPrompt := buildSetupPrompt(goal)
 	tddPrompt := buildTDDPrompt(goal, tasks, plans)
 	implementPrompt := buildImplementPrompt(goal, tasks, plans)
@@ -132,44 +133,76 @@ func ExportDOT(state *core.SpecState) string {
 	// Pipeline phase nodes
 	fmt.Fprintf(&out, "plan [shape=box, label=\"Plan\", prompt=\"%s\"]\n", escapeDOTString(planPrompt))
 	fmt.Fprintf(&out, "setup [shape=box, label=\"Setup\", prompt=\"%s\"]\n", escapeDOTString(setupPrompt))
-	fmt.Fprintf(&out, "tdd [shape=box, label=\"TDD\", prompt=\"%s\"]\n", escapeDOTString(tddPrompt))
+	if pipelineOpts.TDD {
+		fmt.Fprintf(&out, "tdd [shape=box, label=\"TDD\", prompt=\"%s\"]\n", escapeDOTString(tddPrompt))
+	}
 	fmt.Fprintf(&out, "implement [shape=box, label=\"Implement\", prompt=\"%s\", goal_gate=true, max_retries=3]\n", escapeDOTString(implementPrompt))
 	fmt.Fprintf(&out, "verify [shape=box, label=\"Verify\", prompt=\"%s\"]\n", escapeDOTString(verifyPrompt))
 	fmt.Fprintln(&out, "verify_ok [shape=diamond, label=\"Tests passed?\"]")
 	fmt.Fprintln(&out)
-	fmt.Fprintf(&out, "scenario_test [shape=box, label=\"Scenario Test\", prompt=\"%s\"]\n", escapeDOTString(scenarioTestPrompt))
-	fmt.Fprintln(&out, "scenario_ok [shape=diamond, label=\"Scenarios passed?\"]")
-	fmt.Fprintln(&out)
-	fmt.Fprintf(&out, "review_gate [shape=hexagon, type=\"wait.human\", label=\"Review\", prompt=\"%s\"]\n", escapeDOTString(reviewPrompt))
-	fmt.Fprintf(&out, "polish [shape=box, label=\"Polish\", prompt=\"%s\"]\n", escapeDOTString(polishPrompt))
+	if pipelineOpts.ScenarioTesting {
+		fmt.Fprintf(&out, "scenario_test [shape=box, label=\"Scenario Test\", prompt=\"%s\"]\n", escapeDOTString(scenarioTestPrompt))
+		fmt.Fprintln(&out, "scenario_ok [shape=diamond, label=\"Scenarios passed?\"]")
+		fmt.Fprintln(&out)
+	}
+	if pipelineOpts.HumanReview {
+		fmt.Fprintf(&out, "review_gate [shape=hexagon, type=\"wait.human\", label=\"Review\", prompt=\"%s\"]\n", escapeDOTString(reviewPrompt))
+		fmt.Fprintf(&out, "polish [shape=box, label=\"Polish\", prompt=\"%s\"]\n", escapeDOTString(polishPrompt))
+	}
 	fmt.Fprintf(&out, "release [shape=box, label=\"Release\", prompt=\"%s\"]\n", escapeDOTString(releasePrompt))
 	fmt.Fprintln(&out)
 
 	// Edges: main chain (TDD before implement)
-	fmt.Fprintln(&out, "start -> plan -> setup -> tdd -> implement -> verify -> verify_ok")
+	if pipelineOpts.TDD {
+		fmt.Fprintln(&out, "start -> plan -> setup -> tdd -> implement -> verify -> verify_ok")
+	} else {
+		fmt.Fprintln(&out, "start -> plan -> setup -> implement -> verify -> verify_ok")
+	}
 	fmt.Fprintln(&out)
 
 	// Conditional gate: verify_ok (unit tests)
-	fmt.Fprintln(&out, "verify_ok -> scenario_test [label=\"Pass\", condition=\"outcome=SUCCESS\"]")
+	if pipelineOpts.ScenarioTesting {
+		fmt.Fprintln(&out, "verify_ok -> scenario_test [label=\"Pass\", condition=\"outcome=SUCCESS\"]")
+	} else if pipelineOpts.HumanReview {
+		fmt.Fprintln(&out, "verify_ok -> review_gate [label=\"Pass\", condition=\"outcome=SUCCESS\"]")
+	} else {
+		fmt.Fprintln(&out, "verify_ok -> release [label=\"Pass\", condition=\"outcome=SUCCESS\"]")
+	}
 	fmt.Fprintln(&out, "verify_ok -> implement [label=\"Fail\", condition=\"outcome=FAIL\"]")
 	fmt.Fprintln(&out)
 
-	// Scenario test flows into its own diamond gate
-	fmt.Fprintln(&out, "scenario_test -> scenario_ok")
-	fmt.Fprintln(&out)
+	if pipelineOpts.ScenarioTesting {
+		// Scenario test flows into its own diamond gate
+		fmt.Fprintln(&out, "scenario_test -> scenario_ok")
+		fmt.Fprintln(&out)
 
-	// Conditional gate: scenario_ok (real-dependency validation)
-	fmt.Fprintln(&out, "scenario_ok -> review_gate [label=\"Pass\", condition=\"outcome=SUCCESS\"]")
-	fmt.Fprintln(&out, "scenario_ok -> tdd [label=\"Fail\", condition=\"outcome=FAIL\"]")
-	fmt.Fprintln(&out)
+		// Conditional gate: scenario_ok (real-dependency validation)
+		if pipelineOpts.HumanReview {
+			fmt.Fprintln(&out, "scenario_ok -> review_gate [label=\"Pass\", condition=\"outcome=SUCCESS\"]")
+		} else {
+			fmt.Fprintln(&out, "scenario_ok -> release [label=\"Pass\", condition=\"outcome=SUCCESS\"]")
+		}
+		if pipelineOpts.TDD {
+			fmt.Fprintln(&out, "scenario_ok -> tdd [label=\"Fail\", condition=\"outcome=FAIL\"]")
+		} else {
+			fmt.Fprintln(&out, "scenario_ok -> implement [label=\"Fail\", condition=\"outcome=FAIL\"]")
+		}
+		fmt.Fprintln(&out)
+	}
 
-	// Human gate: review_gate
-	fmt.Fprintln(&out, "review_gate -> release [label=\"[A] Approve\", weight=3]")
-	fmt.Fprintln(&out, "review_gate -> polish  [label=\"[F] Fix\", weight=1]")
-	fmt.Fprintln(&out)
+	if pipelineOpts.HumanReview {
+		// Human gate: review_gate
+		fmt.Fprintln(&out, "review_gate -> release [label=\"[A] Approve\", weight=3]")
+		fmt.Fprintln(&out, "review_gate -> polish  [label=\"[F] Fix\", weight=1]")
+		fmt.Fprintln(&out)
 
-	// Retry loop and final edge
-	fmt.Fprintln(&out, "polish -> tdd")
+		// Retry loop
+		if pipelineOpts.TDD {
+			fmt.Fprintln(&out, "polish -> tdd")
+		} else {
+			fmt.Fprintln(&out, "polish -> implement")
+		}
+	}
 	fmt.Fprintln(&out, "release -> done")
 	fmt.Fprintln(&out)
 
@@ -349,4 +382,51 @@ func escapeDOTString(s string) string {
 	s = strings.ReplaceAll(s, "\n", "\\n")
 	s = strings.ReplaceAll(s, "\r", "\\r")
 	return s
+}
+
+type pipelineOptions struct {
+	HumanReview     bool
+	ScenarioTesting bool
+	TDD             bool
+}
+
+// parsePipelineOptions reads optional mammoth.option.* markers from constraints.
+// When absent, defaults preserve historical behavior (all enabled).
+// Returns parsed options plus constraints text with markers removed.
+func parsePipelineOptions(raw string) (pipelineOptions, string) {
+	opts := pipelineOptions{
+		HumanReview:     true,
+		ScenarioTesting: true,
+		TDD:             true,
+	}
+	if strings.TrimSpace(raw) == "" {
+		return opts, ""
+	}
+
+	lines := strings.Split(raw, "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[mammoth.option.") && strings.HasSuffix(trimmed, "]") {
+			body := strings.TrimSuffix(strings.TrimPrefix(trimmed, "["), "]")
+			parts := strings.SplitN(body, "=", 2)
+			if len(parts) == 2 {
+				key := strings.TrimSpace(parts[0])
+				val := strings.EqualFold(strings.TrimSpace(parts[1]), "true")
+				switch key {
+				case "mammoth.option.human_review":
+					opts.HumanReview = val
+				case "mammoth.option.scenario_testing":
+					opts.ScenarioTesting = val
+				case "mammoth.option.tdd":
+					opts.TDD = val
+				}
+			}
+			continue
+		}
+		if trimmed != "" {
+			filtered = append(filtered, trimmed)
+		}
+	}
+	return opts, strings.Join(filtered, "\n")
 }

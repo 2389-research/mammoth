@@ -51,7 +51,7 @@
         <div class="list-content">
             {{range $id, $node := .Session.Graph.Nodes}}
             <div class="node-item clickable"
-                 hx-get="{{$.BasePath}}/sessions/{{$.SessionID}}/nodes/{{urlquery $id}}/edit"
+                 hx-get="{{$.BasePath}}/sessions/{{$.SessionID}}/node-edit?id={{urlquery $id}}"
                  hx-target="#selection-props"
                  hx-swap="innerHTML">
                 <span class="item-id">{{$id}}</span>
@@ -67,7 +67,7 @@
         <div class="list-content">
             {{range $idx, $edge := .Session.Graph.Edges}}
             <div class="edge-item clickable"
-                 hx-get="{{$.BasePath}}/sessions/{{$.SessionID}}/edges/{{urlquery $edge.ID}}/edit"
+                 hx-get="{{$.BasePath}}/sessions/{{$.SessionID}}/edge-edit?id={{urlquery $edge.ID}}"
                  hx-target="#selection-props"
                  hx-swap="innerHTML">
                 <span class="item-id">{{$edge.From}} &rarr; {{$edge.To}}</span>

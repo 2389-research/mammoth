@@ -82,7 +82,7 @@ func (t *WriteCommandsTool) Execute(_ context.Context, params map[string]any) (*
 	for i, raw := range rawCommands {
 		cmd, err := core.UnmarshalCommand(raw)
 		if err != nil {
-			log.Printf("agent %s: command %d parse error: %v", t.AgentID, i, err)
+			log.Printf("component=spec.agent action=command_parse_failed agent_id=%s command_index=%d err=%v", t.AgentID, i, err)
 			failures = append(failures, fmt.Sprintf("command %d: parse error: %v", i, err))
 			continue
 		}
@@ -91,11 +91,11 @@ func (t *WriteCommandsTool) Execute(_ context.Context, params map[string]any) (*
 
 		events, err := t.Actor.SendCommand(cmd)
 		if err != nil {
-			log.Printf("agent %s: command %d execution failed: %v", t.AgentID, i, err)
+			log.Printf("component=spec.agent action=command_execute_failed agent_id=%s command_index=%d err=%v", t.AgentID, i, err)
 			failures = append(failures, fmt.Sprintf("command %d: %v", i, err))
 		} else {
 			successes++
-			log.Printf("agent %s: command %d executed, %d events produced", t.AgentID, i, len(events))
+			log.Printf("component=spec.agent action=command_executed agent_id=%s command_index=%d events=%d", t.AgentID, i, len(events))
 		}
 	}
 

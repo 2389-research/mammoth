@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/2389-research/mammoth/dot"
@@ -17,6 +18,7 @@ import (
 const basePathHeader = "X-Mammoth-Editor-Base-Path"
 const projectPathHeader = "X-Mammoth-Project-Path"
 const buildStartPathHeader = "X-Mammoth-Build-Start-Path"
+const dotFixPathHeader = "X-Mammoth-Dot-Fix-Path"
 
 func basePathFromRequest(r *http.Request) string {
 	base := strings.TrimSpace(r.Header.Get(basePathHeader))
@@ -32,6 +34,7 @@ func templateDataFromRequest(r *http.Request) TemplateData {
 		BasePath:       basePathFromRequest(r),
 		ProjectPath:    strings.TrimSpace(r.Header.Get(projectPathHeader)),
 		BuildStartPath: strings.TrimSpace(r.Header.Get(buildStartPathHeader)),
+		DotFixPath:     strings.TrimSpace(r.Header.Get(dotFixPathHeader)),
 	}
 }
 
@@ -111,6 +114,8 @@ func (s *Server) handleEditorPage(w http.ResponseWriter, r *http.Request) {
 	data.BasePath = reqData.BasePath
 	data.ProjectPath = reqData.ProjectPath
 	data.BuildStartPath = reqData.BuildStartPath
+	data.DotFixPath = reqData.DotFixPath
+	data.DotFixPath = reqData.DotFixPath
 	s.renderEditor(w, data, http.StatusOK)
 }
 
@@ -157,6 +162,8 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	data.BasePath = reqData.BasePath
 	data.ProjectPath = reqData.ProjectPath
 	data.BuildStartPath = reqData.BuildStartPath
+	data.DotFixPath = reqData.DotFixPath
+	data.DotFixPath = reqData.DotFixPath
 	s.renderPartial(w, "diagnostics", data, http.StatusOK)
 }
 
@@ -398,7 +405,27 @@ func (s *Server) handleRedo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleNodeEditForm(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	nodeID := chi.URLParam(r, "nodeId")
-	sess, ok := s.store.Get(id)
+	s.renderNodeEditFormByID(w, r, id, nodeID)
+}
+
+// handleNodeEditFormByQuery returns the node edit partial using a query param,
+// avoiding path-segment encoding edge-cases for complex node IDs.
+func (s *Server) handleNodeEditFormByQuery(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	nodeID := strings.TrimSpace(r.URL.Query().Get("id"))
+	if nodeID == "" {
+		nodeID = strings.TrimSpace(r.URL.Query().Get("node_id"))
+	}
+	nodeLabel := strings.TrimSpace(r.URL.Query().Get("label"))
+	s.renderNodeEditFormByIDOrLabel(w, r, id, nodeID, nodeLabel)
+}
+
+func (s *Server) renderNodeEditFormByID(w http.ResponseWriter, r *http.Request, sessionID, nodeID string) {
+	s.renderNodeEditFormByIDOrLabel(w, r, sessionID, nodeID, "")
+}
+
+func (s *Server) renderNodeEditFormByIDOrLabel(w http.ResponseWriter, r *http.Request, sessionID, nodeID, nodeLabel string) {
+	sess, ok := s.store.Get(sessionID)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -407,16 +434,19 @@ func (s *Server) handleNodeEditForm(w http.ResponseWriter, r *http.Request) {
 	sess.RLock()
 	defer sess.RUnlock()
 
-	node, found := sess.Graph.Nodes[nodeID]
+	node, found := findNodeByParam(sess.Graph.Nodes, nodeID)
+	if !found && strings.TrimSpace(nodeLabel) != "" {
+		node, found = findNodeByLabel(sess.Graph.Nodes, nodeLabel)
+	}
 	if !found {
 		http.NotFound(w, r)
 		return
 	}
 
 	data := NodeEditData{
-		SessionID: id,
+		SessionID: sessionID,
 		BasePath:  basePathFromRequest(r),
-		NodeID:    nodeID,
+		NodeID:    node.ID,
 		Node:      node,
 	}
 	s.renderPartial(w, "node_edit_form", data, http.StatusOK)
@@ -426,7 +456,22 @@ func (s *Server) handleNodeEditForm(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleEdgeEditForm(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	edgeID := chi.URLParam(r, "edgeId")
-	sess, ok := s.store.Get(id)
+	s.renderEdgeEditFormByID(w, r, id, edgeID)
+}
+
+// handleEdgeEditFormByQuery returns the edge edit partial using a query param,
+// avoiding path-segment encoding edge-cases for complex edge IDs.
+func (s *Server) handleEdgeEditFormByQuery(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	edgeID := strings.TrimSpace(r.URL.Query().Get("id"))
+	if edgeID == "" {
+		edgeID = strings.TrimSpace(r.URL.Query().Get("edge_id"))
+	}
+	s.renderEdgeEditFormByID(w, r, id, edgeID)
+}
+
+func (s *Server) renderEdgeEditFormByID(w http.ResponseWriter, r *http.Request, sessionID, edgeID string) {
+	sess, ok := s.store.Get(sessionID)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -436,8 +481,16 @@ func (s *Server) handleEdgeEditForm(w http.ResponseWriter, r *http.Request) {
 	defer sess.RUnlock()
 
 	var edge *dot.Edge
+	edgeCandidates := elementIDCands(edgeID)
 	for _, e := range sess.Graph.Edges {
-		if e.ID == edgeID {
+		for _, cand := range edgeCandidates {
+			if e.ID == cand {
+				edge = e
+				edgeID = cand
+				break
+			}
+		}
+		if edge != nil {
 			edge = e
 			break
 		}
@@ -448,12 +501,64 @@ func (s *Server) handleEdgeEditForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := EdgeEditData{
-		SessionID: id,
+		SessionID: sessionID,
 		BasePath:  basePathFromRequest(r),
 		EdgeID:    edgeID,
 		Edge:      edge,
 	}
 	s.renderPartial(w, "edge_edit_form", data, http.StatusOK)
+}
+
+func findNodeByParam(nodes map[string]*dot.Node, id string) (*dot.Node, bool) {
+	for _, cand := range elementIDCands(id) {
+		if node, ok := nodes[cand]; ok {
+			return node, true
+		}
+	}
+	return nil, false
+}
+
+func findNodeByLabel(nodes map[string]*dot.Node, label string) (*dot.Node, bool) {
+	want := strings.TrimSpace(label)
+	if want == "" {
+		return nil, false
+	}
+	for _, node := range nodes {
+		if node == nil || node.Attrs == nil {
+			continue
+		}
+		got := strings.TrimSpace(node.Attrs["label"])
+		if got != "" && got == want {
+			return node, true
+		}
+	}
+	return nil, false
+}
+
+func elementIDCands(id string) []string {
+	base := strings.TrimSpace(id)
+	if base == "" {
+		return nil
+	}
+	seen := make(map[string]struct{}, 4)
+	var out []string
+	add := func(v string) {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return
+		}
+		if _, ok := seen[v]; ok {
+			return
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	add(base)
+	add(strings.Trim(base, `"'`))
+	if unquoted, err := strconv.Unquote(base); err == nil {
+		add(unquoted)
+	}
+	return out
 }
 
 // sanitizeFilename strips path separators, control chars, and quotes from a graph name

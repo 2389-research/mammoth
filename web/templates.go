@@ -21,6 +21,7 @@ type PageData struct {
 	Projects    []*Project
 	Mode        string // "idea" or "dot" for project_new
 	ActivePhase string // current wizard phase for highlighting
+	Diagnostics DiagnosticsView
 }
 
 // TemplateEngine loads and renders embedded HTML templates.
@@ -46,6 +47,7 @@ func NewTemplateEngine() (*TemplateEngine, error) {
 		"project_new.html",
 		"project_overview.html",
 		"build_view.html",
+		"final_view.html",
 	}
 
 	engine := &TemplateEngine{

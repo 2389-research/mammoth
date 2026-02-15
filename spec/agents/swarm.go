@@ -101,13 +101,13 @@ func (s *SwarmOrchestrator) AgentCount() int {
 // but won't start new ones.
 func (s *SwarmOrchestrator) Pause() {
 	s.Paused.Store(true)
-	log.Printf("swarm paused for spec %s", s.SpecID)
+	log.Printf("component=spec.swarm action=paused spec_id=%s", s.SpecID)
 }
 
 // Resume agent loops.
 func (s *SwarmOrchestrator) Resume() {
 	s.Paused.Store(false)
-	log.Printf("swarm resumed for spec %s", s.SpecID)
+	log.Printf("component=spec.swarm action=resumed spec_id=%s", s.SpecID)
 }
 
 // IsPaused returns true if the swarm is currently paused.
@@ -138,7 +138,7 @@ func (s *SwarmOrchestrator) RecoverEmptySlots() {
 	defaultRoles := []AgentRole{RoleManager, RoleBrainstormer, RolePlanner, RoleDotGenerator}
 	for i := range s.Agents {
 		if s.Agents[i] == nil && i < len(defaultRoles) {
-			log.Printf("recovering empty agent slot %d (role: %s) after cancellation", i, defaultRoles[i].Label())
+			log.Printf("component=spec.swarm action=recover_slot slot=%d role=%s spec_id=%s", i, defaultRoles[i].Label(), s.SpecID)
 			s.Agents[i] = NewAgentRunner(s.SpecID, defaultRoles[i])
 			s.eventChannels[i] = s.Actor.Subscribe()
 		}
@@ -244,7 +244,7 @@ func (s *SwarmOrchestrator) RunAgentStep(ctx context.Context, runner *AgentRunne
 		Description: fmt.Sprintf("%s reasoning step", runner.Role.Label()),
 	}
 	if _, err := s.Actor.SendCommand(startCmd); err != nil {
-		log.Printf("agent %s: failed to start agent step: %v", runner.AgentID, err)
+		log.Printf("component=spec.agent action=start_step_failed agent_id=%s role=%s err=%v", runner.AgentID, runner.Role.Label(), err)
 	}
 
 	// Build tool registry for this agent. The stepFinished flag is set by
@@ -267,7 +267,7 @@ func (s *SwarmOrchestrator) RunAgentStep(ctx context.Context, runner *AgentRunne
 
 	// Run the agent
 	if err := muxAgent.Run(ctx, taskPrompt); err != nil {
-		log.Printf("agent %s: step failed: %v", runner.AgentID, err)
+		log.Printf("component=spec.agent action=step_failed agent_id=%s role=%s err=%v", runner.AgentID, runner.Role.Label(), err)
 		// Post a sanitized error message to the transcript
 		userMsg := fmt.Sprintf("[%s] encountered an issue and will retry on the next cycle.", runner.Role.Label())
 		_, _ = s.Actor.SendCommand(core.AppendTranscriptCommand{
@@ -291,7 +291,7 @@ func (s *SwarmOrchestrator) RunAgentStep(ctx context.Context, runner *AgentRunne
 		})
 	}
 
-	log.Printf("agent %s: step completed", runner.AgentID)
+	log.Printf("component=spec.agent action=step_completed agent_id=%s role=%s", runner.AgentID, runner.Role.Label())
 	return true
 }
 
@@ -394,7 +394,7 @@ func (s *SwarmOrchestrator) RunLoop(ctx context.Context) {
 				mgrIdx := s.findManagerIndex()
 				s.mu.Unlock()
 				if mgrIdx >= 0 {
-					log.Printf("human message received, prioritising manager agent")
+					log.Printf("component=spec.swarm action=prioritize_manager reason=human_message spec_id=%s", s.SpecID)
 					s.mu.Lock()
 					runner := s.Agents[mgrIdx]
 					eventCh := s.eventChannels[mgrIdx]

@@ -84,7 +84,7 @@ func StartAgents(state *server.AppState, renderer *TemplateRenderer) http.Handle
 		// TryStartAgents does atomic check-and-set: returns false if already running
 		// or if the actor is missing.
 		if !state.TryStartAgents(specID) {
-			log.Printf("StartAgents: TryStartAgents returned false for spec %s (may already be running)", specIDStr)
+			log.Printf("component=spec.web action=start_agents_noop spec_id=%s reason=already_running_or_missing_actor", specIDStr)
 		}
 
 		// Report status (either freshly started or already running)

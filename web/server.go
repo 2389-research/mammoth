@@ -3,6 +3,7 @@
 package web
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,12 +15,14 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/2389-research/mammoth/attractor"
 	"github.com/2389-research/mammoth/editor"
+	"github.com/2389-research/mammoth/spec/core"
 	"github.com/2389-research/mammoth/spec/server"
 	specweb "github.com/2389-research/mammoth/spec/web"
 	"github.com/go-chi/chi/v5"
@@ -54,6 +57,10 @@ type Server struct {
 	// goroutines and background engine goroutines.
 	buildsMu sync.RWMutex
 	builds   map[string]*BuildRun
+
+	// dotFixer repairs invalid DOT graphs using an LLM backend.
+	// It is injectable for tests.
+	dotFixer func(ctx context.Context, p *Project) (string, error)
 }
 
 // ServerConfig holds the configuration for the unified web server.
@@ -115,6 +122,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		editorByProj: make(map[string]string),
 		builds:       make(map[string]*BuildRun),
 	}
+	s.dotFixer = s.fixDOTWithAgent
 
 	s.router = s.buildRouter()
 	return s, nil
@@ -144,7 +152,7 @@ func (s *Server) buildRouter() chi.Router {
 	r := chi.NewRouter()
 
 	// Middleware
-	r.Use(middleware.Logger)
+	r.Use(webRequestLogger)
 	r.Use(middleware.Recoverer)
 
 	// Top-level routes
@@ -154,7 +162,7 @@ func (s *Server) buildRouter() chi.Router {
 	// Spec builder static assets served from embedded filesystem.
 	specStaticFS, err := fs.Sub(specweb.ContentFS, "static")
 	if err != nil {
-		log.Printf("WARNING: failed to create spec static sub-FS: %v", err)
+		log.Printf("component=web.server action=init_spec_static_failed err=%v", err)
 	} else {
 		r.Handle("/spec-static/*", http.StripPrefix("/spec-static/", http.FileServer(http.FS(specStaticFS))))
 	}
@@ -175,6 +183,7 @@ func (s *Server) buildRouter() chi.Router {
 
 			// DOT editor phase (delegates to editor handlers)
 			r.Route("/editor", s.editorRouter)
+			r.Post("/dot/fix", s.handleDOTFix)
 
 			// Build runner phase
 			r.Post("/build/start", s.handleBuildStart)
@@ -182,6 +191,10 @@ func (s *Server) buildRouter() chi.Router {
 			r.Get("/build/events", s.handleBuildEvents)
 			r.Get("/build/state", s.handleBuildState)
 			r.Post("/build/stop", s.handleBuildStop)
+			r.Get("/final", s.handleFinalView)
+			r.Get("/final/timeline", s.handleFinalTimeline)
+			r.Get("/artifacts/list", s.handleArtifactList)
+			r.Get("/artifacts/file", s.handleArtifactFile)
 		})
 	})
 
@@ -195,7 +208,7 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		Projects: s.store.List(),
 	}
 	if err := s.templates.Render(w, "home.html", data); err != nil {
-		log.Printf("error rendering home: %v", err)
+		log.Printf("component=web.server action=render_failed view=home err=%v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -226,7 +239,7 @@ func (s *Server) handleProjectNew(w http.ResponseWriter, r *http.Request) {
 		Mode:  mode,
 	}
 	if err := s.templates.Render(w, "project_new.html", data); err != nil {
-		log.Printf("error rendering project_new: %v", err)
+		log.Printf("component=web.server action=render_failed view=project_new err=%v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -256,6 +269,7 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 	prompt := strings.TrimSpace(r.FormValue("prompt"))
 	dotSrc := strings.TrimSpace(r.FormValue("dot")) // backward compatibility for existing clients
 	legacyName := strings.TrimSpace(r.FormValue("name"))
+	opts := parseSpecBuilderOptions(r.FormValue)
 
 	fileName := ""
 	fileContent := ""
@@ -308,7 +322,7 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 	if seedText != "" {
 		sourceHint := sourceHintFromFilename(fileName)
 		if err := s.importProjectSpecFromContent(p.ID, seedText, sourceHint); err != nil {
-			log.Printf("failed to import/seed spec content: %v", err)
+			log.Printf("component=web.server action=import_spec_failed project_id=%s err=%v", p.ID, err)
 			http.Error(w, "failed to initialize spec from input", http.StatusInternalServerError)
 			return
 		}
@@ -317,8 +331,47 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 			p = updated
 		}
 	}
+	if err := s.applySpecBuilderOptions(p.ID, opts); err != nil {
+		log.Printf("component=web.server action=apply_spec_options_failed project_id=%s err=%v", p.ID, err)
+	}
 
 	http.Redirect(w, r, "/projects/"+p.ID, http.StatusSeeOther)
+}
+
+func (s *Server) applySpecBuilderOptions(projectID string, opts specBuilderOptions) error {
+	p, ok := s.store.Get(projectID)
+	if !ok {
+		return fmt.Errorf("project %s not found", projectID)
+	}
+	specIDStr, err := s.ensureSpecActor(projectID, p.SpecID)
+	if err != nil {
+		return fmt.Errorf("ensure spec actor: %w", err)
+	}
+	specID, err := ulid.Parse(specIDStr)
+	if err != nil {
+		return fmt.Errorf("parse spec id: %w", err)
+	}
+	handle := s.specState.GetActor(specID)
+	if handle == nil {
+		return fmt.Errorf("spec actor not found")
+	}
+
+	existingConstraints := ""
+	handle.ReadState(func(st *core.SpecState) {
+		if st != nil && st.Core != nil && st.Core.Constraints != nil {
+			existingConstraints = strings.TrimSpace(*st.Core.Constraints)
+		}
+	})
+	constraints := mergeSpecOptionConstraints(existingConstraints, opts)
+	constraints = strings.TrimSpace(constraints)
+	if constraints == "" {
+		return nil
+	}
+
+	if _, err := handle.SendCommand(core.UpdateSpecCoreCommand{Constraints: &constraints}); err != nil {
+		return fmt.Errorf("update spec constraints: %w", err)
+	}
+	return nil
 }
 
 func projectNameFromInputs(prompt, fileName, dot string) string {
@@ -434,9 +487,10 @@ func (s *Server) handleProjectOverview(w http.ResponseWriter, r *http.Request) {
 		Title:       p.Name,
 		Project:     p,
 		ActivePhase: string(p.Phase),
+		Diagnostics: classifyDiagnostics(p.Diagnostics),
 	}
 	if err := s.templates.Render(w, "project_overview.html", data); err != nil {
-		log.Printf("error rendering project_overview: %v", err)
+		log.Printf("component=web.server action=render_failed view=project_overview project_id=%s err=%v", projectID, err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -469,7 +523,7 @@ func (s *Server) handleSpecContinueToEditor(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := s.syncProjectFromSpec(projectID, p); err != nil {
-		log.Printf("spec continue: project=%s err=%v", projectID, err)
+		log.Printf("component=web.server action=spec_continue_failed project_id=%s err=%v", projectID, err)
 		http.Error(w, "failed to export spec to DOT", http.StatusBadRequest)
 		return
 	}
@@ -500,9 +554,9 @@ func (s *Server) handleBuildStart(w http.ResponseWriter, r *http.Request) {
 	// Validate the DOT via the transition logic. If validation fails,
 	// the project stays in edit phase with diagnostics populated.
 	if err := TransitionEditorToBuild(p); err != nil {
-		log.Printf("build start: DOT validation failed for project %s: %v", projectID, err)
+		log.Printf("component=web.build action=validate_dot_failed project_id=%s err=%v", projectID, err)
 		if updateErr := s.store.Update(p); updateErr != nil {
-			log.Printf("build start: failed to update project %s: %v", projectID, updateErr)
+			log.Printf("component=web.build action=update_project_failed project_id=%s phase=edit err=%v", projectID, updateErr)
 		}
 		http.Redirect(w, r, "/projects/"+projectID, http.StatusSeeOther)
 		return
@@ -514,7 +568,7 @@ func (s *Server) handleBuildStart(w http.ResponseWriter, r *http.Request) {
 	// Generate a run ID and set up run state.
 	runID, err := attractor.GenerateRunID()
 	if err != nil {
-		log.Printf("build start: failed to generate run ID: %v", err)
+		log.Printf("component=web.build action=generate_run_id_failed project_id=%s err=%v", projectID, err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -522,7 +576,7 @@ func (s *Server) handleBuildStart(w http.ResponseWriter, r *http.Request) {
 	p.RunID = runID
 	p.Diagnostics = nil
 	if updateErr := s.store.Update(p); updateErr != nil {
-		log.Printf("build start: failed to update project %s: %v", projectID, updateErr)
+		log.Printf("component=web.build action=update_project_failed project_id=%s phase=build err=%v", projectID, updateErr)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -539,7 +593,7 @@ func (s *Server) stopProjectSpecSwarm(p *Project) {
 	}
 	specID, err := ulid.Parse(p.SpecID)
 	if err != nil {
-		log.Printf("stop spec swarm: invalid spec id %q: %v", p.SpecID, err)
+		log.Printf("component=web.spec action=stop_swarm_invalid_spec_id spec_id=%q err=%v", p.SpecID, err)
 		return
 	}
 	s.specState.StopSwarm(specID)
@@ -558,7 +612,7 @@ func (s *Server) maybeResumeBuild(projectID string, p *Project) {
 	if exists && existing != nil && existing.State != nil && existing.State.Status == "running" {
 		return
 	}
-	log.Printf("build resume: restarting pending build for project %s (run=%s)", projectID, p.RunID)
+	log.Printf("component=web.build action=resume_pending project_id=%s run_id=%s", projectID, p.RunID)
 	s.startBuildExecution(projectID, p, p.RunID, true)
 }
 
@@ -590,11 +644,25 @@ func (s *Server) startBuildExecution(projectID string, p *Project, runID string,
 
 	artifactDir := filepath.Join(s.dataDir, projectID, "artifacts", runID)
 	checkpointPath := filepath.Join(artifactDir, "checkpoint.json")
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		log.Printf("component=web.build action=create_artifact_dir_failed project_id=%s run_id=%s err=%v", projectID, runID, err)
+	}
+	var progressLogger *attractor.ProgressLogger
+	var progressErr error
+	if os.Getenv("MAMMOTH_DISABLE_PROGRESS_LOG") != "1" {
+		progressLogger, progressErr = attractor.NewProgressLogger(artifactDir)
+		if progressErr != nil {
+			log.Printf("component=web.build action=init_progress_logger_failed project_id=%s run_id=%s err=%v", projectID, runID, progressErr)
+		}
+	}
+	handlers := attractor.DefaultHandlerRegistry()
+	configureBuildInterviewer(handlers)
 	engine := attractor.NewEngine(attractor.EngineConfig{
 		ArtifactDir:        artifactDir,
 		RunID:              runID,
 		AutoCheckpointPath: checkpointPath,
 		Backend:            detectBackendFromEnv(false),
+		Handlers:           handlers,
 		EventHandler: func(evt attractor.EngineEvent) {
 			sseEvt := engineEventToSSE(evt)
 
@@ -606,17 +674,23 @@ func (s *Server) startBuildExecution(projectID string, p *Project, runID string,
 				state.CompletedNodes = append(state.CompletedNodes, evt.NodeID)
 			}
 			s.buildsMu.Unlock()
+			if progressLogger != nil {
+				progressLogger.HandleEvent(evt)
+			}
 
 			select {
 			case events <- sseEvt:
 			default:
-				log.Printf("build: dropped SSE event for project %s (channel full)", projectID)
+				log.Printf("component=web.build action=drop_sse_event project_id=%s run_id=%s reason=channel_full", projectID, runID)
 			}
 		},
 	})
 
 	go func() {
 		defer close(events)
+		if progressLogger != nil {
+			defer progressLogger.Close()
+		}
 		defer func() {
 			if rec := recover(); rec != nil {
 				s.buildsMu.Lock()
@@ -626,7 +700,7 @@ func (s *Server) startBuildExecution(projectID string, p *Project, runID string,
 				state.Error = fmt.Sprintf("panic: %v", rec)
 				s.buildsMu.Unlock()
 				s.persistBuildOutcome(projectID, state)
-				log.Printf("build panic: project=%s run=%s recovered=%v", projectID, runID, rec)
+				log.Printf("component=web.build action=panic_recovered project_id=%s run_id=%s recovered=%v", projectID, runID, rec)
 			}
 		}()
 
@@ -640,7 +714,7 @@ func (s *Server) startBuildExecution(projectID string, p *Project, runID string,
 					_, runErr = engine.ResumeFromCheckpoint(ctx, graph, checkpointPath)
 				}
 			} else {
-				log.Printf("build resume: checkpoint not found for project %s run=%s; starting fresh", projectID, runID)
+				log.Printf("component=web.build action=resume_checkpoint_missing project_id=%s run_id=%s fallback=fresh_run", projectID, runID)
 				_, runErr = engine.Run(ctx, p.DOT)
 			}
 		} else {
@@ -681,8 +755,235 @@ func (s *Server) handleBuildView(w http.ResponseWriter, r *http.Request) {
 		ActivePhase: "build",
 	}
 	if err := s.templates.Render(w, "build_view.html", data); err != nil {
-		log.Printf("error rendering build_view: %v", err)
+		log.Printf("component=web.server action=render_failed view=build_view project_id=%s err=%v", projectID, err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+// handleFinalView renders the post-build summary page with graph and artifacts.
+func (s *Server) handleFinalView(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	p, ok := s.store.Get(projectID)
+	if !ok {
+		http.Error(w, "project not found", http.StatusNotFound)
+		return
+	}
+
+	data := PageData{
+		Title:       p.Name + " - Final",
+		Project:     p,
+		ActivePhase: "done",
+	}
+	if err := s.templates.Render(w, "final_view.html", data); err != nil {
+		log.Printf("component=web.server action=render_failed view=final_view project_id=%s err=%v", projectID, err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+type finalTimelineStep struct {
+	NodeID      string                   `json:"node_id"`
+	Status      string                   `json:"status"`
+	StartedAt   string                   `json:"started_at,omitempty"`
+	CompletedAt string                   `json:"completed_at,omitempty"`
+	DurationMS  int64                    `json:"duration_ms,omitempty"`
+	Attempt     int                      `json:"attempt,omitempty"`
+	Error       string                   `json:"error,omitempty"`
+	Operations  []finalTimelineOperation `json:"operations,omitempty"`
+}
+
+type finalTimelineOperation struct {
+	Timestamp string         `json:"timestamp"`
+	Type      string         `json:"type"`
+	Summary   string         `json:"summary"`
+	Data      map[string]any `json:"data,omitempty"`
+}
+
+func (s *Server) handleFinalTimeline(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	p, ok := s.store.Get(projectID)
+	if !ok {
+		http.Error(w, "project not found", http.StatusNotFound)
+		return
+	}
+	if p.RunID == "" {
+		writeSpecJSON(w, http.StatusOK, map[string]any{"steps": []finalTimelineStep{}})
+		return
+	}
+
+	progressPath := filepath.Join(s.dataDir, projectID, "artifacts", p.RunID, "progress.ndjson")
+	f, err := os.Open(progressPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeSpecJSON(w, http.StatusOK, map[string]any{"steps": []finalTimelineStep{}})
+			return
+		}
+		http.Error(w, "failed to open timeline", http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+
+	type progressEntry struct {
+		Timestamp string         `json:"timestamp"`
+		Type      string         `json:"type"`
+		NodeID    string         `json:"node_id"`
+		Data      map[string]any `json:"data"`
+	}
+	var steps []finalTimelineStep
+	lastByNode := map[string]int{}
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var evt progressEntry
+		if err := json.Unmarshal([]byte(line), &evt); err != nil {
+			continue
+		}
+		switch evt.Type {
+		case "stage.started":
+			step := finalTimelineStep{
+				NodeID:    evt.NodeID,
+				Status:    "running",
+				StartedAt: evt.Timestamp,
+				Attempt:   len(steps) + 1,
+			}
+			steps = append(steps, step)
+			idx := len(steps) - 1
+			lastByNode[evt.NodeID] = idx
+			appendTimelineOperation(&steps[idx], evt.Timestamp, evt.Type, evt.NodeID, evt.Data)
+		case "stage.completed":
+			idx, ok := lastByNode[evt.NodeID]
+			if !ok {
+				steps = append(steps, finalTimelineStep{
+					NodeID:      evt.NodeID,
+					Status:      "completed",
+					CompletedAt: evt.Timestamp,
+				})
+				appendTimelineOperation(&steps[len(steps)-1], evt.Timestamp, evt.Type, evt.NodeID, evt.Data)
+				continue
+			}
+			steps[idx].Status = "completed"
+			steps[idx].CompletedAt = evt.Timestamp
+			if started, end := parseRFC3339(steps[idx].StartedAt), parseRFC3339(evt.Timestamp); !started.IsZero() && !end.IsZero() {
+				steps[idx].DurationMS = end.Sub(started).Milliseconds()
+			}
+			appendTimelineOperation(&steps[idx], evt.Timestamp, evt.Type, evt.NodeID, evt.Data)
+			delete(lastByNode, evt.NodeID)
+		case "stage.failed":
+			idx, ok := lastByNode[evt.NodeID]
+			if !ok {
+				steps = append(steps, finalTimelineStep{
+					NodeID:      evt.NodeID,
+					Status:      "failed",
+					CompletedAt: evt.Timestamp,
+					Error:       strFromMap(evt.Data, "reason", "error"),
+				})
+				appendTimelineOperation(&steps[len(steps)-1], evt.Timestamp, evt.Type, evt.NodeID, evt.Data)
+				continue
+			}
+			steps[idx].Status = "failed"
+			steps[idx].CompletedAt = evt.Timestamp
+			steps[idx].Error = strFromMap(evt.Data, "reason", "error")
+			if started, end := parseRFC3339(steps[idx].StartedAt), parseRFC3339(evt.Timestamp); !started.IsZero() && !end.IsZero() {
+				steps[idx].DurationMS = end.Sub(started).Milliseconds()
+			}
+			appendTimelineOperation(&steps[idx], evt.Timestamp, evt.Type, evt.NodeID, evt.Data)
+			delete(lastByNode, evt.NodeID)
+		case "stage.retrying":
+			idx, ok := lastByNode[evt.NodeID]
+			if ok {
+				steps[idx].Status = "retrying"
+				appendTimelineOperation(&steps[idx], evt.Timestamp, evt.Type, evt.NodeID, evt.Data)
+			}
+		default:
+			if idx, ok := lastByNode[evt.NodeID]; ok {
+				appendTimelineOperation(&steps[idx], evt.Timestamp, evt.Type, evt.NodeID, evt.Data)
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		http.Error(w, "failed to read timeline", http.StatusInternalServerError)
+		return
+	}
+	writeSpecJSON(w, http.StatusOK, map[string]any{"steps": steps})
+}
+
+func appendTimelineOperation(step *finalTimelineStep, ts, typ, nodeID string, data map[string]any) {
+	if step == nil {
+		return
+	}
+	op := finalTimelineOperation{
+		Timestamp: ts,
+		Type:      typ,
+		Summary:   timelineOperationSummary(typ, nodeID, data),
+		Data:      data,
+	}
+	step.Operations = append(step.Operations, op)
+}
+
+func timelineOperationSummary(typ, nodeID string, data map[string]any) string {
+	switch typ {
+	case "stage.started":
+		if nodeID != "" {
+			return "Stage started: " + nodeID
+		}
+		return "Stage started"
+	case "stage.completed":
+		if nodeID != "" {
+			return "Stage completed: " + nodeID
+		}
+		return "Stage completed"
+	case "stage.failed":
+		reason := strFromMap(data, "reason", "error")
+		if reason != "" && nodeID != "" {
+			return "Stage failed: " + nodeID + " - " + reason
+		}
+		if reason != "" {
+			return "Stage failed: " + reason
+		}
+		if nodeID != "" {
+			return "Stage failed: " + nodeID
+		}
+		return "Stage failed"
+	case "stage.retrying":
+		attempt := strFromMap(data, "attempt")
+		if nodeID != "" && attempt != "" {
+			return "Stage retrying: " + nodeID + " (attempt " + attempt + ")"
+		}
+		if nodeID != "" {
+			return "Stage retrying: " + nodeID
+		}
+		return "Stage retrying"
+	case "agent.tool_call.start":
+		tool := strFromMap(data, "tool_name")
+		if tool != "" && nodeID != "" {
+			return "Tool start: " + tool + " @ " + nodeID
+		}
+		if tool != "" {
+			return "Tool start: " + tool
+		}
+		return "Tool start"
+	case "agent.tool_call.end":
+		tool := strFromMap(data, "tool_name")
+		dur := strFromMap(data, "duration_ms")
+		if tool != "" && dur != "" {
+			return "Tool done: " + tool + " (" + dur + "ms)"
+		}
+		if tool != "" {
+			return "Tool done: " + tool
+		}
+		return "Tool done"
+	case "agent.llm_turn":
+		total := strFromMap(data, "total_tokens")
+		if total != "" {
+			return "LLM turn: " + total + " tokens"
+		}
+		return "LLM turn"
+	case "checkpoint.saved":
+		return "Checkpoint saved"
+	default:
+		return typ
 	}
 }
 
@@ -856,6 +1157,206 @@ func (s *Server) persistBuildOutcome(projectID string, runState *RunState) {
 	}
 
 	if err := s.store.Update(p); err != nil {
-		log.Printf("persist build outcome: project=%s err=%v", projectID, err)
+		log.Printf("component=web.build action=persist_outcome_failed project_id=%s run_id=%s err=%v", projectID, runState.ID, err)
 	}
+}
+
+func (s *Server) handleArtifactList(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	p, ok := s.store.Get(projectID)
+	if !ok {
+		http.Error(w, "project not found", http.StatusNotFound)
+		return
+	}
+	if p.RunID == "" {
+		writeSpecJSON(w, http.StatusOK, map[string]any{
+			"base_path": "",
+			"dir":       "",
+			"entries":   []map[string]any{},
+			"files":     []string{},
+		})
+		return
+	}
+
+	baseDir := filepath.Join(s.dataDir, projectID, "artifacts", p.RunID)
+	dirParam := strings.TrimSpace(r.URL.Query().Get("dir"))
+	dirParam = strings.TrimPrefix(filepath.ToSlash(path.Clean("/"+dirParam)), "/")
+	if dirParam == "." {
+		dirParam = ""
+	}
+	targetDir := filepath.Join(baseDir, filepath.FromSlash(dirParam))
+
+	absBase, err := filepath.Abs(baseDir)
+	if err != nil {
+		http.Error(w, "invalid artifact base", http.StatusInternalServerError)
+		return
+	}
+	absTarget, err := filepath.Abs(targetDir)
+	if err != nil {
+		http.Error(w, "invalid artifact directory", http.StatusBadRequest)
+		return
+	}
+	if absTarget != absBase && !strings.HasPrefix(absTarget, absBase+string(filepath.Separator)) {
+		http.Error(w, "invalid directory", http.StatusBadRequest)
+		return
+	}
+
+	dirEntries, err := os.ReadDir(absTarget)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeSpecJSON(w, http.StatusOK, map[string]any{
+				"base_path": absBase,
+				"dir":       dirParam,
+				"entries":   []map[string]any{},
+				"files":     []string{},
+			})
+			return
+		}
+		http.Error(w, "failed to list artifacts", http.StatusInternalServerError)
+		return
+	}
+
+	type entryRow struct {
+		Name  string
+		Path  string
+		IsDir bool
+		Size  int64
+	}
+	rows := make([]entryRow, 0, len(dirEntries))
+	for _, ent := range dirEntries {
+		name := ent.Name()
+		rel := filepath.ToSlash(filepath.Join(dirParam, name))
+		if rel == "" || strings.HasPrefix(rel, "..") {
+			continue
+		}
+		info, infoErr := ent.Info()
+		if infoErr != nil {
+			continue
+		}
+		rows = append(rows, entryRow{
+			Name:  name,
+			Path:  rel,
+			IsDir: ent.IsDir(),
+			Size:  info.Size(),
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].IsDir != rows[j].IsDir {
+			return rows[i].IsDir
+		}
+		return rows[i].Name < rows[j].Name
+	})
+
+	entries := make([]map[string]any, 0, len(rows))
+	files := make([]string, 0, len(rows))
+	for _, row := range rows {
+		entries = append(entries, map[string]any{
+			"name":   row.Name,
+			"path":   row.Path,
+			"is_dir": row.IsDir,
+			"size":   row.Size,
+		})
+		if !row.IsDir {
+			files = append(files, row.Path)
+		}
+	}
+
+	writeSpecJSON(w, http.StatusOK, map[string]any{
+		"base_path": absBase,
+		"dir":       dirParam,
+		"entries":   entries,
+		"files":     files,
+	})
+}
+
+func (s *Server) handleArtifactFile(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	p, ok := s.store.Get(projectID)
+	if !ok {
+		http.Error(w, "project not found", http.StatusNotFound)
+		return
+	}
+	if p.RunID == "" {
+		http.Error(w, "no run artifacts", http.StatusNotFound)
+		return
+	}
+
+	relPath := strings.TrimSpace(r.URL.Query().Get("path"))
+	if relPath == "" {
+		http.Error(w, "missing path", http.StatusBadRequest)
+		return
+	}
+	relPath = strings.TrimPrefix(filepath.ToSlash(path.Clean("/"+relPath)), "/")
+	if relPath == "" || strings.HasPrefix(relPath, "..") {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+
+	baseDir := filepath.Join(s.dataDir, projectID, "artifacts", p.RunID)
+	filePath := filepath.Join(baseDir, filepath.FromSlash(relPath))
+	absBase, err := filepath.Abs(baseDir)
+	if err != nil {
+		http.Error(w, "invalid artifact base", http.StatusInternalServerError)
+		return
+	}
+	absFile, err := filepath.Abs(filePath)
+	if err != nil {
+		http.Error(w, "invalid artifact file", http.StatusBadRequest)
+		return
+	}
+	if absFile != absBase && !strings.HasPrefix(absFile, absBase+string(filepath.Separator)) {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+
+	info, err := os.Stat(absFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "artifact not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to stat artifact", http.StatusInternalServerError)
+		return
+	}
+	if info.IsDir() {
+		http.Error(w, "path is a directory", http.StatusBadRequest)
+		return
+	}
+	if info.Size() > 2<<20 {
+		http.Error(w, "artifact too large to display (>2MB)", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	content, err := os.ReadFile(absFile)
+	if err != nil {
+		http.Error(w, "failed to read artifact", http.StatusInternalServerError)
+		return
+	}
+
+	writeSpecJSON(w, http.StatusOK, map[string]any{
+		"path":    relPath,
+		"content": string(content),
+	})
+}
+
+func parseRFC3339(s string) time.Time {
+	t, _ := time.Parse(time.RFC3339, s)
+	return t
+}
+
+func strFromMap(m map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if m == nil {
+			return ""
+		}
+		if v, ok := m[key]; ok {
+			switch s := v.(type) {
+			case string:
+				return s
+			default:
+				return fmt.Sprintf("%v", s)
+			}
+		}
+	}
+	return ""
 }

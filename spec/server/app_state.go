@@ -93,7 +93,7 @@ func (s *AppState) StopSwarm(specID ulid.ULID) bool {
 	if !exists {
 		return false
 	}
-	log.Printf("stopping swarm for spec %s", specID)
+	log.Printf("component=spec.server action=swarm_stop spec_id=%s", specID)
 	handle.Cancel()
 	delete(s.Swarms, specID)
 	return true
@@ -145,7 +145,7 @@ func (s *AppState) TryStartAgents(specID ulid.ULID) bool {
 		Cancel:       cancel,
 	}
 
-	log.Printf("auto-started agent swarm for spec %s (%d agents)", specID, orchestrator.AgentCount())
+	log.Printf("component=spec.server action=swarm_started spec_id=%s agent_count=%d", specID, orchestrator.AgentCount())
 	return true
 }
 
@@ -154,7 +154,7 @@ func (s *AppState) StopAllSwarms() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for specID, handle := range s.Swarms {
-		log.Printf("stopping swarm for spec %s", specID)
+		log.Printf("component=spec.server action=swarm_stop spec_id=%s", specID)
 		handle.Cancel()
 		delete(s.Swarms, specID)
 	}

@@ -19,7 +19,7 @@ func detectBackendFromEnv(verbose bool) attractor.CodergenBackend {
 		if err == nil {
 			return backend
 		}
-		log.Printf("[backend] claude-code unavailable, falling back: %v", err)
+		log.Printf("component=web.backend action=claude_code_unavailable fallback=agent_backend err=%v", err)
 	}
 
 	keys := []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"}

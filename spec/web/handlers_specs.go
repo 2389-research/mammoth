@@ -29,11 +29,12 @@ type SpecSummaryView struct {
 
 // SpecViewData is the view-model for the full spec view partial.
 type SpecViewData struct {
-	SpecID   string
-	Title    string
-	OneLiner string
-	Goal     string
-	Lanes    []LaneData
+	SpecID                string
+	Title                 string
+	OneLiner              string
+	Goal                  string
+	Lanes                 []LaneData
+	ShowStartAgentsBanner bool
 }
 
 // Index renders the full index.html page.
@@ -136,9 +137,6 @@ func CreateSpec(state *server.AppState, renderer *TemplateRenderer) http.Handler
 		server.SpawnEventPersister(state, specID, handle)
 		state.SetActor(specID, handle)
 
-		// Auto-start agents if an LLM provider is configured
-		state.TryStartAgents(specID)
-
 		// Read the created state and render spec view
 		actor := state.GetActor(specID)
 		if actor == nil {
@@ -152,11 +150,12 @@ func CreateSpec(state *server.AppState, renderer *TemplateRenderer) http.Handler
 				return
 			}
 			viewData = SpecViewData{
-				SpecID:   specID.String(),
-				Title:    s.Core.Title,
-				OneLiner: s.Core.OneLiner,
-				Goal:     s.Core.Goal,
-				Lanes:    cardsByLane(specID.String(), s),
+				SpecID:                specID.String(),
+				Title:                 s.Core.Title,
+				OneLiner:              s.Core.OneLiner,
+				Goal:                  s.Core.Goal,
+				Lanes:                 cardsByLane(specID.String(), s),
+				ShowStartAgentsBanner: shouldShowStartAgentsBanner(state, specID, s),
 			}
 		})
 
@@ -205,11 +204,12 @@ func SpecView(state *server.AppState, renderer *TemplateRenderer) http.HandlerFu
 				return
 			}
 			viewData = SpecViewData{
-				SpecID:   specID.String(),
-				Title:    s.Core.Title,
-				OneLiner: s.Core.OneLiner,
-				Goal:     s.Core.Goal,
-				Lanes:    cardsByLane(specID.String(), s),
+				SpecID:                specID.String(),
+				Title:                 s.Core.Title,
+				OneLiner:              s.Core.OneLiner,
+				Goal:                  s.Core.Goal,
+				Lanes:                 cardsByLane(specID.String(), s),
+				ShowStartAgentsBanner: shouldShowStartAgentsBanner(state, specID, s),
 			}
 		})
 
@@ -259,6 +259,26 @@ func extractPlaceholderTitle(description string) string {
 		title += "..."
 	}
 	return title
+}
+
+// shouldShowStartAgentsBanner returns true when no swarm has started yet and
+// the spec has not begun autonomous planning activity.
+func shouldShowStartAgentsBanner(state *server.AppState, specID ulid.ULID, st *core.SpecState) bool {
+	if state.GetSwarm(specID) != nil || st == nil {
+		return false
+	}
+	if st.Cards != nil && st.Cards.Len() > 0 {
+		return false
+	}
+	if st.PendingQuestion != nil {
+		return false
+	}
+	for _, msg := range st.Transcript {
+		if strings.TrimSpace(msg.Sender) != "human" {
+			return false
+		}
+	}
+	return true
 }
 
 // parseSpecID extracts and validates the spec ID from the URL path.

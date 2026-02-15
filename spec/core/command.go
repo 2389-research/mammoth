@@ -5,6 +5,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -179,8 +180,7 @@ func UnmarshalCommand(data []byte) (Command, error) {
 		var c CreateSpecCommand
 		return c, json.Unmarshal(data, &c)
 	case "UpdateSpecCore":
-		var c UpdateSpecCoreCommand
-		return c, json.Unmarshal(data, &c)
+		return unmarshalUpdateSpecCore(data)
 	case "CreateCard":
 		var c CreateCardCommand
 		return c, json.Unmarshal(data, &c)
@@ -211,6 +211,78 @@ func UnmarshalCommand(data []byte) (Command, error) {
 	default:
 		return nil, fmt.Errorf("unknown command type: %q", envelope.Type)
 	}
+}
+
+// unmarshalUpdateSpecCore accepts both string and []string for free-text fields
+// so agent output can be parsed robustly.
+func unmarshalUpdateSpecCore(data []byte) (UpdateSpecCoreCommand, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return UpdateSpecCoreCommand{}, err
+	}
+
+	parseText := func(key string) (*string, error) {
+		valueRaw, ok := raw[key]
+		if !ok {
+			return nil, nil
+		}
+		trimmed := strings.TrimSpace(string(valueRaw))
+		if trimmed == "" || trimmed == "null" {
+			return nil, nil
+		}
+
+		var s string
+		if err := json.Unmarshal(valueRaw, &s); err == nil {
+			v := strings.TrimSpace(s)
+			return &v, nil
+		}
+
+		var items []string
+		if err := json.Unmarshal(valueRaw, &items); err == nil {
+			parts := make([]string, 0, len(items))
+			for _, item := range items {
+				item = strings.TrimSpace(item)
+				if item != "" {
+					parts = append(parts, item)
+				}
+			}
+			v := strings.Join(parts, "\n")
+			if v == "" {
+				return nil, nil
+			}
+			return &v, nil
+		}
+
+		return nil, fmt.Errorf("field %q must be string or string[]", key)
+	}
+
+	var c UpdateSpecCoreCommand
+	var err error
+	if c.Title, err = parseText("title"); err != nil {
+		return UpdateSpecCoreCommand{}, err
+	}
+	if c.OneLiner, err = parseText("one_liner"); err != nil {
+		return UpdateSpecCoreCommand{}, err
+	}
+	if c.Goal, err = parseText("goal"); err != nil {
+		return UpdateSpecCoreCommand{}, err
+	}
+	if c.Description, err = parseText("description"); err != nil {
+		return UpdateSpecCoreCommand{}, err
+	}
+	if c.Constraints, err = parseText("constraints"); err != nil {
+		return UpdateSpecCoreCommand{}, err
+	}
+	if c.SuccessCriteria, err = parseText("success_criteria"); err != nil {
+		return UpdateSpecCoreCommand{}, err
+	}
+	if c.Risks, err = parseText("risks"); err != nil {
+		return UpdateSpecCoreCommand{}, err
+	}
+	if c.Notes, err = parseText("notes"); err != nil {
+		return UpdateSpecCoreCommand{}, err
+	}
+	return c, nil
 }
 
 // marshalTagged marshals a struct with an injected "type" field.

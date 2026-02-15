@@ -24,3 +24,6 @@ coverage.html
 
 # Pipeline run artifacts
 artifacts/
+
+# Local imported spec corpus (nested git repo)
+_specs/

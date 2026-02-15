@@ -19,6 +19,7 @@ type TemplateData struct {
 	BasePath       string
 	ProjectPath    string
 	BuildStartPath string
+	DotFixPath     string
 	Error          string
 }
 
@@ -88,7 +89,9 @@ func NewServer(store *Store, templateDir string, staticDir string) *Server {
 
 	// Edit form handlers (return partials for inline editing)
 	r.Get("/sessions/{id}/nodes/{nodeId}/edit", s.handleNodeEditForm)
+	r.Get("/sessions/{id}/node-edit", s.handleNodeEditFormByQuery)
 	r.Get("/sessions/{id}/edges/{edgeId}/edit", s.handleEdgeEditForm)
+	r.Get("/sessions/{id}/edge-edit", s.handleEdgeEditFormByQuery)
 
 	// Mutation handlers
 	r.Post("/sessions/{id}/dot", s.handleUpdateDOT)

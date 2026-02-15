@@ -1,0 +1,687 @@
+{{define "content"}}
+<style>
+    .final-shell { display: grid; gap: 14px; }
+    .final-hero {
+        border-radius: var(--radius-2xl);
+        border: 1px solid color-mix(in srgb, var(--border) 84%, #22c55e 16%);
+        background:
+            radial-gradient(circle at 88% 20%, color-mix(in srgb, #22c55e 20%, transparent), transparent 44%),
+            radial-gradient(circle at 8% 10%, color-mix(in srgb, #0ea5e9 16%, transparent), transparent 34%),
+            linear-gradient(145deg, color-mix(in srgb, var(--bg-card) 82%, #ecfdf5 18%), var(--bg-card));
+        padding: 18px;
+        box-shadow: 0 16px 44px color-mix(in srgb, #0f172a 10%, transparent);
+    }
+    .final-title { margin: 0; font-family: var(--font-display); font-size: clamp(1.35rem, 2.2vw, 1.8rem); }
+    .final-sub { margin: 6px 0 0 0; font-size: 13px; color: var(--text-secondary); }
+
+    .final-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    .final-card {
+        border-radius: var(--radius-2xl);
+        border: 1px solid var(--border);
+        background: var(--bg-card);
+        box-shadow: 0 12px 30px color-mix(in srgb, #0f172a 6%, transparent);
+        overflow: hidden;
+    }
+    .final-card-head {
+        border-bottom: 1px solid var(--border);
+        padding: 12px 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+    }
+    .final-card-title {
+        margin: 0;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+    }
+
+    .final-graph {
+        max-height: 520px;
+        overflow: auto;
+        background: color-mix(in srgb, var(--bg-secondary) 90%, #fff 10%);
+        padding: 10px;
+    }
+    .final-graph-empty {
+        margin: 8px;
+        border: 1px dashed var(--border);
+        border-radius: var(--radius-xl);
+        padding: 12px;
+        text-align: center;
+        color: var(--text-secondary);
+        font-size: 13px;
+    }
+    .final-graph svg { width: 100%; min-width: 640px; }
+    .final-graph svg g.node.is-active ellipse,
+    .final-graph svg g.node.is-active polygon,
+    .final-graph svg g.node.is-active path {
+        stroke: #f59e0b !important;
+        stroke-width: 3 !important;
+        fill: color-mix(in srgb, #fef3c7 72%, white 28%) !important;
+        filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.35));
+    }
+
+    .timeline-list { margin: 0; padding: 10px; list-style: none; display: grid; gap: 8px; max-height: 520px; overflow: auto; }
+    .timeline-item {
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg-secondary) 88%, #fff 12%);
+        padding: 10px 11px;
+        display: grid;
+        gap: 6px;
+        cursor: pointer;
+    }
+    .timeline-item:hover { border-color: color-mix(in srgb, #0ea5e9 35%, var(--border)); }
+    .timeline-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .timeline-node { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+    .timeline-status { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+    .timeline-meta { font-size: 12px; color: var(--text-secondary); display: flex; gap: 8px; flex-wrap: wrap; }
+    .timeline-chip {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px 8px;
+        font-size: 11px;
+        background: color-mix(in srgb, var(--bg-card) 86%, #fff 14%);
+        color: var(--text-secondary);
+    }
+    .timeline-error {
+        font-size: 12px;
+        color: #991b1b;
+        background: color-mix(in srgb, #fee2e2 70%, var(--bg-card) 30%);
+        border: 1px solid color-mix(in srgb, #ef4444 45%, var(--border));
+        border-radius: var(--radius-lg);
+        padding: 6px 8px;
+    }
+    .timeline-ops {
+        border-top: 1px dashed var(--border);
+        padding-top: 8px;
+        display: none;
+        gap: 6px;
+    }
+    .timeline-item.open .timeline-ops { display: grid; }
+    .timeline-op {
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg-card) 90%, #fff 10%);
+        padding: 7px 8px;
+        display: grid;
+        gap: 4px;
+    }
+    .timeline-op-top {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .timeline-op-type {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+    }
+    .timeline-op-time {
+        font-size: 11px;
+        color: var(--text-secondary);
+    }
+    .timeline-op-summary {
+        font-size: 12px;
+        color: var(--text-primary);
+    }
+
+    .file-toolbar {
+        border-bottom: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg-secondary) 92%, #fff 8%);
+        padding: 10px 12px;
+        display: grid;
+        gap: 8px;
+    }
+    .file-path { font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
+    .file-breadcrumbs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .crumb {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--bg-card);
+        color: var(--text-secondary);
+        padding: 4px 9px;
+        font-size: 11px;
+        cursor: pointer;
+    }
+
+    .file-browser { display: grid; grid-template-columns: 340px 1fr; min-height: 520px; }
+    .file-list { margin: 0; padding: 8px; list-style: none; overflow: auto; border-right: 1px solid var(--border); background: color-mix(in srgb, var(--bg-secondary) 92%, #fff 8%); }
+    .file-btn {
+        width: 100%;
+        text-align: left;
+        border: 1px solid transparent;
+        border-radius: var(--radius-lg);
+        background: transparent;
+        color: var(--text-primary);
+        padding: 8px 10px;
+        font-size: 12px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        cursor: pointer;
+    }
+    .file-btn:hover { background: var(--bg-card); border-color: var(--border); }
+    .file-btn.active { background: color-mix(in srgb, #0ea5e9 12%, var(--bg-card) 88%); border-color: color-mix(in srgb, #0ea5e9 38%, var(--border)); }
+    .file-view { margin: 0; padding: 12px; overflow: auto; white-space: pre; font-size: 12px; line-height: 1.45; background: #0b1020; color: #dbe6ff; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    @media (max-width: 980px) {
+        .file-browser { grid-template-columns: 1fr; }
+        .file-list { border-right: 0; border-bottom: 1px solid var(--border); max-height: 220px; }
+    }
+</style>
+
+<section class="final-shell">
+    <section class="final-hero">
+        <h1 class="final-title">Build Complete: {{.Project.Name}}</h1>
+        <p class="final-sub">Run {{if .Project.RunID}}{{.Project.RunID}}{{else}}(unknown){{end}}. Review run order, node timings, and generated artifacts.</p>
+        <div class="web-inline-actions" style="margin-top: 12px;">
+            <a href="/projects/{{.Project.ID}}" class="btn">Project Overview</a>
+            <a href="/projects/{{.Project.ID}}/build" class="btn">Back to Build Timeline</a>
+        </div>
+    </section>
+
+    <section class="final-grid">
+        <section class="final-card">
+            <div class="final-card-head">
+                <h2 class="final-card-title">Final Graph</h2>
+                <span id="final-graph-status" class="web-note">Rendering…</span>
+            </div>
+            <div id="final-graph" class="final-graph">
+                <div class="final-graph-empty">Rendering DOT diagram...</div>
+            </div>
+        </section>
+
+        <section class="final-card">
+            <div class="final-card-head">
+                <h2 class="final-card-title">Steps</h2>
+                <span id="timeline-count" class="web-note">Loading…</span>
+            </div>
+            <ul id="timeline-list" class="timeline-list">
+                <li class="timeline-item"><span class="timeline-meta">Loading steps...</span></li>
+            </ul>
+        </section>
+
+        <section class="final-card">
+            <div class="final-card-head">
+                <h2 class="final-card-title">Artifacts</h2>
+                <span id="artifact-count" class="web-note">0 entries</span>
+            </div>
+            <div class="file-toolbar">
+                <div class="file-path"><strong>Final Path:</strong> <span id="final-base-path">(loading...)</span></div>
+                <div id="file-breadcrumbs" class="file-breadcrumbs"></div>
+            </div>
+            <div class="file-browser">
+                <ul id="artifact-files" class="file-list">
+                    <li class="web-note" style="padding: 8px 10px;">Loading artifacts...</li>
+                </ul>
+                <pre id="artifact-content" class="file-view">Select a file to view its content.</pre>
+            </div>
+        </section>
+    </section>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.11.0/lib/viz-standalone.js"></script>
+<script>
+(function() {
+    var dotSource = {{ printf "%q" .Project.DOT }};
+    var projectID = '{{.Project.ID}}';
+    var graphEl = document.getElementById('final-graph');
+    var graphStatus = document.getElementById('final-graph-status');
+    var timelineList = document.getElementById('timeline-list');
+    var timelineCount = document.getElementById('timeline-count');
+    var activeGraphNode = '';
+
+    var filesEl = document.getElementById('artifact-files');
+    var contentEl = document.getElementById('artifact-content');
+    var countEl = document.getElementById('artifact-count');
+    var basePathEl = document.getElementById('final-base-path');
+    var breadcrumbsEl = document.getElementById('file-breadcrumbs');
+    var currentDir = '';
+
+    function renderGraph() {
+        var dotText = normalizeDOTSource(dotSource);
+        if (!dotText || !dotText.trim()) {
+            graphStatus.textContent = 'No DOT';
+            graphEl.innerHTML = '<div class="final-graph-empty">No DOT available for this run.</div>';
+            return;
+        }
+        if (typeof Viz === 'undefined') {
+            graphStatus.textContent = 'Renderer unavailable';
+            graphEl.innerHTML = '<div class="final-graph-empty">Could not load diagram renderer.</div>';
+            return;
+        }
+        renderDOTToSVG(dotText).then(function(svg) {
+            graphEl.innerHTML = svg;
+            var svgEl = graphEl.querySelector('svg');
+            if (svgEl) {
+                svgEl.removeAttribute('width');
+                svgEl.removeAttribute('height');
+            }
+            graphStatus.textContent = 'Ready';
+            if (activeGraphNode) {
+                setActiveNodeHighlight(activeGraphNode);
+            }
+        }).catch(function(err) {
+            graphStatus.textContent = 'Render failed';
+            var msg = (err && err.message) ? String(err.message) : 'unknown error';
+            graphEl.innerHTML = '<div class="final-graph-empty">Unable to render final graph: ' + escapeHTML(msg) + '</div>';
+        });
+    }
+
+    function renderDOTToSVG(dotText) {
+        if (Viz && typeof Viz.instance === 'function') {
+            return Viz.instance().then(function(viz) {
+                return renderWithVizInstance(viz, dotText);
+            });
+        }
+        if (typeof Viz === 'function') {
+            try {
+                var legacyViz = new Viz();
+                var out = renderWithVizInstance(legacyViz, dotText);
+                if (out && typeof out.then === 'function') {
+                    return out;
+                }
+                return Promise.resolve(out);
+            } catch (err) {
+                return Promise.reject(err);
+            }
+        }
+        return Promise.reject(new Error('viz runtime unavailable'));
+    }
+
+    function renderWithVizInstance(viz, dotText) {
+        if (!viz) {
+            return Promise.reject(new Error('viz instance unavailable'));
+        }
+        if (typeof viz.renderString === 'function') {
+            try {
+                var out = viz.renderString(dotText);
+                if (out && typeof out.then === 'function') {
+                    return out.then(normalizeRenderedSVG);
+                }
+                return Promise.resolve(normalizeRenderedSVG(out));
+            } catch (_err) {
+                // try renderSVGElement fallback
+            }
+        }
+        if (typeof viz.renderSVGElement === 'function') {
+            try {
+                var svgOut = viz.renderSVGElement(dotText);
+                if (svgOut && typeof svgOut.then === 'function') {
+                    return svgOut.then(normalizeRenderedSVG);
+                }
+                return Promise.resolve(normalizeRenderedSVG(svgOut));
+            } catch (err2) {
+                return Promise.reject(err2);
+            }
+        }
+        return Promise.reject(new Error('viz instance missing render methods'));
+    }
+
+    function normalizeRenderedSVG(out) {
+        if (typeof out === 'string') {
+            var s = out.trim();
+            if (s.indexOf('<svg') !== -1) {
+                return s;
+            }
+            throw new Error('renderer returned non-SVG string');
+        }
+        if (out && typeof out === 'object') {
+            if (typeof out.outerHTML === 'string' && out.outerHTML.indexOf('<svg') !== -1) {
+                return out.outerHTML;
+            }
+            if (typeof out.svg === 'string' && out.svg.indexOf('<svg') !== -1) {
+                return out.svg;
+            }
+            if (typeof out.output === 'string' && out.output.indexOf('<svg') !== -1) {
+                return out.output;
+            }
+        }
+        throw new Error('renderer returned unsupported output type');
+    }
+
+    function normalizeDOTSource(raw) {
+        var text = String(raw || '').trim();
+        if (!text) {
+            return text;
+        }
+        if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+            try {
+                var parsed = JSON.parse(text);
+                if (typeof parsed === 'string' && parsed.trim()) {
+                    text = parsed.trim();
+                }
+            } catch (_err) {
+                text = text.slice(1, -1).trim();
+            }
+        }
+        if (text.indexOf('\\n') >= 0 && text.indexOf('\n') < 0) {
+            text = text.replaceAll('\\n', '\n');
+        }
+        if (text.indexOf('\\"') >= 0) {
+            text = text.replaceAll('\\"', '"');
+        }
+        return text;
+    }
+
+    function escapeHTML(s) {
+        return String(s)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    }
+
+    function normalizeGraphNodeID(raw) {
+        var s = String(raw || '').trim();
+        if (!s) {
+            return '';
+        }
+        if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+            s = s.slice(1, -1).trim();
+        }
+        return s;
+    }
+
+    function setActiveNodeHighlight(nodeID) {
+        if (!nodeID || !graphEl) {
+            return;
+        }
+        activeGraphNode = normalizeGraphNodeID(nodeID);
+        var nodeEls = graphEl.querySelectorAll('g.node');
+        if (!nodeEls.length) {
+            return;
+        }
+        nodeEls.forEach(function(el) {
+            el.classList.remove('is-active');
+            var title = el.querySelector('title');
+            var renderedID = title ? normalizeGraphNodeID(title.textContent) : '';
+            if (renderedID && renderedID === activeGraphNode) {
+                el.classList.add('is-active');
+            }
+        });
+        graphStatus.textContent = 'Active: ' + activeGraphNode;
+    }
+
+    function loadTimeline() {
+        fetch('/projects/' + projectID + '/final/timeline', { headers: { 'Accept': 'application/json' } })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var steps = Array.isArray(data.steps) ? data.steps : [];
+                var compactDates = shouldUseCompactDates(steps);
+                timelineCount.textContent = steps.length + (steps.length === 1 ? ' node' : ' nodes');
+                if (steps.length === 0) {
+                    timelineList.innerHTML = '<li class="timeline-item"><span class="timeline-meta">No timeline data found for this run.</span></li>';
+                    return;
+                }
+                timelineList.innerHTML = '';
+                steps.forEach(function(step, idx) {
+                    var item = document.createElement('li');
+                    item.className = 'timeline-item';
+                    item.setAttribute('role', 'button');
+                    item.setAttribute('tabindex', '0');
+
+                    var head = document.createElement('div');
+                    head.className = 'timeline-head';
+                    var node = document.createElement('span');
+                    node.className = 'timeline-node';
+                    node.textContent = (idx + 1) + '. ' + (step.node_id || 'unknown');
+                    var status = document.createElement('span');
+                    status.className = 'timeline-status';
+                    status.textContent = step.status || 'unknown';
+                    head.appendChild(node);
+                    head.appendChild(status);
+
+                    var meta = document.createElement('div');
+                    meta.className = 'timeline-meta';
+
+                    if (step.started_at || step.completed_at) {
+                        var rangeChip = document.createElement('span');
+                        rangeChip.className = 'timeline-chip';
+                        var startText = step.started_at ? formatTimestamp(step.started_at, compactDates) : '?';
+                        var endText = step.completed_at ? formatTimestamp(step.completed_at, compactDates) : '?';
+                        if (step.started_at && step.completed_at && startText === endText) {
+                            rangeChip.textContent = startText;
+                        } else {
+                            rangeChip.textContent = startText + ' → ' + endText;
+                        }
+                        meta.appendChild(rangeChip);
+                    }
+                    if (step.duration_ms) {
+                        var durChip = document.createElement('span');
+                        durChip.className = 'timeline-chip';
+                        durChip.textContent = formatDurationHMS(step.duration_ms);
+                        meta.appendChild(durChip);
+                    }
+
+                    item.appendChild(head);
+                    item.appendChild(meta);
+                    if (step.error) {
+                        var err = document.createElement('div');
+                        err.className = 'timeline-error';
+                        err.textContent = formatTimelineError(step.error);
+                        item.appendChild(err);
+                    }
+                    var opsWrap = document.createElement('div');
+                    opsWrap.className = 'timeline-ops';
+                    var ops = Array.isArray(step.operations) ? step.operations : [];
+                    if (ops.length === 0) {
+                        var empty = document.createElement('div');
+                        empty.className = 'timeline-op';
+                        empty.textContent = 'No operation events captured for this step.';
+                        opsWrap.appendChild(empty);
+                    } else {
+                        ops.forEach(function(op) {
+                            var opEl = document.createElement('div');
+                            opEl.className = 'timeline-op';
+                            var top = document.createElement('div');
+                            top.className = 'timeline-op-top';
+                            var typ = document.createElement('span');
+                            typ.className = 'timeline-op-type';
+                            typ.textContent = String(op.type || 'event');
+                            var tm = document.createElement('span');
+                            tm.className = 'timeline-op-time';
+                            tm.textContent = op.timestamp ? formatTimestamp(op.timestamp, compactDates) : '';
+                            top.appendChild(typ);
+                            top.appendChild(tm);
+                            opEl.appendChild(top);
+                            var summary = document.createElement('div');
+                            summary.className = 'timeline-op-summary';
+                            summary.textContent = String(op.summary || op.type || 'event');
+                            opEl.appendChild(summary);
+                            opsWrap.appendChild(opEl);
+                        });
+                    }
+                    item.appendChild(opsWrap);
+                    item.addEventListener('click', function() {
+                        item.classList.toggle('open');
+                        if (step.node_id) {
+                            setActiveNodeHighlight(step.node_id);
+                        }
+                    });
+                    item.addEventListener('keydown', function(e) {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            item.classList.toggle('open');
+                            if (step.node_id) {
+                                setActiveNodeHighlight(step.node_id);
+                            }
+                        }
+                    });
+                    timelineList.appendChild(item);
+                });
+            })
+            .catch(function() {
+                timelineCount.textContent = 'Error';
+                timelineList.innerHTML = '<li class="timeline-item"><span class="timeline-meta">Failed to load run timeline.</span></li>';
+            });
+    }
+
+    function formatDurationHMS(durationMS) {
+        var totalSeconds = Math.max(0, Math.floor(Number(durationMS || 0) / 1000));
+        var hours = Math.floor(totalSeconds / 3600);
+        var minutes = Math.floor((totalSeconds % 3600) / 60);
+        var seconds = totalSeconds % 60;
+        var mm = String(minutes).padStart(2, '0');
+        var ss = String(seconds).padStart(2, '0');
+        if (hours > 0) {
+            return String(hours) + ':' + mm + ':' + ss;
+        }
+        return mm + ':' + ss;
+    }
+
+    function formatTimestamp(ts, compactDates) {
+        var d = new Date(String(ts || ''));
+        if (Number.isNaN(d.getTime())) {
+            return String(ts || '');
+        }
+        if (compactDates) {
+            return d.toLocaleTimeString(undefined, {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+            });
+        }
+        return d.toLocaleString(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true,
+            timeZoneName: 'short'
+        });
+    }
+
+    function shouldUseCompactDates(steps) {
+        var dayKey = '';
+        for (var i = 0; i < steps.length; i++) {
+            var t = steps[i].started_at || steps[i].completed_at;
+            if (!t) {
+                continue;
+            }
+            var d = new Date(String(t));
+            if (Number.isNaN(d.getTime())) {
+                continue;
+            }
+            var key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+            if (!dayKey) {
+                dayKey = key;
+            } else if (dayKey !== key) {
+                return false;
+            }
+        }
+        return dayKey !== '';
+    }
+
+    function formatTimelineError(msg) {
+        var s = String(msg || '');
+        if (s.indexOf('No interviewer available for human gate:') === 0) {
+            var gate = s.split(':').slice(1).join(':').trim();
+            if (gate) {
+                return 'Human review gate "' + gate + '" is enabled, but no reviewer is connected.';
+            }
+            return 'Human review gate is enabled, but no reviewer is connected.';
+        }
+        return s;
+    }
+
+    function renderBreadcrumbs(dir) {
+        breadcrumbsEl.innerHTML = '';
+        var root = document.createElement('button');
+        root.type = 'button';
+        root.className = 'crumb';
+        root.textContent = '/';
+        root.addEventListener('click', function() { loadArtifactList(''); });
+        breadcrumbsEl.appendChild(root);
+
+        if (!dir) {
+            return;
+        }
+        var parts = dir.split('/').filter(Boolean);
+        var accum = '';
+        parts.forEach(function(part) {
+            accum = accum ? (accum + '/' + part) : part;
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'crumb';
+            btn.textContent = part;
+            (function(targetDir) {
+                btn.addEventListener('click', function() { loadArtifactList(targetDir); });
+            })(accum);
+            breadcrumbsEl.appendChild(btn);
+        });
+    }
+
+    function loadArtifactList(dir) {
+        currentDir = dir || '';
+        var url = '/projects/' + projectID + '/artifacts/list?dir=' + encodeURIComponent(currentDir);
+        fetch(url, { headers: { 'Accept': 'application/json' } })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var entries = Array.isArray(data.entries) ? data.entries : [];
+                countEl.textContent = entries.length + (entries.length === 1 ? ' entry' : ' entries');
+                basePathEl.textContent = String(data.base_path || '');
+                renderBreadcrumbs(String(data.dir || ''));
+
+                if (entries.length === 0) {
+                    filesEl.innerHTML = '<li class="web-note" style="padding: 8px 10px;">No entries in this directory.</li>';
+                    return;
+                }
+
+                filesEl.innerHTML = '';
+                entries.forEach(function(entry) {
+                    var li = document.createElement('li');
+                    var btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'file-btn';
+                    var prefix = entry.is_dir ? '[DIR] ' : '[FILE] ';
+                    btn.textContent = prefix + entry.name;
+                    btn.addEventListener('click', function() {
+                        filesEl.querySelectorAll('.file-btn').forEach(function(b) { b.classList.remove('active'); });
+                        btn.classList.add('active');
+                        if (entry.is_dir) {
+                            loadArtifactList(entry.path);
+                            return;
+                        }
+                        loadArtifactFile(entry.path);
+                    });
+                    li.appendChild(btn);
+                    filesEl.appendChild(li);
+                });
+            })
+            .catch(function() {
+                filesEl.innerHTML = '<li class="web-note" style="padding: 8px 10px; color: #b91c1c;">Failed to load artifact directory.</li>';
+            });
+    }
+
+    function loadArtifactFile(filePath) {
+        contentEl.textContent = 'Loading ' + filePath + '...';
+        var url = '/projects/' + projectID + '/artifacts/file?path=' + encodeURIComponent(filePath);
+        fetch(url, { headers: { 'Accept': 'application/json' } })
+            .then(function(r) {
+                if (!r.ok) {
+                    throw new Error('failed');
+                }
+                return r.json();
+            })
+            .then(function(data) {
+                contentEl.textContent = String(data.content || '');
+            })
+            .catch(function() {
+                contentEl.textContent = 'Unable to load artifact content.';
+            });
+    }
+
+    renderGraph();
+    loadTimeline();
+    loadArtifactList('');
+})();
+</script>
+{{end}}

@@ -1,6 +1,11 @@
 {{define "diagnostics"}}
 <div id="diagnostics" hx-swap-oob="true">
     <h3>Diagnostics ({{len .Session.Diagnostics}})</h3>
+    {{if and .ProjectPath .Session.Diagnostics}}
+    <form method="POST" action="{{.ProjectPath}}/dot/fix" style="margin: 6px 0 10px 0;">
+        <button type="submit">Fix DOT with Agent</button>
+    </form>
+    {{end}}
     {{if .Error}}
     <div class="error">{{.Error}}</div>
     {{end}}

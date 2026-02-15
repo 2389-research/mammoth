@@ -158,7 +158,7 @@ func (s *PipelineServer) LoadPersistedRuns() error {
 		s.pipelines[state.ID] = run
 	}
 
-	log.Printf("loaded %d persisted pipeline runs\n", len(states))
+	log.Printf("component=attractor.server action=load_persisted_runs count=%d", len(states))
 	return nil
 }
 
@@ -234,7 +234,8 @@ func (h *loggingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	lw := &statusWriter{ResponseWriter: w, status: 200}
 	h.inner.ServeHTTP(lw, r)
-	log.Printf("%s %s %d %s\n", r.Method, r.URL.Path, lw.status, time.Since(start).Round(time.Millisecond))
+	log.Printf("component=attractor.http action=request method=%s path=%s status=%d duration=%s",
+		r.Method, r.URL.Path, lw.status, time.Since(start).Round(time.Millisecond))
 }
 
 // statusWriter captures the HTTP status code from WriteHeader.
@@ -386,11 +387,11 @@ func (s *PipelineServer) handleSubmitPipeline(w http.ResponseWriter, r *http.Req
 			Events:         []EngineEvent{},
 		}
 		if err := s.runStore.Create(initialState); err != nil {
-			log.Printf("[pipeline %s] warning: failed to persist initial state: %v\n", id, err)
+			log.Printf("component=attractor.pipeline action=persist_initial_failed pipeline_id=%s err=%v", id, err)
 		}
 	}
 
-	log.Printf("[pipeline %s] submitted (%d bytes)\n", id, len(source))
+	log.Printf("component=attractor.pipeline action=submitted pipeline_id=%s source_bytes=%d", id, len(source))
 
 	// Build a per-pipeline engine config that captures events and injects the interviewer.
 	// Each pipeline gets its own run directory under the artifacts base, keyed by pipeline ID.
@@ -425,11 +426,11 @@ func (s *PipelineServer) handleSubmitPipeline(w http.ResponseWriter, r *http.Req
 		if err != nil {
 			if ctx.Err() != nil {
 				run.Status = "cancelled"
-				log.Printf("[pipeline %s] cancelled\n", id)
+				log.Printf("component=attractor.pipeline action=cancelled pipeline_id=%s", id)
 			} else {
 				run.Status = "failed"
 				run.Error = err.Error()
-				log.Printf("[pipeline %s] failed: %s\n", id, err.Error())
+				log.Printf("component=attractor.pipeline action=failed pipeline_id=%s err=%s", id, err.Error())
 			}
 		} else {
 			run.Status = "completed"
@@ -440,7 +441,7 @@ func (s *PipelineServer) handleSubmitPipeline(w http.ResponseWriter, r *http.Req
 					run.ArtifactDir = workDir
 				}
 			}
-			log.Printf("[pipeline %s] completed (%d nodes)\n", id, completedCount)
+			log.Printf("component=attractor.pipeline action=completed pipeline_id=%s completed_nodes=%d", id, completedCount)
 		}
 		run.Result = result
 		finalStatus := run.Status
@@ -468,7 +469,7 @@ func (s *PipelineServer) handleSubmitPipeline(w http.ResponseWriter, r *http.Req
 				finalState.Context = result.Context.Snapshot()
 			}
 			if err := runStore.Update(finalState); err != nil {
-				log.Printf("[pipeline %s] warning: failed to persist final state: %v\n", id, err)
+				log.Printf("component=attractor.pipeline action=persist_final_failed pipeline_id=%s err=%v", id, err)
 			}
 		}
 	}()

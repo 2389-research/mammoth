@@ -109,6 +109,23 @@
     // Handle htmx errors
     document.body.addEventListener('htmx:responseError', (e) => {
         console.error('htmx error:', e.detail);
+        var target = e.detail && e.detail.target;
+        var status = e.detail && e.detail.xhr ? e.detail.xhr.status : 0;
+        var responseURL = e.detail && e.detail.xhr ? String(e.detail.xhr.responseURL || '') : '';
+        var isSelectionFetch = responseURL.includes('/node-edit') ||
+                               responseURL.includes('/edge-edit') ||
+                               responseURL.includes('/nodes/') ||
+                               responseURL.includes('/edges/');
+        if ((target && target.id === 'selection-props' && status === 404) || (status === 404 && isSelectionFetch)) {
+            if (target && target.id === 'selection-props') {
+                target.innerHTML = '<p class="hint">Could not load properties for that selection. Try selecting from the node list.</p>';
+            }
+            return;
+        }
+        if (status === 404 && target && target.id === 'selection-props') {
+            target.innerHTML = '<p class="hint">Could not load properties for that selection. Try selecting from the node list.</p>';
+            return;
+        }
         alert('Request failed: ' + (e.detail.xhr.statusText || 'Unknown error'));
     });
 

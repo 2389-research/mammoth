@@ -18,7 +18,7 @@ func PersistEvents(specDir string, events []core.Event) {
 	logPath := filepath.Join(specDir, "events.jsonl")
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		log.Printf("failed to open JSONL log: %v", err)
+		log.Printf("component=spec.persist action=open_events_log_failed path=%s err=%v", logPath, err)
 		return
 	}
 	defer func() { _ = f.Close() }()
@@ -26,12 +26,12 @@ func PersistEvents(specDir string, events []core.Event) {
 	for _, event := range events {
 		data, err := json.Marshal(event)
 		if err != nil {
-			log.Printf("failed to marshal event: %v", err)
+			log.Printf("component=spec.persist action=marshal_event_failed err=%v", err)
 			continue
 		}
 		data = append(data, '\n')
 		if _, err := f.Write(data); err != nil {
-			log.Printf("failed to write event: %v", err)
+			log.Printf("component=spec.persist action=write_event_failed path=%s err=%v", logPath, err)
 		}
 	}
 	_ = f.Sync()
@@ -57,12 +57,12 @@ func SpawnEventPersister(appState *AppState, specID ulid.ULID, handle *core.Spec
 				}
 				f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 				if err != nil {
-					log.Printf("event persister: failed to open log: %v", err)
+					log.Printf("component=spec.persist action=stream_open_events_log_failed path=%s err=%v", logPath, err)
 					continue
 				}
 				data, err := json.Marshal(event)
 				if err != nil {
-					log.Printf("event persister: failed to marshal event: %v", err)
+					log.Printf("component=spec.persist action=stream_marshal_event_failed err=%v", err)
 					_ = f.Close()
 					continue
 				}

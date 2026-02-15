@@ -16,6 +16,59 @@
         padding: 20px;
         box-shadow: 0 20px 60px color-mix(in srgb, #0f172a 14%, transparent);
     }
+    .build-graph-shell {
+        margin-top: 14px;
+        border-radius: var(--radius-2xl);
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg-card) 92%, #fff 8%);
+        overflow: hidden;
+    }
+    .build-graph-head {
+        border-bottom: 1px solid var(--border);
+        padding: 10px 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+    }
+    .build-graph-title {
+        margin: 0;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+    }
+    .build-graph-status {
+        font-size: 12px;
+        color: var(--text-secondary);
+    }
+    .build-graph {
+        max-height: 300px;
+        overflow: auto;
+        padding: 10px;
+        background: color-mix(in srgb, var(--bg-secondary) 90%, #fff 10%);
+    }
+    .build-graph-empty {
+        margin: 6px;
+        padding: 12px;
+        border: 1px dashed var(--border);
+        border-radius: var(--radius-xl);
+        color: var(--text-secondary);
+        font-size: 13px;
+        text-align: center;
+    }
+    .build-graph-svg {
+        width: 100%;
+        min-width: 640px;
+    }
+    .build-graph-svg g.node.is-active ellipse,
+    .build-graph-svg g.node.is-active polygon,
+    .build-graph-svg g.node.is-active path {
+        stroke: #f59e0b !important;
+        stroke-width: 3 !important;
+        fill: color-mix(in srgb, #fef3c7 72%, white 28%) !important;
+        filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.35));
+    }
     .build-hero::after {
         content: "";
         position: absolute;
@@ -95,7 +148,7 @@
     .build-metrics {
         margin-top: 16px;
         display: grid;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 10px;
     }
     .build-metric {
@@ -123,6 +176,11 @@
         display: grid;
         grid-template-columns: 1.4fr 1fr;
         gap: 14px;
+    }
+    .build-side {
+        display: grid;
+        gap: 14px;
+        align-content: start;
     }
     .build-card {
         border-radius: var(--radius-2xl);
@@ -256,6 +314,34 @@
     .build-stop-form {
         margin: 0;
     }
+    .token-list {
+        margin: 0;
+        padding: 10px 12px 12px 12px;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+    }
+    .token-item {
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg-secondary) 88%, #fff 12%);
+        padding: 8px 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        font-size: 12px;
+    }
+    .token-node {
+        color: var(--text-secondary);
+        font-weight: 600;
+        overflow-wrap: anywhere;
+    }
+    .token-total {
+        color: var(--text-primary);
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+    }
     @keyframes buildSlideIn {
         to {
             opacity: 1;
@@ -294,6 +380,15 @@
                 </form>
             </div>
         </div>
+        <section class="build-graph-shell">
+            <div class="build-graph-head">
+                <h2 class="build-graph-title">Pipeline Diagram</h2>
+                <span id="build-graph-status" class="build-graph-status">Rendering diagram…</span>
+            </div>
+            <div id="build-graph" class="build-graph">
+                <div class="build-graph-empty">Rendering pipeline diagram...</div>
+            </div>
+        </section>
         <div class="build-metrics">
             <div class="build-metric">
                 <p class="build-metric-label">Current Node</p>
@@ -319,6 +414,14 @@
                 <p class="build-metric-label">Last Activity</p>
                 <p id="metric-last-activity" class="build-metric-value">Waiting</p>
             </div>
+            <div class="build-metric">
+                <p class="build-metric-label">Total Tokens</p>
+                <p id="metric-total-tokens" class="build-metric-value">0</p>
+            </div>
+            <div class="build-metric">
+                <p class="build-metric-label">Build Pulse</p>
+                <p id="metric-pulse" class="build-metric-value">Starting</p>
+            </div>
         </div>
     </section>
 
@@ -336,18 +439,31 @@
             </div>
         </section>
 
-        <section class="build-card">
-            <div class="build-card-head">
-                <h2 class="build-card-title">Completed Nodes</h2>
-            </div>
-            <div id="completed-nodes" class="build-nodes"></div>
-        </section>
+        <div class="build-side">
+            <section class="build-card">
+                <div class="build-card-head">
+                    <h2 class="build-card-title">Completed Nodes</h2>
+                </div>
+                <div id="completed-nodes" class="build-nodes"></div>
+            </section>
+            <section class="build-card">
+                <div class="build-card-head">
+                    <h2 class="build-card-title">Token Usage by Node</h2>
+                </div>
+                <ul id="token-nodes" class="token-list">
+                    <li class="token-item"><span class="token-node">No token usage yet</span><span class="token-total">0</span></li>
+                </ul>
+            </section>
+        </div>
     </section>
 </section>
 
+<script src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.11.0/lib/viz-standalone.js"></script>
 <script>
 (function() {
     var projectID = '{{.Project.ID}}';
+    var projectDOT = {{ printf "%q" .Project.DOT }};
+    var finalURL = '/projects/' + projectID + '/final';
     var stateURL = '/projects/' + projectID + '/build/state';
     var eventsURL = '/projects/' + projectID + '/build/events';
 
@@ -359,6 +475,11 @@
     var metricToolCalls = document.getElementById('metric-tool-calls');
     var metricElapsed = document.getElementById('metric-elapsed');
     var metricLastActivity = document.getElementById('metric-last-activity');
+    var metricTotalTokens = document.getElementById('metric-total-tokens');
+    var metricPulse = document.getElementById('metric-pulse');
+    var tokenNodesList = document.getElementById('token-nodes');
+    var graphContainer = document.getElementById('build-graph');
+    var graphStatus = document.getElementById('build-graph-status');
     var statusPill = document.getElementById('build-status-pill');
     var statusText = document.getElementById('build-status-text');
     var connectionBadge = document.getElementById('connection-badge');
@@ -376,6 +497,11 @@
     var activityTimer = null;
     var startedAt = null;
     var lastActivityAt = null;
+    var totalTokens = 0;
+    var nodeTokenTotals = {};
+    var tokenEventsSeen = {};
+    var activeGraphNode = '';
+    var redirectedToFinal = false;
 
     function setStatus(status) {
         statusPill.classList.remove('running', 'completed', 'failed', 'cancelled');
@@ -393,9 +519,17 @@
         isTerminal = status === 'completed' || status === 'failed' || status === 'cancelled';
         if (status === 'running') {
             startElapsedTimer();
+            metricPulse.textContent = 'Active';
         } else {
             stopElapsedTimer();
             stopActivityTimer();
+            if (status === 'completed') {
+                metricPulse.textContent = 'Complete';
+            } else if (status === 'failed') {
+                metricPulse.textContent = 'Failed';
+            } else if (status === 'cancelled') {
+                metricPulse.textContent = 'Stopped';
+            }
         }
     }
 
@@ -436,6 +570,7 @@
             var node = data.node_id || 'unknown';
             addEvent('Stage started: ' + node, 'normal');
             metricCurrentNode.textContent = node;
+            setActiveNodeHighlight(node);
         });
 
         source.addEventListener('stage.completed', function(e) {
@@ -484,6 +619,7 @@
 
         source.addEventListener('agent.llm_turn', function(e) {
             var data = safeJSON(e.data);
+            registerLLMTurn(data);
             var inTokens = data.input_tokens || 0;
             var outTokens = data.output_tokens || 0;
             var totalTokens = data.total_tokens || (Number(inTokens) + Number(outTokens));
@@ -495,6 +631,7 @@
             setStatus('completed');
             closeStream();
             refreshState();
+            setTimeout(function() { window.location.href = finalURL; }, 900);
         });
 
         source.addEventListener('pipeline.failed', function(e) {
@@ -561,6 +698,10 @@
         }
         if (state.status) {
             setStatus(state.status);
+            if (state.status === 'completed' && !redirectedToFinal) {
+                redirectedToFinal = true;
+                setTimeout(function() { window.location.href = finalURL; }, 700);
+            }
         }
         if (state.run_state) {
             if (state.run_state.started_at) {
@@ -572,6 +713,7 @@
             }
             if (state.run_state.current_node) {
                 metricCurrentNode.textContent = state.run_state.current_node;
+                setActiveNodeHighlight(state.run_state.current_node);
             }
             if (Array.isArray(state.run_state.completed_nodes)) {
                 state.run_state.completed_nodes.forEach(function(nodeID) {
@@ -620,6 +762,7 @@
         } else if (evt.event === 'agent.tool_call.end') {
             addEvent('Tool done: ' + toolSummary(data) + toolDurationSuffix(data), 'success');
         } else if (evt.event === 'agent.llm_turn') {
+            registerLLMTurn(data);
             var inTokens = data.input_tokens || 0;
             var outTokens = data.output_tokens || 0;
             var totalTokens = data.total_tokens || (Number(inTokens) + Number(outTokens));
@@ -683,6 +826,240 @@
         metricCompletedCount.textContent = String(Object.keys(seenCompletions).length);
     }
 
+    function registerLLMTurn(data) {
+        if (!data || typeof data !== 'object') {
+            return;
+        }
+        var key = 'llm::' + String(data.turn_id || data.message_id || data.timestamp || JSON.stringify(data));
+        if (tokenEventsSeen[key]) {
+            return;
+        }
+        tokenEventsSeen[key] = true;
+
+        var inTokens = Number(data.input_tokens || 0);
+        var outTokens = Number(data.output_tokens || 0);
+        var turnTotal = Number(data.total_tokens || (inTokens + outTokens));
+        if (!Number.isFinite(turnTotal) || turnTotal <= 0) {
+            return;
+        }
+
+        totalTokens += turnTotal;
+        metricTotalTokens.textContent = formatNumber(totalTokens);
+
+        var node = String(data.node_id || metricCurrentNode.textContent || 'unknown');
+        if (!nodeTokenTotals[node]) {
+            nodeTokenTotals[node] = 0;
+        }
+        nodeTokenTotals[node] += turnTotal;
+        renderNodeTokenTotals();
+    }
+
+    function renderNodeTokenTotals() {
+        var entries = Object.keys(nodeTokenTotals).map(function(node) {
+            return { node: node, total: nodeTokenTotals[node] };
+        });
+        entries.sort(function(a, b) { return b.total - a.total; });
+
+        if (entries.length === 0) {
+            tokenNodesList.innerHTML = '<li class="token-item"><span class="token-node">No token usage yet</span><span class="token-total">0</span></li>';
+            return;
+        }
+
+        tokenNodesList.innerHTML = '';
+        entries.forEach(function(entry) {
+            var li = document.createElement('li');
+            li.className = 'token-item';
+
+            var nameEl = document.createElement('span');
+            nameEl.className = 'token-node';
+            nameEl.textContent = entry.node;
+
+            var totalEl = document.createElement('span');
+            totalEl.className = 'token-total';
+            totalEl.textContent = formatNumber(entry.total);
+
+            li.appendChild(nameEl);
+            li.appendChild(totalEl);
+            tokenNodesList.appendChild(li);
+        });
+    }
+
+    function renderPipelineGraph() {
+        if (!projectDOT || !projectDOT.trim()) {
+            graphStatus.textContent = 'No DOT';
+            graphContainer.innerHTML = '<div class="build-graph-empty">No DOT available for this build.</div>';
+            return;
+        }
+
+        if (typeof Viz === 'undefined') {
+            graphStatus.textContent = 'Renderer unavailable';
+            graphContainer.innerHTML = '<div class="build-graph-empty">Diagram renderer did not load.</div>';
+            return;
+        }
+
+        var dotText = normalizeDOTSource(projectDOT);
+        renderDOTToSVG(dotText).then(function(svg) {
+            graphContainer.innerHTML = svg;
+            var svgEl = graphContainer.querySelector('svg');
+            if (svgEl) {
+                svgEl.classList.add('build-graph-svg');
+                svgEl.removeAttribute('width');
+                svgEl.removeAttribute('height');
+            }
+            graphStatus.textContent = 'Live highlighting on';
+            if (activeGraphNode) {
+                setActiveNodeHighlight(activeGraphNode);
+            }
+        }).catch(function(err) {
+            graphStatus.textContent = 'Render failed';
+            var msg = (err && err.message) ? String(err.message) : 'unknown error';
+            graphContainer.innerHTML = '<div class="build-graph-empty">Could not render DOT diagram: ' + escapeHTML(msg) + '</div>';
+        });
+    }
+
+    function renderDOTToSVG(dotText) {
+        // viz-js v3 standalone: Viz.instance().then(viz => viz.renderString(...))
+        if (Viz && typeof Viz.instance === 'function') {
+            return Viz.instance().then(function(viz) {
+                return renderWithVizInstance(viz, dotText);
+            });
+        }
+        // legacy API: new Viz().renderString(...)
+        if (typeof Viz === 'function') {
+            try {
+                var legacyViz = new Viz();
+                var out = renderWithVizInstance(legacyViz, dotText);
+                if (out && typeof out.then === 'function') {
+                    return out;
+                }
+                return Promise.resolve(out);
+            } catch (err) {
+                return Promise.reject(err);
+            }
+        }
+        return Promise.reject(new Error('viz runtime unavailable'));
+    }
+
+    function renderWithVizInstance(viz, dotText) {
+        if (!viz) {
+            return Promise.reject(new Error('viz instance unavailable'));
+        }
+
+        // Try renderString first.
+        if (typeof viz.renderString === 'function') {
+            try {
+                var out = viz.renderString(dotText);
+                if (out && typeof out.then === 'function') {
+                    return out.then(normalizeRenderedSVG);
+                }
+                return Promise.resolve(normalizeRenderedSVG(out));
+            } catch (_err) {
+                // fall through to renderSVGElement
+            }
+        }
+
+        // Fallback: render SVG element then serialize.
+        if (typeof viz.renderSVGElement === 'function') {
+            try {
+                var svgOut = viz.renderSVGElement(dotText);
+                if (svgOut && typeof svgOut.then === 'function') {
+                    return svgOut.then(function(el) {
+                        return normalizeRenderedSVG(el);
+                    });
+                }
+                return Promise.resolve(normalizeRenderedSVG(svgOut));
+            } catch (err2) {
+                return Promise.reject(err2);
+            }
+        }
+
+        return Promise.reject(new Error('viz instance missing render methods'));
+    }
+
+    function normalizeRenderedSVG(out) {
+        if (typeof out === 'string') {
+            var s = out.trim();
+            if (s.indexOf('<svg') !== -1) {
+                return s;
+            }
+            throw new Error('renderer returned non-SVG string');
+        }
+
+        if (out && typeof out === 'object') {
+            if (typeof out.outerHTML === 'string' && out.outerHTML.indexOf('<svg') !== -1) {
+                return out.outerHTML;
+            }
+            if (typeof out.svg === 'string' && out.svg.indexOf('<svg') !== -1) {
+                return out.svg;
+            }
+            if (typeof out.output === 'string' && out.output.indexOf('<svg') !== -1) {
+                return out.output;
+            }
+        }
+
+        throw new Error('renderer returned unsupported output type');
+    }
+
+    function normalizeDOTSource(raw) {
+        var text = String(raw || '').trim();
+        if (!text) {
+            return text;
+        }
+
+        // Handle DOT accidentally stored as a quoted JSON string.
+        if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+            try {
+                var parsed = JSON.parse(text);
+                if (typeof parsed === 'string' && parsed.trim()) {
+                    text = parsed.trim();
+                }
+            } catch (_err) {
+                text = text.slice(1, -1).trim();
+            }
+        }
+
+        // If escaped newlines survived storage, convert them back.
+        if (text.indexOf('\\n') >= 0 && text.indexOf('\n') < 0) {
+            text = text.replaceAll('\\n', '\n');
+        }
+        if (text.indexOf('\\"') >= 0) {
+            text = text.replaceAll('\\"', '"');
+        }
+        return text;
+    }
+
+    function escapeHTML(s) {
+        return String(s)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    }
+
+    function setActiveNodeHighlight(nodeID) {
+        if (!nodeID || !graphContainer) {
+            return;
+        }
+        activeGraphNode = String(nodeID);
+        var nodeEls = graphContainer.querySelectorAll('g.node');
+        if (!nodeEls.length) {
+            return;
+        }
+        var highlighted = false;
+        nodeEls.forEach(function(el) {
+            el.classList.remove('is-active');
+            var title = el.querySelector('title');
+            if (title && title.textContent === activeGraphNode) {
+                el.classList.add('is-active');
+                highlighted = true;
+            }
+        });
+        if (highlighted) {
+            graphStatus.textContent = 'Active: ' + activeGraphNode;
+        }
+    }
+
     function eventKey(event, data) {
         return event + '::' + String(data || '');
     }
@@ -693,6 +1070,14 @@
         } catch (_e) {
             return {};
         }
+    }
+
+    function formatNumber(n) {
+        var num = Number(n || 0);
+        if (!Number.isFinite(num)) {
+            return '0';
+        }
+        return Math.floor(num).toLocaleString();
     }
 
     function addEvent(text, tone) {
@@ -783,11 +1168,14 @@
         var seconds = Math.max(0, Math.floor((Date.now() - lastActivityAt.getTime()) / 1000));
         if (seconds < 5) {
             metricLastActivity.textContent = 'Just now';
+            metricPulse.textContent = 'Active';
             return;
         }
         metricLastActivity.textContent = seconds + 's ago';
+        metricPulse.textContent = seconds > 20 ? ('Quiet ' + seconds + 's') : 'Active';
     }
 
+    renderPipelineGraph();
     refreshState();
     startActivityTimer();
 })();

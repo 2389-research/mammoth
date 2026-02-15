@@ -54,7 +54,10 @@ func TransitionSpecToBuild(project *Project, specState *core.SpecState) error {
 func TransitionEditorToBuild(project *Project) error {
 	g, err := dot.Parse(project.DOT)
 	if err != nil {
-		project.Diagnostics = []string{fmt.Sprintf("error: parse: %s", err)}
+		project.Diagnostics = []string{
+			"error: [build_blocked] build did not start because DOT parsing failed",
+			fmt.Sprintf("error: [parse] %s", err),
+		}
 		project.Phase = PhaseEdit
 		return fmt.Errorf("editor to build: DOT parse failed: %w", err)
 	}
@@ -63,6 +66,7 @@ func TransitionEditorToBuild(project *Project) error {
 	project.Diagnostics = formatDiagnostics(diags)
 
 	if hasErrors(diags) {
+		project.Diagnostics = prependBuildBlockedSummary(project.Diagnostics, countSeverity(diags, "error"), countSeverity(diags, "warning"))
 		project.Phase = PhaseEdit
 		return fmt.Errorf("editor to build: DOT has validation errors")
 	}
@@ -118,4 +122,25 @@ func formatDiagnostics(diags []dot.Diagnostic) []string {
 		result[i] = fmt.Sprintf("%s: [%s]%s %s", d.Severity, d.Rule, loc, d.Message)
 	}
 	return result
+}
+
+func countSeverity(diags []dot.Diagnostic, severity string) int {
+	n := 0
+	for _, d := range diags {
+		if d.Severity == severity {
+			n++
+		}
+	}
+	return n
+}
+
+func prependBuildBlockedSummary(diags []string, errors, warnings int) []string {
+	summary := fmt.Sprintf("error: [build_blocked] build did not start; fix %d error(s)", errors)
+	if warnings > 0 {
+		summary += fmt.Sprintf(" (%d warning(s) also reported)", warnings)
+	}
+	out := make([]string, 0, len(diags)+1)
+	out = append(out, summary)
+	out = append(out, diags...)
+	return out
 }

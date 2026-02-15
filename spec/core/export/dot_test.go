@@ -129,6 +129,43 @@ func TestHumanGateReviewGateHasWeightedBranches(t *testing.T) {
 	}
 }
 
+func TestPipelineOptionsDisableScenarioAndHumanGates(t *testing.T) {
+	state := makeStateWithCore()
+	constraints := "[mammoth.option.human_review=false]\n[mammoth.option.scenario_testing=false]\n[mammoth.option.tdd=true]"
+	state.Core.Constraints = &constraints
+
+	dot := export.ExportDOT(state)
+	if strings.Contains(dot, "scenario_test [shape=box") {
+		t.Error("scenario_test should be omitted when scenario_testing=false")
+	}
+	if strings.Contains(dot, "review_gate [shape=hexagon") {
+		t.Error("review_gate should be omitted when human_review=false")
+	}
+	if !strings.Contains(dot, `verify_ok -> release [label="Pass", condition="outcome=SUCCESS"]`) {
+		t.Error("verify_ok should route directly to release when scenario and human review are disabled")
+	}
+}
+
+func TestPipelineOptionsDisableTDD(t *testing.T) {
+	state := makeStateWithCore()
+	constraints := "[mammoth.option.human_review=true]\n[mammoth.option.scenario_testing=true]\n[mammoth.option.tdd=false]"
+	state.Core.Constraints = &constraints
+
+	dot := export.ExportDOT(state)
+	if strings.Contains(dot, "tdd [shape=box") {
+		t.Error("tdd node should be omitted when tdd=false")
+	}
+	if !strings.Contains(dot, "start -> plan -> setup -> implement -> verify -> verify_ok") {
+		t.Error("main chain should skip tdd when disabled")
+	}
+	if strings.Contains(dot, "polish -> tdd") {
+		t.Error("polish loop should not target tdd when disabled")
+	}
+	if !strings.Contains(dot, "polish -> implement") {
+		t.Error("polish loop should target implement when tdd is disabled")
+	}
+}
+
 func TestPolishLoopsBackToTDD(t *testing.T) {
 	state := makeStateWithCore()
 	dot := export.ExportDOT(state)

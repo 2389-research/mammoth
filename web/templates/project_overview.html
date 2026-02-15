@@ -111,7 +111,7 @@
                 </div>
             {{else if and (eq (lower (print .Project.Phase)) "done") .Project.RunID}}
                 <div class="web-inline-actions">
-                    <a href="/projects/{{.Project.ID}}/build" class="btn">View Last Build</a>
+                    <a href="/projects/{{.Project.ID}}/final" class="btn">Open Final Report</a>
                 </div>
             {{else if not .Project.DOT}}
                 <div class="web-inline-actions">
@@ -128,11 +128,47 @@
     {{if .Project.Diagnostics}}
     <div class="card" style="margin-top: 2px;">
         <h3>Diagnostics</h3>
+        {{if .Diagnostics.BuildBlocked}}
+            <p class="web-note" style="margin-top:8px; color: var(--danger);">
+                Build did not start: {{.Diagnostics.ErrorCount}} blocking error(s) found in DOT validation.
+            </p>
+            <p class="web-note" style="margin-top:4px;">
+                Fix errors in the editor, then start build again.
+            </p>
+            {{if .Project.DOT}}
+            <form method="POST" action="/projects/{{.Project.ID}}/dot/fix" style="margin-top: 10px;">
+                <button type="submit" class="btn btn-primary">Fix DOT with Agent</button>
+            </form>
+            {{end}}
+        {{else if gt .Diagnostics.WarningCount 0}}
+            <p class="web-note" style="margin-top:8px; color: var(--warning);">
+                No blocking errors. {{.Diagnostics.WarningCount}} warning(s) reported.
+            </p>
+        {{end}}
+        {{if .Diagnostics.Errors}}
+        <h4 style="margin: 12px 0 4px 0; color: var(--danger); font-size: 13px;">Errors</h4>
         <ul style="margin-top: 8px; padding-left: 18px;">
-            {{range .Project.Diagnostics}}
+            {{range .Diagnostics.Errors}}
             <li class="web-note">{{.}}</li>
             {{end}}
         </ul>
+        {{end}}
+        {{if .Diagnostics.Warnings}}
+        <h4 style="margin: 12px 0 4px 0; color: var(--warning); font-size: 13px;">Warnings</h4>
+        <ul style="margin-top: 8px; padding-left: 18px;">
+            {{range .Diagnostics.Warnings}}
+            <li class="web-note">{{.}}</li>
+            {{end}}
+        </ul>
+        {{end}}
+        {{if .Diagnostics.Other}}
+        <h4 style="margin: 12px 0 4px 0; font-size: 13px;">Other</h4>
+        <ul style="margin-top: 8px; padding-left: 18px;">
+            {{range .Diagnostics.Other}}
+            <li class="web-note">{{.}}</li>
+            {{end}}
+        </ul>
+        {{end}}
     </div>
     {{end}}
 </section>
