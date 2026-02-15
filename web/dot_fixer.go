@@ -1,3 +1,5 @@
+// ABOUTME: HTTP handler that auto-fixes DOT graph validation errors using an LLM.
+// ABOUTME: Parses, validates, and rewrites the project DOT via the configured backend.
 package web
 
 import (

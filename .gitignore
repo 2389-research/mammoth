@@ -23,6 +23,9 @@ coverage.html
 # Scratch scenario tests
 .scratch/
 
+# Go build cache
+.gocache/
+
 # Pipeline run artifacts
 artifacts/
 

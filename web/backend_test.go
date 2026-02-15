@@ -1,3 +1,5 @@
+// ABOUTME: Tests for backend detection logic that selects LLM provider from env vars.
+// ABOUTME: Covers MAMMOTH_BACKEND override, API key sniffing, and fallback behavior.
 package web
 
 import "testing"

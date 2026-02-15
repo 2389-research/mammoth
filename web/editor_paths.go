@@ -1,3 +1,5 @@
+// ABOUTME: Resolves filesystem paths to editor template and static asset directories.
+// ABOUTME: Supports both development (source tree) and installed binary layouts.
 package web
 
 import (

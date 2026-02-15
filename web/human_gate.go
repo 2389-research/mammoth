@@ -1,3 +1,5 @@
+// ABOUTME: Configures a default interviewer for wait.human nodes in web builds.
+// ABOUTME: Auto-approves review gates so pipelines run unattended in the web UI.
 package web
 
 import (

@@ -1,3 +1,5 @@
+// ABOUTME: Spec builder options parsed from form input for pipeline configuration.
+// ABOUTME: Controls toggles like human review, scenario testing, TDD, and complexity level.
 package web
 
 import (

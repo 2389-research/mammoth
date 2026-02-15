@@ -1,3 +1,5 @@
+// ABOUTME: Template-friendly diagnostics view that splits DOT validation results by severity.
+// ABOUTME: Provides error/warning counts and messages for the build UI.
 package web
 
 import "strings"

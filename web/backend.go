@@ -1,3 +1,5 @@
+// ABOUTME: Selects the codergen backend (Claude Code, agent, mux) from environment variables.
+// ABOUTME: Used by the web server to configure which LLM backend drives pipeline execution.
 package web
 
 import (
