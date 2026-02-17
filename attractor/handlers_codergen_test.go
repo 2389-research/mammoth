@@ -773,6 +773,114 @@ func TestEngineWiresBaseURLToCodergenHandler(t *testing.T) {
 	}
 }
 
+// --- system_prompt attribute tests ---
+
+func TestCodergenHandlerSystemPromptFromNodeAttr(t *testing.T) {
+	backend := &fakeBackend{}
+	h := &CodergenHandler{Backend: backend}
+
+	node := &Node{
+		ID: "codegen_sysprompt",
+		Attrs: map[string]string{
+			"shape":         "box",
+			"prompt":        "Write code",
+			"system_prompt": "Always use TDD. Never skip tests.",
+		},
+	}
+	pctx := NewContext()
+	store := NewArtifactStore(t.TempDir())
+
+	_, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(backend.calls) != 1 {
+		t.Fatalf("expected 1 backend call, got %d", len(backend.calls))
+	}
+	if backend.calls[0].SystemPrompt != "Always use TDD. Never skip tests." {
+		t.Errorf("expected SystemPrompt from node attr, got %q", backend.calls[0].SystemPrompt)
+	}
+}
+
+func TestCodergenHandlerSystemPromptFromContext(t *testing.T) {
+	backend := &fakeBackend{}
+	h := &CodergenHandler{Backend: backend}
+
+	node := &Node{
+		ID: "codegen_sysprompt_ctx",
+		Attrs: map[string]string{
+			"shape":  "box",
+			"prompt": "Write code",
+		},
+	}
+	pctx := NewContext()
+	pctx.Set("system_prompt", "Be concise and focused.")
+	store := NewArtifactStore(t.TempDir())
+
+	_, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(backend.calls) != 1 {
+		t.Fatalf("expected 1 backend call, got %d", len(backend.calls))
+	}
+	if backend.calls[0].SystemPrompt != "Be concise and focused." {
+		t.Errorf("expected SystemPrompt from context, got %q", backend.calls[0].SystemPrompt)
+	}
+}
+
+func TestCodergenHandlerSystemPromptNodeAttrOverridesContext(t *testing.T) {
+	backend := &fakeBackend{}
+	h := &CodergenHandler{Backend: backend}
+
+	node := &Node{
+		ID: "codegen_sysprompt_override",
+		Attrs: map[string]string{
+			"shape":         "box",
+			"prompt":        "Write code",
+			"system_prompt": "Node-level override",
+		},
+	}
+	pctx := NewContext()
+	pctx.Set("system_prompt", "Context-level instructions")
+	store := NewArtifactStore(t.TempDir())
+
+	_, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if backend.calls[0].SystemPrompt != "Node-level override" {
+		t.Errorf("expected node attr to override context, got %q", backend.calls[0].SystemPrompt)
+	}
+}
+
+func TestCodergenHandlerNoSystemPrompt(t *testing.T) {
+	backend := &fakeBackend{}
+	h := &CodergenHandler{Backend: backend}
+
+	node := &Node{
+		ID: "codegen_no_sysprompt",
+		Attrs: map[string]string{
+			"shape":  "box",
+			"prompt": "Write code",
+		},
+	}
+	pctx := NewContext()
+	store := NewArtifactStore(t.TempDir())
+
+	_, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if backend.calls[0].SystemPrompt != "" {
+		t.Errorf("expected empty SystemPrompt when not set, got %q", backend.calls[0].SystemPrompt)
+	}
+}
+
 func TestEngineWiresEventHandlerToCodergenHandler(t *testing.T) {
 	var events []EngineEvent
 	backend := &stubCodergenBackend{

@@ -830,3 +830,96 @@ func TestBackendFidelityInvalidModeIgnored(t *testing.T) {
 		t.Errorf("expected empty FidelityMode for invalid fidelity attr, got %q", backend.calls[0].FidelityMode)
 	}
 }
+
+// --- SystemPrompt (user override) tests ---
+
+func TestBackendSystemPromptPassedToSession(t *testing.T) {
+	// Verify that AgentRunConfig.SystemPrompt reaches the LLM system prompt
+	adapter := &testProviderAdapter{
+		responses: []*llm.Response{
+			makeTestTextResponse("Understood, TDD first."),
+		},
+	}
+	client := newTestAgentClient(adapter)
+
+	backend := &AgentBackend{Client: client}
+	config := AgentRunConfig{
+		Prompt:       "Build feature X",
+		Model:        "test-model",
+		Provider:     "anthropic",
+		WorkDir:      t.TempDir(),
+		NodeID:       "sysprompt-node",
+		MaxTurns:     10,
+		SystemPrompt: "Always write tests first. Follow TDD strictly.",
+	}
+
+	result, err := backend.RunAgent(context.Background(), config)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Success {
+		t.Error("expected success")
+	}
+
+	// The LLM call should have the user override appended to the system prompt
+	calls := adapter.getCalls()
+	if len(calls) < 1 {
+		t.Fatal("expected at least 1 LLM call")
+	}
+
+	// Find system prompt content in messages
+	systemContent := ""
+	for _, msg := range calls[0].Messages {
+		if msg.Role == "system" {
+			systemContent += msg.TextContent()
+		}
+	}
+
+	if !strings.Contains(systemContent, "Always write tests first") {
+		t.Error("expected system prompt to contain user override text")
+	}
+	if !strings.Contains(systemContent, "User Instructions") {
+		t.Error("expected system prompt to contain 'User Instructions' header")
+	}
+}
+
+func TestBackendEmptySystemPromptOmitsHeader(t *testing.T) {
+	// Verify that an empty SystemPrompt does not add the User Instructions section
+	adapter := &testProviderAdapter{
+		responses: []*llm.Response{
+			makeTestTextResponse("done"),
+		},
+	}
+	client := newTestAgentClient(adapter)
+
+	backend := &AgentBackend{Client: client}
+	config := AgentRunConfig{
+		Prompt:   "Do something",
+		Model:    "test-model",
+		Provider: "anthropic",
+		WorkDir:  t.TempDir(),
+		NodeID:   "no-sysprompt-node",
+		MaxTurns: 10,
+		// SystemPrompt intentionally empty
+	}
+
+	result, err := backend.RunAgent(context.Background(), config)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Success {
+		t.Error("expected success")
+	}
+
+	calls := adapter.getCalls()
+	systemContent := ""
+	for _, msg := range calls[0].Messages {
+		if msg.Role == "system" {
+			systemContent += msg.TextContent()
+		}
+	}
+
+	if strings.Contains(systemContent, "User Instructions") {
+		t.Error("empty SystemPrompt should not add User Instructions header")
+	}
+}

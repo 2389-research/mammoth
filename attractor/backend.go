@@ -27,6 +27,7 @@ type AgentRunConfig struct {
 	NodeID       string            // pipeline node identifier for logging/tracking
 	MaxTurns     int               // maximum agent loop turns (0 = use default of 20)
 	FidelityMode string            // fidelity mode controlling conversation history management ("full", "compact", "truncate", "summary:*")
+	SystemPrompt string            // user override appended to the agent's system prompt (empty = no override)
 	EventHandler func(EngineEvent) // engine event callback for agent-level observability
 }
 

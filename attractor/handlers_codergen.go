@@ -114,6 +114,16 @@ func (h *CodergenHandler) Execute(ctx context.Context, node *Node, pctx *Context
 		baseURL = h.BaseURL
 	}
 
+	// Resolve system_prompt: node attribute takes precedence over pipeline context
+	systemPrompt := attrs["system_prompt"]
+	if systemPrompt == "" {
+		if spVal := pctx.Get("system_prompt"); spVal != nil {
+			if spStr, ok := spVal.(string); ok {
+				systemPrompt = spStr
+			}
+		}
+	}
+
 	config := AgentRunConfig{
 		Prompt:       prompt,
 		Model:        llmModel,
@@ -124,6 +134,7 @@ func (h *CodergenHandler) Execute(ctx context.Context, node *Node, pctx *Context
 		NodeID:       node.ID,
 		MaxTurns:     maxTurns,
 		FidelityMode: fidelityMode,
+		SystemPrompt: systemPrompt,
 		EventHandler: h.EventHandler,
 	}
 

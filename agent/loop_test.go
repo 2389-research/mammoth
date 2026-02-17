@@ -816,3 +816,75 @@ done:
 		t.Errorf("expected last event to be SESSION_END, got %s", lastEventKind)
 	}
 }
+
+func TestProcessInputUserOverrideAppendsToSystemPrompt(t *testing.T) {
+	profile, env, session, client, adapter := newTestSetup()
+	defer session.Close()
+
+	// Set user override on session config
+	session.Config.UserOverride = "Always write tests first. Never skip TDD."
+
+	adapter.responses = []*llm.Response{makeTextResponse("Understood, TDD it is.")}
+
+	err := ProcessInput(context.Background(), session, profile, env, client, "build feature X")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify the system prompt sent to LLM contains the user override
+	calls := adapter.getCalls()
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 LLM call, got %d", len(calls))
+	}
+
+	// The first message should be the system prompt
+	if len(calls[0].Messages) < 1 {
+		t.Fatal("expected at least 1 message in the LLM request")
+	}
+
+	systemMsg := calls[0].Messages[0]
+	systemContent := ""
+	for _, part := range systemMsg.Content {
+		if part.Kind == llm.ContentText {
+			systemContent += part.Text
+		}
+	}
+
+	if !strings.Contains(systemContent, "Always write tests first") {
+		t.Error("expected system prompt to contain user override text")
+	}
+	if !strings.Contains(systemContent, "User Instructions") {
+		t.Error("expected system prompt to contain 'User Instructions' header")
+	}
+}
+
+func TestProcessInputNoUserOverride(t *testing.T) {
+	profile, env, session, client, adapter := newTestSetup()
+	defer session.Close()
+
+	// No user override set (empty string)
+	adapter.responses = []*llm.Response{makeTextResponse("Hello.")}
+
+	err := ProcessInput(context.Background(), session, profile, env, client, "hi")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	calls := adapter.getCalls()
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 LLM call, got %d", len(calls))
+	}
+
+	systemMsg := calls[0].Messages[0]
+	systemContent := ""
+	for _, part := range systemMsg.Content {
+		if part.Kind == llm.ContentText {
+			systemContent += part.Text
+		}
+	}
+
+	// Should NOT contain the user override header when no override is set
+	if strings.Contains(systemContent, "User Instructions") {
+		t.Error("system prompt should not contain 'User Instructions' when no override is set")
+	}
+}

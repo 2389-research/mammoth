@@ -47,6 +47,9 @@ func ProcessInput(ctx context.Context, session *Session, profile ProviderProfile
 		// 4. Build LLM request
 		projectDocs := DiscoverProjectDocs(env)
 		systemPrompt := profile.BuildSystemPrompt(env, projectDocs)
+		if session.Config.UserOverride != "" {
+			systemPrompt += "\n\n## User Instructions\n\n" + session.Config.UserOverride
+		}
 
 		session.mu.Lock()
 		historyForLLM := session.History

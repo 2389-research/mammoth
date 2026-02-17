@@ -79,6 +79,7 @@ func (b *AgentBackend) RunAgent(ctx context.Context, config AgentRunConfig) (*Ag
 	sessionConfig.MaxTurns = maxTurns * 3 // turns include user, assistant, and tool results
 	sessionConfig.MaxToolRoundsPerInput = maxTurns
 	sessionConfig.FidelityMode = config.FidelityMode
+	sessionConfig.UserOverride = config.SystemPrompt
 
 	session := agent.NewSession(sessionConfig)
 	defer session.Close()

@@ -39,6 +39,10 @@ type SessionConfig struct {
 	// "summary:low", "summary:medium", "summary:high". Empty string means no
 	// fidelity filtering (equivalent to "full").
 	FidelityMode string `json:"fidelity_mode,omitempty"`
+	// UserOverride is appended to the system prompt as a "User Instructions"
+	// section. This allows pipeline authors to inject per-node or per-pipeline
+	// instructions into the coding agent's system prompt.
+	UserOverride string `json:"user_override,omitempty"`
 }
 
 // DefaultSessionConfig returns a SessionConfig with spec-defined defaults.
