@@ -730,6 +730,44 @@ func TestServerProjectsPageHTML(t *testing.T) {
 	}
 }
 
+func TestLandingToProjectFlow(t *testing.T) {
+	srv := newTestServer(t)
+
+	// 1. Landing page renders at /.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Accept", "text/html")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("landing: expected 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "/projects/new") {
+		t.Fatal("landing page should link to /projects/new")
+	}
+
+	// 2. New project page renders.
+	req2 := httptest.NewRequest(http.MethodGet, "/projects/new", nil)
+	req2.Header.Set("Accept", "text/html")
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("new project: expected 200, got %d", rec2.Code)
+	}
+
+	// 3. Projects list page renders at /projects with HTML.
+	req3 := httptest.NewRequest(http.MethodGet, "/projects", nil)
+	req3.Header.Set("Accept", "text/html")
+	rec3 := httptest.NewRecorder()
+	srv.ServeHTTP(rec3, req3)
+	if rec3.Code != http.StatusOK {
+		t.Fatalf("projects: expected 200, got %d", rec3.Code)
+	}
+	if !strings.Contains(rec3.Body.String(), "nav-rail") {
+		t.Fatal("projects page should use nav rail layout")
+	}
+}
+
 // newTestServer creates a Server with a temporary data directory for testing.
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
