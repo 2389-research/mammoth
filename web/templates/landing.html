@@ -4,8 +4,140 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{.Title}} - mammoth</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/landing.css">
 </head>
 <body>
-    <h1>The Software Factory That Fits in Your Pocket</h1>
+
+<section class="cl-hero">
+    <div class="cl-content">
+        <p class="cl-hero-eyebrow">ONE BINARY. ENTIRE FACTORY.</p>
+        <h1 class="cl-hero-title">The Software Factory<br>That Fits in Your Pocket</h1>
+        <p class="cl-hero-sub">From plain-language prompt to production artifacts. Spec it, shape it, build it — one Go binary, zero infrastructure.</p>
+        <div class="cl-hero-actions">
+            <a href="/projects/new" class="cl-btn-primary">Launch a Pipeline</a>
+            <a href="https://github.com/2389-research/mammoth" class="cl-btn-secondary">View on GitHub</a>
+        </div>
+        <div class="cl-telemetry-strip">
+            <span class="cl-telemetry-strip-text">▌ SPEC ━━━━━━━━ EDIT ━━━━━━━━ BUILD ━━━━━━━━ DONE</span>
+        </div>
+    </div>
+</section>
+
+<div class="cl-perforation"></div>
+<section class="cl-pipeline">
+    <div class="cl-content">
+        <h2 class="cl-section-title" data-reveal>The Pipeline</h2>
+        <div class="cl-pipeline-cards" data-reveal-stagger>
+            <div class="cl-phase-card">
+                <span class="cl-phase-num">01</span>
+                <h3 class="cl-phase-name">Spec</h3>
+                <p class="cl-phase-desc">An LLM swarm shapes your intent into constraints, cards, and a DOT graph — collaboratively.</p>
+                <span class="cl-phase-led"></span>
+            </div>
+            <div class="cl-phase-card">
+                <span class="cl-phase-num">02</span>
+                <h3 class="cl-phase-name">Edit</h3>
+                <p class="cl-phase-desc">Visual DOT editor with live validation, LLM-powered repair, and drag-and-drop graph refinement.</p>
+                <span class="cl-phase-led"></span>
+            </div>
+            <div class="cl-phase-card">
+                <span class="cl-phase-num">03</span>
+                <h3 class="cl-phase-name">Build</h3>
+                <p class="cl-phase-desc">The Attractor engine executes your DAG with live SSE telemetry — tool calls, tokens, and timing.</p>
+                <span class="cl-phase-led"></span>
+            </div>
+            <div class="cl-phase-card">
+                <span class="cl-phase-num">04</span>
+                <h3 class="cl-phase-name">Artifacts</h3>
+                <p class="cl-phase-desc">Browse output files, execution timeline, and per-node logs. Everything is inspectable.</p>
+                <span class="cl-phase-led"></span>
+            </div>
+        </div>
+    </div>
+</section>
+<div class="cl-perforation cl-perforation--dark"></div>
+
+<section class="cl-stack">
+    <div class="cl-content">
+        <h2 class="cl-section-title cl-section-title--light" data-reveal>The Stack</h2>
+        <div class="cl-tiers" data-reveal-stagger>
+            <div class="cl-tier cl-tier--wide">
+                <span class="cl-tier-label">LAYER 01 — LLM CLIENT</span>
+                <p class="cl-tier-desc">Unified SDK. OpenAI, Anthropic, Gemini. Streaming, retry, middleware.</p>
+                <div class="cl-tier-badges">
+                    <span class="cl-badge">OpenAI</span>
+                    <span class="cl-badge">Anthropic</span>
+                    <span class="cl-badge">Gemini</span>
+                </div>
+            </div>
+            <div class="cl-tier cl-tier--medium">
+                <span class="cl-tier-label">LAYER 02 — AGENT LOOP</span>
+                <p class="cl-tier-desc">Agentic execution. Tool registry, subagents, steering, fidelity modes.</p>
+            </div>
+            <div class="cl-tier cl-tier--narrow">
+                <span class="cl-tier-label">LAYER 03 — ATTRACTOR ENGINE</span>
+                <p class="cl-tier-desc">DAG pipeline runner. DOT-based graphs, checkpoints, human-in-the-loop.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="cl-how">
+    <div class="cl-content">
+        <h2 class="cl-section-title" data-reveal>How It Works</h2>
+        <div class="cl-steps" data-reveal-stagger>
+            <div class="cl-step">
+                <span class="cl-step-num">01</span>
+                <h3 class="cl-step-title">Install</h3>
+                <div class="cl-code-block"><code>go install github.com/2389-research/mammoth@latest</code></div>
+            </div>
+            <div class="cl-step">
+                <span class="cl-step-num">02</span>
+                <h3 class="cl-step-title">Describe</h3>
+                <p class="cl-step-content">"A CI pipeline that lints, tests, and deploys a Go service with rollback on failure."</p>
+            </div>
+            <div class="cl-step">
+                <span class="cl-step-num">03</span>
+                <h3 class="cl-step-title">Build</h3>
+                <p class="cl-step-content">Mammoth validates, executes the DAG, streams telemetry, and writes artifacts to disk.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="cl-telemetry">
+    <div class="cl-content">
+        <p class="cl-telemetry-label" data-reveal>LIVE TELEMETRY PREVIEW</p>
+        <div class="cl-telemetry-output" data-reveal></div>
+    </div>
+</section>
+
+<section class="cl-cta">
+    <div class="cl-content" data-reveal>
+        <h2 class="cl-cta-title">Ready to launch?</h2>
+        <p class="cl-cta-sub">One binary. Your prompt. Production artifacts.</p>
+        <a href="/projects/new" class="cl-btn-primary cl-btn-lg">Start Building</a>
+        <p class="cl-cta-link"><a href="https://github.com/2389-research/mammoth">Read the docs</a></p>
+    </div>
+</section>
+
+<div class="cl-perforation cl-perforation--dark"></div>
+<footer class="cl-footer">
+    <div class="cl-content">
+        <div class="cl-footer-inner">
+            <span class="cl-footer-wordmark">mammoth</span>
+            <nav class="cl-footer-links">
+                <a href="https://github.com/2389-research/mammoth">GitHub</a>
+                <a href="/projects">Projects</a>
+            </nav>
+            <span class="cl-footer-credit">Built by 2389 Research</span>
+        </div>
+    </div>
+</footer>
+
+<script src="/static/js/landing.js"></script>
 </body>
 </html>

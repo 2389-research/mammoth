@@ -314,6 +314,52 @@ func TestRenderStandaloneBadTemplate(t *testing.T) {
 	}
 }
 
+func TestLandingPageSections(t *testing.T) {
+	engine, err := NewTemplateEngine()
+	if err != nil {
+		t.Fatalf("failed to create template engine: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	data := PageData{Title: "Home"}
+	if err := engine.RenderStandalone(rec, "landing.html", data); err != nil {
+		t.Fatalf("failed to render landing: %v", err)
+	}
+
+	body := rec.Body.String()
+
+	sections := []struct {
+		name   string
+		marker string
+	}{
+		{"hero", "cl-hero"},
+		{"pipeline", "cl-pipeline"},
+		{"stack", "cl-stack"},
+		{"how-it-works", "cl-how"},
+		{"telemetry", "cl-telemetry"},
+		{"cta", "cl-cta"},
+		{"footer", "cl-footer"},
+	}
+	for _, sec := range sections {
+		if !strings.Contains(body, sec.marker) {
+			t.Errorf("expected %s section (class %q) in landing page", sec.name, sec.marker)
+		}
+	}
+
+	if !strings.Contains(body, "Space+Grotesk") {
+		t.Error("expected Space Grotesk font import")
+	}
+	if !strings.Contains(body, "IBM+Plex+Mono") {
+		t.Error("expected IBM Plex Mono font import")
+	}
+	if !strings.Contains(body, "landing.css") {
+		t.Error("expected landing.css stylesheet link")
+	}
+	if !strings.Contains(body, "landing.js") {
+		t.Error("expected landing.js script reference")
+	}
+}
+
 func TestRenderStandaloneContentType(t *testing.T) {
 	engine, err := NewTemplateEngine()
 	if err != nil {
