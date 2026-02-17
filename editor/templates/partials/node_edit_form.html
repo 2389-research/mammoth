@@ -2,11 +2,26 @@
 <div class="edit-form">
     <h4>Node: {{.NodeID}}</h4>
     <form hx-post="{{.BasePath}}/sessions/{{.SessionID}}/nodes/{{urlquery .NodeID}}" hx-target="#editor-panels" hx-swap="none">
+        {{/* Model selection section */}}
+        <div class="form-group model-section">
+            <label>Model</label>
+            {{if and .ResolvedModel (not (index .Node.Attrs "llm_model"))}}
+            <p class="hint model-hint">Resolves to: {{.ResolvedModel}} ({{.ModelSource}})</p>
+            {{end}}
+            <select name="attr_llm_model" class="form-input">
+                <option value=""{{if not (index .Node.Attrs "llm_model")}} selected{{end}}>Use stylesheet default</option>
+                {{range .ModelOptions}}
+                <option value="{{.ID}}"{{if eq .ID (index $.Node.Attrs "llm_model")}} selected{{end}}>{{.DisplayName}} ({{.Provider}})</option>
+                {{end}}
+            </select>
+        </div>
         {{range $k, $v := .Node.Attrs}}
+        {{if ne $k "llm_model"}}
         <div class="form-group">
             <label>{{$k}}</label>
             <input name="attr_{{$k}}" value="{{$v}}" class="form-input">
         </div>
+        {{end}}
         {{end}}
         <!-- new attr key/value pair -->
         <div class="form-group new-attr-group">

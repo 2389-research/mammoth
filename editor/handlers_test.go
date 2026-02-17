@@ -783,6 +783,74 @@ func TestNewServerAcceptsModelOptions(t *testing.T) {
 	}
 }
 
+func TestNodeEditFormShowsModelDropdown(t *testing.T) {
+	store := NewStore(100, time.Hour)
+	models := []ModelOption{
+		{ID: "claude-sonnet-4-5", DisplayName: "Claude Sonnet 4.5", Provider: "anthropic"},
+		{ID: "gpt-5.2", DisplayName: "GPT-5.2", Provider: "openai"},
+	}
+	srv := NewServer(store, "templates", "static", WithModelOptions(models))
+
+	sessID := createTestSession(t, store)
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/"+sessID+"/node-edit?id=start", nil)
+	w := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	if !strings.Contains(bodyStr, "attr_llm_model") {
+		t.Fatal("expected model dropdown with name attr_llm_model")
+	}
+	if !strings.Contains(bodyStr, "Claude Sonnet 4.5") {
+		t.Fatal("expected model option Claude Sonnet 4.5")
+	}
+	if !strings.Contains(bodyStr, "Use stylesheet default") {
+		t.Fatal("expected 'Use stylesheet default' option")
+	}
+}
+
+func TestNodeEditFormShowsResolvedModel(t *testing.T) {
+	store := NewStore(100, time.Hour)
+	srv := NewServer(store, "templates", "static")
+
+	// Create session with model_stylesheet
+	dotWithStylesheet := `digraph test {
+    model_stylesheet="* { llm_model: claude-sonnet-4-5; }"
+    start [shape=Mdiamond]
+    end [shape=Msquare]
+    start -> end
+}`
+	sess, err := store.Create(dotWithStylesheet)
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/"+sess.ID+"/node-edit?id=start", nil)
+	w := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	if !strings.Contains(bodyStr, "claude-sonnet-4-5") {
+		t.Fatal("expected resolved model claude-sonnet-4-5 in response")
+	}
+}
+
 func TestMutationOnNonexistentSessionReturns404(t *testing.T) {
 	srv, _ := newTestServer(t)
 

@@ -989,3 +989,15 @@ input[type="file"] {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--accent-hover);
 }
+
+/* Model selection */
+.model-section {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+.model-hint {
+    font-size: 0.8rem;
+    margin: 0.25rem 0;
+    opacity: 0.7;
+}
