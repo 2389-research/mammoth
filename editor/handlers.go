@@ -443,11 +443,20 @@ func (s *Server) renderNodeEditFormByIDOrLabel(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	stylesheet := ""
+	if sess.Graph.Attrs != nil {
+		stylesheet = sess.Graph.Attrs["model_stylesheet"]
+	}
+	resolvedModel, modelSource := resolveNodeModel(node, stylesheet)
+
 	data := NodeEditData{
-		SessionID: sessionID,
-		BasePath:  basePathFromRequest(r),
-		NodeID:    node.ID,
-		Node:      node,
+		SessionID:     sessionID,
+		BasePath:      basePathFromRequest(r),
+		NodeID:        node.ID,
+		Node:          node,
+		ResolvedModel: resolvedModel,
+		ModelSource:   modelSource,
+		ModelOptions:  s.modelOptions,
 	}
 	s.renderPartial(w, "node_edit_form", data, http.StatusOK)
 }

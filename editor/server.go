@@ -25,10 +25,13 @@ type TemplateData struct {
 
 // NodeEditData holds the data passed to the node_edit_form template partial.
 type NodeEditData struct {
-	SessionID string
-	BasePath  string
-	NodeID    string
-	Node      *dot.Node
+	SessionID     string
+	BasePath      string
+	NodeID        string
+	Node          *dot.Node
+	ResolvedModel string
+	ModelSource   string
+	ModelOptions  []ModelOption
 }
 
 // EdgeEditData holds the data passed to the edge_edit_form template partial.
