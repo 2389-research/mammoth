@@ -26,7 +26,8 @@ type PageData struct {
 
 // TemplateEngine loads and renders embedded HTML templates.
 type TemplateEngine struct {
-	templates map[string]*template.Template
+	templates  map[string]*template.Template
+	standalone map[string]*template.Template
 }
 
 // templateFuncs returns the FuncMap available to all templates.
@@ -51,7 +52,8 @@ func NewTemplateEngine() (*TemplateEngine, error) {
 	}
 
 	engine := &TemplateEngine{
-		templates: make(map[string]*template.Template),
+		templates:  make(map[string]*template.Template),
+		standalone: make(map[string]*template.Template),
 	}
 
 	for _, page := range pages {
@@ -64,6 +66,23 @@ func NewTemplateEngine() (*TemplateEngine, error) {
 			return nil, fmt.Errorf("parsing template %s: %w", page, err)
 		}
 		engine.templates[page] = t
+	}
+
+	// Standalone templates are rendered without the layout wrapper.
+	// Used for pages that need full control of their HTML (e.g. landing page).
+	standalonePages := []string{
+		"landing.html",
+	}
+
+	for _, page := range standalonePages {
+		t, err := template.New(page).Funcs(funcs).ParseFS(
+			templateFS,
+			"templates/"+page,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("parsing standalone template %s: %w", page, err)
+		}
+		engine.standalone[page] = t
 	}
 
 	return engine, nil
@@ -90,4 +109,27 @@ func (e *TemplateEngine) RenderTo(w io.Writer, name string, data any) error {
 	}
 
 	return t.ExecuteTemplate(w, "layout.html", data)
+}
+
+// RenderStandalone executes a standalone template (no layout wrapping) and
+// writes the result to w. It sets the Content-Type header to text/html.
+func (e *TemplateEngine) RenderStandalone(w http.ResponseWriter, name string, data any) error {
+	t, ok := e.standalone[name]
+	if !ok {
+		return fmt.Errorf("standalone template %q not found", name)
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	return t.Execute(w, data)
+}
+
+// RenderStandaloneTo executes a standalone template (no layout wrapping) and
+// writes the result to an arbitrary io.Writer.
+func (e *TemplateEngine) RenderStandaloneTo(w io.Writer, name string, data any) error {
+	t, ok := e.standalone[name]
+	if !ok {
+		return fmt.Errorf("standalone template %q not found", name)
+	}
+
+	return t.Execute(w, data)
 }

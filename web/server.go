@@ -156,7 +156,7 @@ func (s *Server) buildRouter() chi.Router {
 	r.Use(middleware.Recoverer)
 
 	// Top-level routes
-	r.Get("/", s.handleHome)
+	r.Get("/", s.handleLanding)
 	r.Get("/health", s.handleHealth)
 
 	// Spec builder static assets served from embedded filesystem.
@@ -209,14 +209,11 @@ func (s *Server) buildRouter() chi.Router {
 	return r
 }
 
-// handleHome renders the landing page with entry paths and recent projects.
-func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
-	data := PageData{
-		Title:    "Home",
-		Projects: s.store.List(),
-	}
-	if err := s.templates.Render(w, "home.html", data); err != nil {
-		log.Printf("component=web.server action=render_failed view=home err=%v", err)
+// handleLanding renders the standalone landing page at /.
+func (s *Server) handleLanding(w http.ResponseWriter, r *http.Request) {
+	data := PageData{Title: "Home"}
+	if err := s.templates.RenderStandalone(w, "landing.html", data); err != nil {
+		log.Printf("component=web.server action=render_failed view=landing err=%v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -228,12 +225,24 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// handleProjectList returns all projects as a JSON array.
+// handleProjectList returns all projects as JSON for API clients, or renders
+// the project list page as HTML when the browser requests text/html.
 func (s *Server) handleProjectList(w http.ResponseWriter, r *http.Request) {
 	projects := s.store.List()
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(projects)
+	if wantsJSON(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(projects)
+		return
+	}
+	data := PageData{
+		Title:    "Projects",
+		Projects: projects,
+	}
+	if err := s.templates.Render(w, "home.html", data); err != nil {
+		log.Printf("component=web.server action=render_failed view=home err=%v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
 }
 
 // handleProjectNew renders the new project form. Supports mode=idea (default) and mode=dot.

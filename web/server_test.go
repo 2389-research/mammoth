@@ -681,6 +681,55 @@ func TestServerStartSpecInitializesCore(t *testing.T) {
 	}
 }
 
+func TestServerLanding(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Accept", "text/html")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if strings.Contains(body, "nav-rail") {
+		t.Error("landing page should not contain nav-rail")
+	}
+	if !strings.Contains(body, "mammoth") {
+		t.Error("expected mammoth branding")
+	}
+	if !strings.Contains(body, "Software Factory") {
+		t.Error("expected landing page headline")
+	}
+}
+
+func TestServerProjectsPageHTML(t *testing.T) {
+	srv := newTestServer(t)
+
+	if _, err := srv.store.Create("alpha"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/projects", nil)
+	req.Header.Set("Accept", "text/html")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "alpha") {
+		t.Error("expected project name in project list page")
+	}
+	if !strings.Contains(body, "nav-rail") {
+		t.Error("project list should use the nav rail layout")
+	}
+}
+
 // newTestServer creates a Server with a temporary data directory for testing.
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
