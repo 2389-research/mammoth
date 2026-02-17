@@ -335,23 +335,48 @@ func bridgeSessionEvent(
 	toolLogMu *sync.Mutex,
 ) {
 	switch evt.Kind {
+	case agent.EventAssistantTextStart:
+		handler(EngineEvent{
+			Type:      EventAgentTextStart,
+			NodeID:    nodeID,
+			Timestamp: evt.Timestamp,
+			Data:      map[string]any{},
+		})
+
+	case agent.EventAssistantTextDelta:
+		text, _ := evt.Data["text"].(string)
+		handler(EngineEvent{
+			Type:      EventAgentTextDelta,
+			NodeID:    nodeID,
+			Timestamp: evt.Timestamp,
+			Data: map[string]any{
+				"text": text,
+			},
+		})
+
 	case agent.EventToolCallStart:
 		toolName, _ := evt.Data["tool_name"].(string)
 		callID, _ := evt.Data["call_id"].(string)
+		arguments, _ := evt.Data["arguments"].(string)
 
 		if toolStarts != nil && callID != "" {
 			toolStarts.Store(callID, time.Now())
 			toolStarts.Store(callID+"_name", toolName)
 		}
 
+		data := map[string]any{
+			"tool_name": toolName,
+			"call_id":   callID,
+		}
+		if arguments != "" {
+			data["arguments"] = arguments
+		}
+
 		handler(EngineEvent{
 			Type:      EventAgentToolCallStart,
 			NodeID:    nodeID,
 			Timestamp: evt.Timestamp,
-			Data: map[string]any{
-				"tool_name": toolName,
-				"call_id":   callID,
-			},
+			Data:      data,
 		})
 
 	case agent.EventToolCallEnd:

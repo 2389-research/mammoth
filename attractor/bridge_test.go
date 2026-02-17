@@ -369,8 +369,6 @@ func TestBridgeIgnoresUnmappedEvents(t *testing.T) {
 		agent.EventSessionStart,
 		agent.EventSessionEnd,
 		agent.EventUserInput,
-		agent.EventAssistantTextStart,
-		agent.EventAssistantTextDelta,
 		agent.EventToolCallOutputDelta,
 		agent.EventTurnLimit,
 		agent.EventError,
@@ -390,6 +388,185 @@ func TestBridgeIgnoresUnmappedEvents(t *testing.T) {
 
 	if len(events) != 0 {
 		t.Errorf("expected 0 events for unmapped event kinds, got %d", len(events))
+	}
+}
+
+func TestBridgeTranslatesAssistantTextStart(t *testing.T) {
+	var events []EngineEvent
+	var mu sync.Mutex
+
+	handler := func(evt EngineEvent) {
+		mu.Lock()
+		events = append(events, evt)
+		mu.Unlock()
+	}
+
+	ts := time.Now()
+	evt := agent.SessionEvent{
+		Kind:      agent.EventAssistantTextStart,
+		Timestamp: ts,
+		SessionID: "s1",
+		Data:      nil,
+	}
+
+	bridgeSessionEvent(evt, "stream_node", handler, nil, nil, nil)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Type != EventAgentTextStart {
+		t.Errorf("expected EventAgentTextStart, got %q", events[0].Type)
+	}
+	if events[0].NodeID != "stream_node" {
+		t.Errorf("expected nodeID 'stream_node', got %q", events[0].NodeID)
+	}
+	if events[0].Timestamp != ts {
+		t.Errorf("expected timestamp to be forwarded")
+	}
+	if events[0].Data == nil {
+		t.Error("expected non-nil Data map")
+	}
+}
+
+func TestBridgeTranslatesAssistantTextDelta(t *testing.T) {
+	var events []EngineEvent
+	var mu sync.Mutex
+
+	handler := func(evt EngineEvent) {
+		mu.Lock()
+		events = append(events, evt)
+		mu.Unlock()
+	}
+
+	ts := time.Now()
+	evt := agent.SessionEvent{
+		Kind:      agent.EventAssistantTextDelta,
+		Timestamp: ts,
+		SessionID: "s1",
+		Data:      map[string]any{"text": "Hello, world!"},
+	}
+
+	bridgeSessionEvent(evt, "delta_node", handler, nil, nil, nil)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Type != EventAgentTextDelta {
+		t.Errorf("expected EventAgentTextDelta, got %q", events[0].Type)
+	}
+	if events[0].NodeID != "delta_node" {
+		t.Errorf("expected nodeID 'delta_node', got %q", events[0].NodeID)
+	}
+	if events[0].Timestamp != ts {
+		t.Errorf("expected timestamp to be forwarded")
+	}
+	if events[0].Data["text"] != "Hello, world!" {
+		t.Errorf("expected text 'Hello, world!', got %v", events[0].Data["text"])
+	}
+}
+
+func TestBridgeAssistantTextDeltaEmptyText(t *testing.T) {
+	var events []EngineEvent
+	var mu sync.Mutex
+
+	handler := func(evt EngineEvent) {
+		mu.Lock()
+		events = append(events, evt)
+		mu.Unlock()
+	}
+
+	evt := agent.SessionEvent{
+		Kind:      agent.EventAssistantTextDelta,
+		Timestamp: time.Now(),
+		SessionID: "s1",
+		Data:      map[string]any{},
+	}
+
+	bridgeSessionEvent(evt, "empty_node", handler, nil, nil, nil)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Data["text"] != "" {
+		t.Errorf("expected empty text for missing data field, got %v", events[0].Data["text"])
+	}
+}
+
+func TestBridgeToolCallStartForwardsArguments(t *testing.T) {
+	var events []EngineEvent
+	var mu sync.Mutex
+	toolStarts := &sync.Map{}
+
+	handler := func(evt EngineEvent) {
+		mu.Lock()
+		events = append(events, evt)
+		mu.Unlock()
+	}
+
+	evt := agent.SessionEvent{
+		Kind:      agent.EventToolCallStart,
+		Timestamp: time.Now(),
+		SessionID: "s1",
+		Data: map[string]any{
+			"tool_name": "file_write",
+			"call_id":   "tc_args",
+			"arguments": `{"path":"/tmp/test.txt","content":"hello"}`,
+		},
+	}
+
+	bridgeSessionEvent(evt, "args_node", handler, toolStarts, nil, nil)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Data["arguments"] != `{"path":"/tmp/test.txt","content":"hello"}` {
+		t.Errorf("expected arguments to be forwarded, got %v", events[0].Data["arguments"])
+	}
+}
+
+func TestBridgeToolCallStartOmitsEmptyArguments(t *testing.T) {
+	var events []EngineEvent
+	var mu sync.Mutex
+	toolStarts := &sync.Map{}
+
+	handler := func(evt EngineEvent) {
+		mu.Lock()
+		events = append(events, evt)
+		mu.Unlock()
+	}
+
+	evt := agent.SessionEvent{
+		Kind:      agent.EventToolCallStart,
+		Timestamp: time.Now(),
+		SessionID: "s1",
+		Data: map[string]any{
+			"tool_name": "file_read",
+			"call_id":   "tc_noargs",
+		},
+	}
+
+	bridgeSessionEvent(evt, "noargs_node", handler, toolStarts, nil, nil)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if _, hasArgs := events[0].Data["arguments"]; hasArgs {
+		t.Error("expected arguments key to be absent when arguments are empty")
 	}
 }
 
