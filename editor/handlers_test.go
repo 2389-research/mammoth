@@ -850,7 +850,6 @@ func TestNodeEditFormShowsResolvedModel(t *testing.T) {
 		t.Fatal("expected resolved model claude-sonnet-4-5 in response")
 	}
 }
-
 func TestMutationOnNonexistentSessionReturns404(t *testing.T) {
 	srv, _ := newTestServer(t)
 
