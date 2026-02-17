@@ -452,4 +452,17 @@ func TestBuildViewConsolePanel(t *testing.T) {
 	if !strings.Contains(body, "appendConsoleText") {
 		t.Error("expected appendConsoleText function in build view")
 	}
+
+	// Verify resume bar JavaScript exists.
+	if !strings.Contains(body, "showResumeBar") {
+		t.Error("expected showResumeBar function in build view")
+	}
+	if !strings.Contains(body, "console-resume-btn") {
+		t.Error("expected console-resume-btn class reference in build view")
+	}
+
+	// Verify expand toggle for truncated tool output.
+	if !strings.Contains(body, "console-expand-toggle") {
+		t.Error("expected console-expand-toggle class reference in build view")
+	}
 }

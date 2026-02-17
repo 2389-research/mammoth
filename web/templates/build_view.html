@@ -175,9 +175,39 @@
     var consoleAutoScroll = true;
     var currentConsoleTextEl = null;
 
+    var consoleResumeBar = null;
+
+    function showResumeBar() {
+        if (consoleResumeBar) { return; }
+        consoleResumeBar = document.createElement('div');
+        consoleResumeBar.className = 'console-resume-bar';
+        var btn = document.createElement('button');
+        btn.className = 'console-resume-btn';
+        btn.textContent = '\u25bc Resume auto-scroll';
+        btn.addEventListener('click', function() {
+            consoleAutoScroll = true;
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+            hideResumeBar();
+        });
+        consoleResumeBar.appendChild(btn);
+        consoleDiv.appendChild(consoleResumeBar);
+    }
+
+    function hideResumeBar() {
+        if (consoleResumeBar) {
+            consoleResumeBar.remove();
+            consoleResumeBar = null;
+        }
+    }
+
     consoleDiv.addEventListener('scroll', function() {
         var atBottom = consoleDiv.scrollHeight - consoleDiv.scrollTop - consoleDiv.clientHeight < 30;
         consoleAutoScroll = atBottom;
+        if (atBottom) {
+            hideResumeBar();
+        } else {
+            showResumeBar();
+        }
     });
 
     function setStatus(status) {
@@ -229,6 +259,7 @@
 
     function consoleScrollToBottom() {
         if (consoleAutoScroll) {
+            hideResumeBar();
             consoleDiv.scrollTop = consoleDiv.scrollHeight;
         }
     }
@@ -314,13 +345,32 @@
         if (!output) { return; }
         var el = document.createElement('div');
         el.className = 'console-tool-output';
-        var truncated = truncateStr(output, 500);
+        var isTruncated = output.length > 500;
+        var displayText = isTruncated ? truncateStr(output, 500) + '...' : output;
         var suffix = '';
         if (durationMs) {
             suffix = durationMs < 1000 ? ' (' + durationMs + 'ms)' : ' (' + (durationMs / 1000).toFixed(1) + 's)';
         }
-        el.innerHTML = '<span class="console-prefix">&gt; </span>' + escapeHtml(truncated) + escapeHtml(suffix);
+        el.innerHTML = '<span class="console-prefix">&gt; </span>' + escapeHtml(displayText) + escapeHtml(suffix);
+        el.setAttribute('data-full-output', output);
+        el.setAttribute('data-suffix', suffix);
         consoleDiv.appendChild(el);
+        if (isTruncated) {
+            var toggle = document.createElement('button');
+            toggle.className = 'console-expand-toggle';
+            toggle.textContent = '\u25b6 Show full output (' + output.length + ' chars)';
+            toggle.addEventListener('click', function() {
+                var expanded = el.classList.toggle('expanded');
+                if (expanded) {
+                    el.innerHTML = '<span class="console-prefix">&gt; </span>' + escapeHtml(output) + escapeHtml(suffix);
+                    toggle.textContent = '\u25bc Collapse output';
+                } else {
+                    el.innerHTML = '<span class="console-prefix">&gt; </span>' + escapeHtml(displayText) + escapeHtml(suffix);
+                    toggle.textContent = '\u25b6 Show full output (' + output.length + ' chars)';
+                }
+            });
+            consoleDiv.appendChild(toggle);
+        }
         consoleScrollToBottom();
     }
 
