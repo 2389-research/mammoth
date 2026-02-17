@@ -81,6 +81,12 @@ func (p *ProgressLogger) HandleEvent(evt EngineEvent) {
 		return
 	}
 
+	// Skip high-frequency ephemeral events from persistence.
+	// These are streamed via SSE but not worth persisting to disk.
+	if evt.Type == "agent.text.delta" {
+		return
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	// Build the NDJSON entry

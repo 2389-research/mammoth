@@ -376,3 +376,63 @@ func TestProgressLoggerConcurrent(t *testing.T) {
 		t.Errorf("EventCount = %d, want %d", state.EventCount, expected)
 	}
 }
+
+func TestProgressLoggerSkipsTextDeltaEvents(t *testing.T) {
+	dir := t.TempDir()
+	pl, err := NewProgressLogger(dir)
+	if err != nil {
+		t.Fatalf("NewProgressLogger() error = %v", err)
+	}
+	defer pl.Close()
+
+	// Send a normal event first so we know the logger is working
+	pl.HandleEvent(EngineEvent{
+		Type:      EventStageStarted,
+		NodeID:    "build",
+		Timestamp: time.Now(),
+	})
+
+	// Send several agent.text.delta events (these are high-frequency ephemeral events)
+	for i := 0; i < 5; i++ {
+		pl.HandleEvent(EngineEvent{
+			Type:      "agent.text.delta",
+			NodeID:    "build",
+			Timestamp: time.Now(),
+			Data:      map[string]any{"text": "hello "},
+		})
+	}
+
+	// Send another normal event after the deltas
+	pl.HandleEvent(EngineEvent{
+		Type:      EventStageCompleted,
+		NodeID:    "build",
+		Timestamp: time.Now(),
+	})
+
+	// Read the NDJSON file - should only contain the 2 normal events, not the 5 deltas
+	data, err := os.ReadFile(filepath.Join(dir, "progress.ndjson"))
+	if err != nil {
+		t.Fatalf("failed to read progress.ndjson: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Errorf("expected 2 lines in ndjson (delta events should be skipped), got %d", len(lines))
+	}
+
+	// Verify the persisted events are the stage.started and stage.completed, not deltas
+	for _, line := range lines {
+		var entry ProgressEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("invalid JSON line: %v", err)
+		}
+		if entry.Type == "agent.text.delta" {
+			t.Errorf("agent.text.delta event should not be persisted, but found one in ndjson")
+		}
+	}
+
+	// Verify live state still tracks event count for all events including deltas
+	state := pl.State()
+	if state.EventCount != 2 {
+		t.Errorf("EventCount = %d, want 2 (deltas should not increment count)", state.EventCount)
+	}
+}

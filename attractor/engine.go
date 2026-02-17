@@ -34,6 +34,8 @@ const (
 	EventAgentLLMTurn       EngineEventType = "agent.llm_turn"
 	EventAgentSteering      EngineEventType = "agent.steering"
 	EventAgentLoopDetected  EngineEventType = "agent.loop_detected"
+	EventAgentTextStart     EngineEventType = "agent.text.start"
+	EventAgentTextDelta     EngineEventType = "agent.text.delta"
 )
 
 // EngineEvent represents a lifecycle event emitted by the engine during pipeline execution.
