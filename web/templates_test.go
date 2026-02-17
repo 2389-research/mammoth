@@ -395,3 +395,61 @@ func TestRenderContentType(t *testing.T) {
 		t.Errorf("expected Content-Type text/html, got %q", ct)
 	}
 }
+
+func TestBuildViewConsolePanel(t *testing.T) {
+	engine, err := NewTemplateEngine()
+	if err != nil {
+		t.Fatalf("failed to create template engine: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	data := PageData{
+		Title: "Build",
+		Project: &Project{
+			ID:        "proj-console-1",
+			Name:      "console-test",
+			Phase:     PhaseBuild,
+			DOT:       `digraph x { start -> done }`,
+			CreatedAt: time.Now(),
+		},
+	}
+	if err := engine.Render(rec, "build_view.html", data); err != nil {
+		t.Fatalf("failed to render build_view: %v", err)
+	}
+
+	body := rec.Body.String()
+
+	// Verify console panel structural elements.
+	elements := []struct {
+		name   string
+		marker string
+	}{
+		{"tab bar", `class="build-tab-bar"`},
+		{"console panel", `class="build-console"`},
+		{"console tab button", `data-tab="console"`},
+		{"metrics tab button", `data-tab="metrics"`},
+	}
+	for _, el := range elements {
+		if !strings.Contains(body, el.marker) {
+			t.Errorf("expected %s (%q) in build view HTML", el.name, el.marker)
+		}
+	}
+
+	// Verify IBM Plex Mono font import for the console.
+	if !strings.Contains(body, "IBM+Plex+Mono") {
+		t.Error("expected IBM Plex Mono font import in build view")
+	}
+
+	// Verify SSE event listeners for agent text streaming.
+	if !strings.Contains(body, "agent.text.start") {
+		t.Error("expected agent.text.start SSE event listener in build view")
+	}
+	if !strings.Contains(body, "agent.text.delta") {
+		t.Error("expected agent.text.delta SSE event listener in build view")
+	}
+
+	// Verify console text handler function exists.
+	if !strings.Contains(body, "appendConsoleText") {
+		t.Error("expected appendConsoleText function in build view")
+	}
+}
