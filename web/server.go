@@ -22,6 +22,7 @@ import (
 
 	"github.com/2389-research/mammoth/attractor"
 	"github.com/2389-research/mammoth/editor"
+	"github.com/2389-research/mammoth/llm"
 	"github.com/2389-research/mammoth/spec/core"
 	"github.com/2389-research/mammoth/spec/server"
 	specweb "github.com/2389-research/mammoth/spec/web"
@@ -108,7 +109,18 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	}
 	editorStore := editor.NewStore(200, 24*time.Hour)
 	editorStore.StartCleanup(15 * time.Minute)
-	editorServer := editor.NewServer(editorStore, editorTemplateDir, editorStaticDir)
+
+	// Build model options from catalog for editor dropdown.
+	catalog := llm.DefaultCatalog()
+	var modelOpts []editor.ModelOption
+	for _, m := range catalog.ListModels("") {
+		modelOpts = append(modelOpts, editor.ModelOption{
+			ID:          m.ID,
+			DisplayName: m.DisplayName,
+			Provider:    m.Provider,
+		})
+	}
+	editorServer := editor.NewServer(editorStore, editorTemplateDir, editorStaticDir, editor.WithModelOptions(modelOpts))
 
 	s := &Server{
 		store:        store,
