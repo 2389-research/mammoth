@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/2389-research/mammoth/dot"
 )
 
 const testDOT = `digraph test {
@@ -711,6 +713,58 @@ func TestEdgeEditFormReturns404ForMissingSession(t *testing.T) {
 	resp := w.Result()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected status 404, got %d", resp.StatusCode)
+	}
+}
+
+// ============================================================
+// Case-insensitive node lookup tests
+// ============================================================
+
+func TestFindNodeByParamCaseInsensitive(t *testing.T) {
+	nodes := map[string]*dot.Node{
+		"MyNode": {ID: "MyNode", Attrs: map[string]string{"label": "Test"}},
+	}
+
+	// Exact match works
+	node, ok := findNodeByParam(nodes, "MyNode")
+	if !ok {
+		t.Fatal("expected exact match to succeed")
+	}
+	if node.ID != "MyNode" {
+		t.Fatalf("expected ID MyNode, got %s", node.ID)
+	}
+
+	// Case-insensitive fallback works
+	node, ok = findNodeByParam(nodes, "mynode")
+	if !ok {
+		t.Fatal("expected case-insensitive match to succeed")
+	}
+	if node.ID != "MyNode" {
+		t.Fatalf("expected ID MyNode, got %s", node.ID)
+	}
+
+	// Still returns false for completely wrong ID
+	_, ok = findNodeByParam(nodes, "nonexistent")
+	if ok {
+		t.Fatal("expected nonexistent node to not match")
+	}
+}
+
+func TestNodeEditFormCaseInsensitiveLookup(t *testing.T) {
+	srv, store := newTestServer(t)
+	sessID := createTestSession(t, store)
+
+	// testDOT has "start" node — try with "Start" (different case)
+	req := httptest.NewRequest(http.MethodGet, "/sessions/"+sessID+"/node-edit?id=Start", nil)
+	w := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(w, req)
+
+	resp := w.Result()
+	// Should succeed via case-insensitive fallback
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d: %s", resp.StatusCode, string(body))
 	}
 }
 

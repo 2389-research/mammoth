@@ -510,9 +510,19 @@ func (s *Server) renderEdgeEditFormByID(w http.ResponseWriter, r *http.Request, 
 }
 
 func findNodeByParam(nodes map[string]*dot.Node, id string) (*dot.Node, bool) {
+	// Exact match with candidate variations (quotes, URL-encoding)
 	for _, cand := range elementIDCands(id) {
 		if node, ok := nodes[cand]; ok {
 			return node, true
+		}
+	}
+	// Case-insensitive fallback: d3-graphviz SVG titles may differ in case
+	lower := strings.ToLower(strings.TrimSpace(id))
+	if lower != "" {
+		for key, node := range nodes {
+			if strings.ToLower(key) == lower {
+				return node, true
+			}
 		}
 	}
 	return nil, false
