@@ -768,6 +768,21 @@ func TestNodeEditFormCaseInsensitiveLookup(t *testing.T) {
 	}
 }
 
+func TestNewServerAcceptsModelOptions(t *testing.T) {
+	store := NewStore(100, time.Hour)
+	models := []ModelOption{
+		{ID: "claude-sonnet-4-5", DisplayName: "Claude Sonnet 4.5", Provider: "anthropic"},
+		{ID: "gpt-5.2", DisplayName: "GPT-5.2", Provider: "openai"},
+	}
+	srv := NewServer(store, "templates", "static", WithModelOptions(models))
+	if srv == nil {
+		t.Fatal("expected server to be created")
+	}
+	if len(srv.modelOptions) != 2 {
+		t.Fatalf("expected 2 model options, got %d", len(srv.modelOptions))
+	}
+}
+
 func TestMutationOnNonexistentSessionReturns404(t *testing.T) {
 	srv, _ := newTestServer(t)
 

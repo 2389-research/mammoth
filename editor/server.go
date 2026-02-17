@@ -1,5 +1,5 @@
-// ABOUTME: HTTP server struct with chi router, session store, and template engine
-// ABOUTME: Configures all routes, static file serving, and wires handler methods
+// ABOUTME: HTTP server struct with chi router, session store, template engine, and model options
+// ABOUTME: Configures all routes, static file serving, and wires handler methods via functional options
 
 package editor
 
@@ -39,21 +39,44 @@ type EdgeEditData struct {
 	Edge      *dot.Edge
 }
 
+// ModelOption describes an LLM model available for selection in the editor.
+type ModelOption struct {
+	ID          string
+	DisplayName string
+	Provider    string
+}
+
+// ServerOption configures optional Server behavior.
+type ServerOption func(*Server)
+
+// WithModelOptions sets the list of models available for selection in node edit forms.
+func WithModelOptions(models []ModelOption) ServerOption {
+	return func(s *Server) {
+		s.modelOptions = models
+	}
+}
+
 // Server holds the chi router, session store, and parsed templates.
 // The templates field holds the shared partials. The landingTmpl and editorTmpl
 // fields hold page-specific template sets that each define their own "content" block.
+// The modelOptions field holds the list of LLM models available for selection.
 type Server struct {
-	router      chi.Router
-	store       *Store
-	templates   *template.Template
-	landingTmpl *template.Template
-	editorTmpl  *template.Template
+	router       chi.Router
+	store        *Store
+	templates    *template.Template
+	landingTmpl  *template.Template
+	editorTmpl   *template.Template
+	modelOptions []ModelOption
 }
 
 // NewServer creates a Server with all routes configured and templates parsed.
-func NewServer(store *Store, templateDir string, staticDir string) *Server {
+// Optional ServerOption values configure additional behavior such as model options.
+func NewServer(store *Store, templateDir string, staticDir string, opts ...ServerOption) *Server {
 	s := &Server{
 		store: store,
+	}
+	for _, opt := range opts {
+		opt(s)
 	}
 
 	// Parse shared templates: layout + partials

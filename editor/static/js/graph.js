@@ -233,7 +233,9 @@
         const textEl = element.querySelector('text');
         const nodeLabel = textEl ? String(textEl.textContent || '').trim() : '';
         const query = `id=${encodeURIComponent(nodeId)}${nodeLabel ? `&label=${encodeURIComponent(nodeLabel)}` : ''}`;
-        htmx.ajax('GET', `${editorBasePath()}/sessions/${sessionID}/node-edit?${query}`, {target: '#selection-props', swap: 'innerHTML'});
+        const url = `${editorBasePath()}/sessions/${sessionID}/node-edit?${query}`;
+        console.debug('[graph] node click:', { nodeId, nodeLabel, url });
+        htmx.ajax('GET', url, {target: '#selection-props', swap: 'innerHTML'});
     }
 
     // Handle edge click - fetch edit form via htmx
@@ -242,7 +244,9 @@
         selectedElement = element;
         element.classList.add('selected');
         const sessionID = document.querySelector('.editor').dataset.sessionId;
-        htmx.ajax('GET', `${editorBasePath()}/sessions/${sessionID}/edge-edit?id=${encodeURIComponent(edgeId)}`, {target: '#selection-props', swap: 'innerHTML'});
+        const url = `${editorBasePath()}/sessions/${sessionID}/edge-edit?id=${encodeURIComponent(edgeId)}`;
+        console.debug('[graph] edge click:', { edgeId, url });
+        htmx.ajax('GET', url, {target: '#selection-props', swap: 'innerHTML'});
     }
 
     // Clear current selection
