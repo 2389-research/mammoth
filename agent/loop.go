@@ -74,8 +74,16 @@ func ProcessInput(ctx context.Context, session *Session, profile ProviderProfile
 			ProviderOptions: profile.ProviderOptions(),
 		}
 
-		// 5. Call LLM
-		response, err := client.Complete(ctx, request)
+		// 5. Call LLM (prefer streaming, fall back to blocking Complete)
+		streamCh, streamErr := client.Stream(ctx, request)
+		var response *llm.Response
+		var err error
+		if streamErr != nil {
+			// Fall back to non-streaming if streaming is not supported
+			response, err = client.Complete(ctx, request)
+		} else {
+			response, err = consumeStream(ctx, session, streamCh)
+		}
 		if err != nil {
 			// If context was cancelled, break out gracefully
 			if ctx.Err() != nil {
@@ -195,6 +203,7 @@ func executeSingleTool(session *Session, profile ProviderProfile, env ExecutionE
 	session.Emit(EventToolCallStart, map[string]any{
 		"tool_name": tc.Name,
 		"call_id":   tc.ID,
+		"arguments": string(tc.Arguments),
 	})
 
 	// Look up tool in registry
