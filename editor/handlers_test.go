@@ -851,6 +851,53 @@ func TestNodeEditFormShowsResolvedModel(t *testing.T) {
 	}
 }
 
+func TestNodeEditFormModelOverrideRoundTrip(t *testing.T) {
+	store := NewStore(100, time.Hour)
+	models := []ModelOption{
+		{ID: "claude-sonnet-4-5", DisplayName: "Claude Sonnet 4.5", Provider: "anthropic"},
+		{ID: "claude-opus-4-6", DisplayName: "Claude Opus 4.6", Provider: "anthropic"},
+	}
+	srv := NewServer(store, "templates", "static", WithModelOptions(models))
+
+	sessID := createTestSession(t, store)
+
+	// Set llm_model on the start node
+	form := url.Values{}
+	form.Set("attr_llm_model", "claude-opus-4-6")
+	form.Set("attr_shape", "Mdiamond")
+
+	req := httptest.NewRequest(http.MethodPost, "/sessions/"+sessID+"/nodes/start", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200 on update, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Now fetch the edit form and verify llm_model is present
+	req = httptest.NewRequest(http.MethodGet, "/sessions/"+sessID+"/node-edit?id=start", nil)
+	w = httptest.NewRecorder()
+
+	srv.router.ServeHTTP(w, req)
+
+	resp = w.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200 on edit form, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	// The claude-opus-4-6 option should be present
+	if !strings.Contains(bodyStr, "claude-opus-4-6") {
+		t.Fatal("expected model claude-opus-4-6 in edit form")
+	}
+}
+
 func TestMutationOnNonexistentSessionReturns404(t *testing.T) {
 	srv, _ := newTestServer(t)
 
