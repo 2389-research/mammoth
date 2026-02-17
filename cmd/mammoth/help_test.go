@@ -187,6 +187,14 @@ func TestEnvStatus(t *testing.T) {
 	}
 }
 
+func TestPrintHelp_IncludesSetup(t *testing.T) {
+	var buf bytes.Buffer
+	printHelp(&buf, "test")
+	if !strings.Contains(buf.String(), "mammoth setup") {
+		t.Error("expected help to mention mammoth setup")
+	}
+}
+
 func TestPrintHelpFlagGrouping(t *testing.T) {
 	var buf bytes.Buffer
 	printHelp(&buf, "dev")

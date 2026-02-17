@@ -43,6 +43,7 @@ func printHelp(w io.Writer, ver string) {
 	fmt.Fprintln(w, "  mammoth -validate <pipeline.dot>    Validate without executing")
 	fmt.Fprintln(w, "  mammoth -server [-port 2389]        Start HTTP API server")
 	fmt.Fprintln(w, "  mammoth serve [--port 2389]         Start unified web UI")
+	fmt.Fprintln(w, "  mammoth setup                       Interactive setup wizard")
 	fmt.Fprintln(w)
 
 	fmt.Fprintln(w, "Pipeline Flags:")
