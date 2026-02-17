@@ -88,6 +88,13 @@
             e.detail.target.id === 'graph-viewer' ||
             e.detail.target.closest('#editor-panels')) {
 
+            // When an OOB swap replaces #graph-viewer, the old #graph-container
+            // is destroyed. The graphviz instance still references the detached
+            // element, so we must reset it before re-rendering.
+            if (e.detail.target.id === 'graph-viewer' && window.resetGraphviz) {
+                window.resetGraphviz();
+            }
+
             // Trigger graph re-render
             if (window.renderGraph) {
                 window.renderGraph();

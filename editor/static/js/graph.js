@@ -106,6 +106,14 @@
     let graphviz = null;
     let selectedElement = null;
 
+    // Reset graphviz instance so it will be re-initialized on the next render.
+    // Called when OOB swaps replace #graph-viewer, which destroys the old
+    // #graph-container element that graphviz was bound to.
+    function resetGraphviz() {
+        graphviz = null;
+    }
+    window.resetGraphviz = resetGraphviz;
+
     // Initialize graphviz once DOM is ready
     function initGraphviz() {
         const container = document.getElementById('graph-container');
