@@ -1,5 +1,7 @@
 {{define "content"}}
 <link rel="stylesheet" href="/static/css/build.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&display=swap" rel="stylesheet">
 
 <section class="build-shell">
     <section class="build-hero">
@@ -63,6 +65,18 @@
         </div>
     </section>
 
+    <div class="build-tab-bar">
+        <button class="build-tab active" data-tab="console">Console</button>
+        <button class="build-tab" data-tab="metrics">Metrics</button>
+    </div>
+
+    <div id="tab-console" class="build-tab-panel active">
+        <div id="build-console" class="build-console">
+            <div class="build-console-empty">Waiting for agent activity...</div>
+        </div>
+    </div>
+
+    <div id="tab-metrics" class="build-tab-panel">
     <section class="build-grid">
         <section class="build-card">
             <div class="build-card-head">
@@ -94,6 +108,7 @@
             </section>
         </div>
     </section>
+    </div>
 </section>
 
 <script src="/static/js/viz-render.js"></script>
@@ -142,6 +157,29 @@
     var activeGraphNode = '';
     var redirectedToFinal = false;
 
+    // Tab switching
+    var tabs = document.querySelectorAll('.build-tab');
+    tabs.forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            tabs.forEach(function(t) { t.classList.remove('active'); });
+            tab.classList.add('active');
+            document.querySelectorAll('.build-tab-panel').forEach(function(p) {
+                p.classList.remove('active');
+            });
+            document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+        });
+    });
+
+    // Console state
+    var consoleDiv = document.getElementById('build-console');
+    var consoleAutoScroll = true;
+    var currentConsoleTextEl = null;
+
+    consoleDiv.addEventListener('scroll', function() {
+        var atBottom = consoleDiv.scrollHeight - consoleDiv.scrollTop - consoleDiv.clientHeight < 30;
+        consoleAutoScroll = atBottom;
+    });
+
     function setStatus(status) {
         statusPill.classList.remove('running', 'completed', 'failed', 'cancelled');
         var text = status || 'unknown';
@@ -189,6 +227,111 @@
         }
     }
 
+    function consoleScrollToBottom() {
+        if (consoleAutoScroll) {
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+    }
+
+    function consoleClearEmpty() {
+        var empty = consoleDiv.querySelector('.build-console-empty');
+        if (empty) { empty.remove(); }
+    }
+
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.appendChild(document.createTextNode(str || ''));
+        return div.innerHTML;
+    }
+
+    function truncateStr(s, max) {
+        if (!s || s.length <= max) { return s || ''; }
+        return s.substring(0, max);
+    }
+
+    function appendConsoleHeader(nodeId, type) {
+        consoleClearEmpty();
+        var el = document.createElement('div');
+        el.className = 'console-header';
+        el.innerHTML = '<span class="console-node">node:' + escapeHtml(nodeId || '?') + '</span> \u25b8 <span class="console-type">' + escapeHtml(type) + '</span>';
+        consoleDiv.appendChild(el);
+        currentConsoleTextEl = null;
+        consoleScrollToBottom();
+    }
+
+    function appendConsoleText(text) {
+        consoleClearEmpty();
+        if (!currentConsoleTextEl) {
+            currentConsoleTextEl = document.createElement('div');
+            currentConsoleTextEl.className = 'console-text';
+            var cursor = document.createElement('span');
+            cursor.className = 'console-cursor';
+            currentConsoleTextEl.appendChild(cursor);
+            consoleDiv.appendChild(currentConsoleTextEl);
+        }
+        var cursor = currentConsoleTextEl.querySelector('.console-cursor');
+        if (cursor) {
+            currentConsoleTextEl.insertBefore(document.createTextNode(text), cursor);
+        } else {
+            currentConsoleTextEl.appendChild(document.createTextNode(text));
+        }
+        consoleScrollToBottom();
+    }
+
+    function finishConsoleText() {
+        if (currentConsoleTextEl) {
+            var cursor = currentConsoleTextEl.querySelector('.console-cursor');
+            if (cursor) { cursor.remove(); }
+            currentConsoleTextEl = null;
+        }
+    }
+
+    function appendConsoleToolInput(name, args) {
+        consoleClearEmpty();
+        finishConsoleText();
+        var el = document.createElement('div');
+        el.className = 'console-tool-input';
+        var display = name || 'unknown';
+        if (args) {
+            try {
+                var parsed = JSON.parse(args);
+                if (parsed.command) {
+                    display = '$ ' + parsed.command;
+                } else {
+                    display = name + '(' + truncateStr(args, 200) + ')';
+                }
+            } catch(_e) {
+                display = name + '(' + truncateStr(args, 200) + ')';
+            }
+        }
+        el.innerHTML = '<span class="console-prefix">\u25b8 </span>' + escapeHtml(display);
+        consoleDiv.appendChild(el);
+        consoleScrollToBottom();
+    }
+
+    function appendConsoleToolOutput(output, durationMs) {
+        consoleClearEmpty();
+        if (!output) { return; }
+        var el = document.createElement('div');
+        el.className = 'console-tool-output';
+        var truncated = truncateStr(output, 500);
+        var suffix = '';
+        if (durationMs) {
+            suffix = durationMs < 1000 ? ' (' + durationMs + 'ms)' : ' (' + (durationMs / 1000).toFixed(1) + 's)';
+        }
+        el.innerHTML = '<span class="console-prefix">&gt; </span>' + escapeHtml(truncated) + escapeHtml(suffix);
+        consoleDiv.appendChild(el);
+        consoleScrollToBottom();
+    }
+
+    function appendConsoleSummary(tokens) {
+        var el = document.createElement('div');
+        el.className = 'console-summary';
+        el.textContent = '(' + formatNumber(tokens || 0) + ' tokens)';
+        consoleDiv.appendChild(el);
+        consoleScrollToBottom();
+    }
+
     function connectStream() {
         if (isTerminal || !shouldReconnect) {
             return;
@@ -210,6 +353,7 @@
             addEvent('Stage started: ' + node, 'normal');
             metricCurrentNode.textContent = node;
             setActiveNodeHighlight(node);
+            appendConsoleHeader(node, 'stage started');
         });
 
         source.addEventListener('stage.completed', function(e) {
@@ -245,19 +389,36 @@
             addEvent('Checkpoint saved' + (node ? ': ' + node : ''), 'muted');
         });
 
+        source.addEventListener('agent.text.start', function(e) {
+            var data = safeJSON(e.data);
+            appendConsoleHeader(data.node_id || metricCurrentNode.textContent, 'agent thinking...');
+        });
+
+        source.addEventListener('agent.text.delta', function(e) {
+            var data = safeJSON(e.data);
+            if (data.text) {
+                appendConsoleText(data.text);
+            }
+        });
+
         source.addEventListener('agent.tool_call.start', function(e) {
             var data = safeJSON(e.data);
             registerToolCallStart(data);
             addEvent('Tool start: ' + toolSummary(data), 'normal');
+            appendConsoleHeader(data.node_id || metricCurrentNode.textContent, 'tool_call: ' + (data.tool_name || 'unknown'));
+            appendConsoleToolInput(data.tool_name, data.arguments);
         });
 
         source.addEventListener('agent.tool_call.end', function(e) {
             var data = safeJSON(e.data);
             addEvent('Tool done: ' + toolSummary(data) + toolDurationSuffix(data), 'success');
+            appendConsoleToolOutput(data.output_snippet, data.duration_ms);
         });
 
         source.addEventListener('agent.llm_turn', function(e) {
             var data = safeJSON(e.data);
+            finishConsoleText();
+            appendConsoleSummary(data.total_tokens);
             registerLLMTurn(data);
             var inTokens = data.input_tokens || 0;
             var outTokens = data.output_tokens || 0;
