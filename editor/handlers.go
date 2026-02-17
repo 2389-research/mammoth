@@ -605,6 +605,8 @@ func sanitizeFilename(name string) string {
 }
 
 // extractAttrs pulls key-value pairs from form data where keys are prefixed with "attr_".
+// Empty values are stored as empty strings. The caller is responsible for interpreting
+// empty values as attribute removals if desired.
 func extractAttrs(r *http.Request) map[string]string {
 	attrs := make(map[string]string)
 	for key, values := range r.Form {

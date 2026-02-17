@@ -5,6 +5,7 @@ package editor
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -140,7 +141,11 @@ func (sess *Session) UpdateNode(nodeID string, attrs map[string]string) error {
 		node.Attrs = make(map[string]string)
 	}
 	for k, v := range attrs {
-		node.Attrs[k] = v
+		if strings.TrimSpace(v) == "" {
+			delete(node.Attrs, k)
+		} else {
+			node.Attrs[k] = v
+		}
 	}
 
 	sess.reserialize()

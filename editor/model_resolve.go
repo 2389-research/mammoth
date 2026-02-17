@@ -41,7 +41,7 @@ func resolveNodeModel(node *dot.Node, stylesheet string) (model string, source s
 		if !stylesheetSelectorMatches(rule.selector, node) {
 			continue
 		}
-		if rule.specificity > bestSpec {
+		if rule.specificity >= bestSpec {
 			if m, ok := rule.properties["llm_model"]; ok {
 				bestModel = m
 				bestSelector = rule.selector

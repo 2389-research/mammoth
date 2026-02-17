@@ -236,6 +236,29 @@ func TestUpdateNode(t *testing.T) {
 	}
 }
 
+func TestUpdateNodeEmptyValueRemovesAttr(t *testing.T) {
+	store := NewStore(100, time.Hour)
+	sess, _ := store.Create(validDOT)
+
+	// Set an attribute
+	err := sess.UpdateNode("A", map[string]string{"llm_model": "claude-sonnet-4-5"})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if sess.Graph.Nodes["A"].Attrs["llm_model"] != "claude-sonnet-4-5" {
+		t.Fatal("expected llm_model to be set")
+	}
+
+	// Clear it with empty value
+	err = sess.UpdateNode("A", map[string]string{"llm_model": ""})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if _, exists := sess.Graph.Nodes["A"].Attrs["llm_model"]; exists {
+		t.Fatal("expected llm_model to be removed, but it still exists")
+	}
+}
+
 func TestUpdateNodeNonexistent(t *testing.T) {
 	store := NewStore(100, time.Hour)
 	sess, _ := store.Create(validDOT)
