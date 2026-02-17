@@ -83,7 +83,7 @@ func (p *ProgressLogger) HandleEvent(evt EngineEvent) {
 
 	// Skip high-frequency ephemeral events from persistence.
 	// These are streamed via SSE but not worth persisting to disk.
-	if evt.Type == "agent.text.delta" {
+	if evt.Type == EventAgentTextDelta {
 		return
 	}
 

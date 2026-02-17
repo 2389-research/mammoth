@@ -395,7 +395,7 @@ func TestProgressLoggerSkipsTextDeltaEvents(t *testing.T) {
 	// Send several agent.text.delta events (these are high-frequency ephemeral events)
 	for i := 0; i < 5; i++ {
 		pl.HandleEvent(EngineEvent{
-			Type:      "agent.text.delta",
+			Type:      EventAgentTextDelta,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 			Data:      map[string]any{"text": "hello "},
@@ -425,8 +425,8 @@ func TestProgressLoggerSkipsTextDeltaEvents(t *testing.T) {
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			t.Fatalf("invalid JSON line: %v", err)
 		}
-		if entry.Type == "agent.text.delta" {
-			t.Errorf("agent.text.delta event should not be persisted, but found one in ndjson")
+		if entry.Type == string(EventAgentTextDelta) {
+			t.Errorf("EventAgentTextDelta event should not be persisted, but found one in ndjson")
 		}
 	}
 
