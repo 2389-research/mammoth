@@ -14,16 +14,16 @@ requirement to its implementation status in the mammoth codebase.
 
 | Feature | Spec Section | Status | Implementation | Tests |
 |---------|-------------|--------|----------------|-------|
-| Parse digraph with graph/node/edge attribute blocks | 11.1 | DONE | `attractor/parser.go:21-47` (Parse) | `attractor/parser_test.go` (20 tests) |
-| Graph-level attributes (goal, label, model_stylesheet) extracted | 11.1 | DONE | `attractor/parser.go:181-196` (parseGraphAttrStmt) | `attractor/parser_test.go` |
-| Multi-line node attribute blocks parsed | 11.1 | DONE | `attractor/parser.go:484-523` (parseAttrBlock handles multi-line via lexer) | `attractor/parser_test.go` |
-| Edge attributes (label, condition, weight) parsed | 11.1 | DONE | `attractor/parser.go:411-460` (parseEdgeStmt) | `attractor/parser_test.go` |
-| Chained edges (A -> B -> C) expanded to individual pairs | 11.1 | DONE | `attractor/parser.go:441-456` (loop over nodeIDs) | `attractor/parser_test.go` |
-| Node/edge default blocks apply to subsequent declarations | 11.1 | DONE | `attractor/parser.go:199-232` (parseNodeDefaults, parseEdgeDefaults) | `attractor/parser_test.go` |
-| Subgraph blocks flattened (contents kept, wrapper removed) | 11.1 | DONE | `attractor/parser.go:235-344` (parseSubgraph) | `attractor/parser_test.go` |
+| Parse digraph with graph/node/edge attribute blocks | 11.1 | DONE | `dot/parser.go:21-47` (Parse) | `dot/parser_test.go` (20 tests) |
+| Graph-level attributes (goal, label, model_stylesheet) extracted | 11.1 | DONE | `dot/parser.go:181-196` (parseGraphAttrStmt) | `dot/parser_test.go` |
+| Multi-line node attribute blocks parsed | 11.1 | DONE | `dot/parser.go:484-523` (parseAttrBlock handles multi-line via lexer) | `dot/parser_test.go` |
+| Edge attributes (label, condition, weight) parsed | 11.1 | DONE | `dot/parser.go:411-460` (parseEdgeStmt) | `dot/parser_test.go` |
+| Chained edges (A -> B -> C) expanded to individual pairs | 11.1 | DONE | `dot/parser.go:441-456` (loop over nodeIDs) | `dot/parser_test.go` |
+| Node/edge default blocks apply to subsequent declarations | 11.1 | DONE | `dot/parser.go:199-232` (parseNodeDefaults, parseEdgeDefaults) | `dot/parser_test.go` |
+| Subgraph blocks flattened (contents kept, wrapper removed) | 11.1 | DONE | `dot/parser.go:235-344` (parseSubgraph) | `dot/parser_test.go` |
 | class attribute merges stylesheet attributes | 11.1 | DONE | `attractor/stylesheet.go:145-205` (Apply, selectorMatches .class) | `attractor/stylesheet_test.go` (13 tests) |
-| Quoted and unquoted attribute values both work | 11.1 | DONE | `attractor/parser.go:567-603` (parseValue handles String and Identifier) | `attractor/lexer_test.go` (12 tests) |
-| Comments (// and /* */) stripped before parsing | 11.1 | DONE | `attractor/lexer.go` (lexer strips comments) | `attractor/lexer_test.go` |
+| Quoted and unquoted attribute values both work | 11.1 | DONE | `dot/parser.go:567-603` (parseValue handles String and Identifier) | `dot/lexer_test.go` (12 tests) |
+| Comments (// and /* */) stripped before parsing | 11.1 | DONE | `dot/lexer.go` (lexer strips comments) | `dot/lexer_test.go` |
 
 ---
 
@@ -319,8 +319,8 @@ requirement to its implementation status in the mammoth codebase.
 | Test Case | Spec Section | Status | Test Location |
 |-----------|-------------|--------|---------------|
 | Parse simple linear pipeline (start -> A -> B -> done) | 11.12 | DONE | `attractor/integration_test.go` (10 tests) |
-| Parse pipeline with graph-level attributes (goal, label) | 11.12 | DONE | `attractor/parser_test.go` |
-| Parse multi-line node attributes | 11.12 | DONE | `attractor/parser_test.go` |
+| Parse pipeline with graph-level attributes (goal, label) | 11.12 | DONE | `dot/parser_test.go` |
+| Parse multi-line node attributes | 11.12 | DONE | `dot/parser_test.go` |
 | Validate: missing start node -> error | 11.12 | DONE | `attractor/validate_test.go` |
 | Validate: missing exit node -> error | 11.12 | DONE | `attractor/validate_test.go` |
 | Validate: orphan node -> error (spec says warning, impl uses ERROR) | 11.12 | DONE | `attractor/validate_test.go` |
@@ -367,7 +367,7 @@ requirement to its implementation status in the mammoth codebase.
 | Events | 10 | 10 | 0 | 0 |
 | Sub-Pipeline | 5 | 5 | 0 | 0 |
 | Cross-Feature (11.12) | 22 | 22 | 0 | 0 |
-| **Total** | **193** | **191** | **2** | **0** |
+| **Total** | **195** | **192** | **3** | **0** |
 
 ### PARTIAL Items
 
@@ -377,6 +377,5 @@ requirement to its implementation status in the mammoth codebase.
 
 ### Test Coverage
 
-- **Total test functions**: 637
-- **Attractor package**: 617 tests across 32 test files
-- **CLI package**: 20 tests in 1 test file
+- **Total test cases**: 5,200+ across all packages
+- **Key packages**: attractor, dot, spec, web, editor, agent, llm, render, tui, cmd/mammoth

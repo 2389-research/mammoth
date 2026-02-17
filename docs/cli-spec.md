@@ -34,18 +34,19 @@ mammoth [options] <pipeline.dot>
 
 ## 2. Modes of Operation
 
-Mammoth has four mutually exclusive modes, selected by flags:
+Mammoth has five mutually exclusive modes, selected by flags or subcommands:
 
 | Mode       | Trigger                            | Description                                      |
 |------------|------------------------------------|--------------------------------------------------|
-| **Run**    | `mammoth <pipeline.dot>`         | Parse, validate, and execute the pipeline         |
+| **Run**    | `mammoth [run] <pipeline.dot>`   | Parse, validate, and execute the pipeline         |
 | **Validate** | `mammoth --validate <pipeline.dot>` | Parse and validate without executing          |
 | **Server** | `mammoth --server`               | Start an HTTP server for pipeline management      |
+| **Serve**  | `mammoth serve`                  | Start unified web UI (spec builder + editor + runner) |
 | **Version** | `mammoth --version`             | Print version string and exit                     |
 
 ### 2.1 Run Mode (default)
 
-Reads the DOT file, constructs an `Engine` with the configured retry policy, checkpoint directory, and artifact directory, then executes the pipeline. On success, prints completion summary to stdout. On failure, prints error to stderr and exits with code 1.
+Reads the DOT file, constructs an `Engine` with the configured retry policy, checkpoint directory, and artifact directory, then executes the pipeline. The optional `run` subcommand is accepted for clarity (`mammoth run pipeline.dot`). On success, prints completion summary to stdout. On failure, prints error to stderr and exits with code 1.
 
 Pipeline execution respects `context.Context` cancellation via signal handling (see [Signal Handling](#7-signal-handling)).
 
@@ -57,7 +58,17 @@ Reads the DOT file, parses it, applies default transforms, and runs all built-in
 
 Starts an HTTP server on the configured port (default `2389`). The server exposes a REST API for submitting, querying, streaming events from, and cancelling pipelines. Does not require a positional pipeline file argument. See [HTTP Server API](#10-http-server-api) for endpoint details.
 
-### 2.4 Version Mode
+### 2.4 Serve Mode
+
+The `serve` subcommand starts a unified web UI combining the spec builder, DOT editor, and pipeline runner. It has its own flag set parsed separately from the main flags.
+
+```
+mammoth serve [-port PORT] [-data-dir DIR]
+```
+
+Detected before regular flag parsing in `cmd/mammoth/main.go`.
+
+### 2.5 Version Mode
 
 Prints `mammoth <version>` to stdout and exits with code 0. The version defaults to `"dev"` at compile time and can be overridden via `-ldflags` at build time.
 
@@ -77,6 +88,7 @@ All flags use the `--flag` (double-dash) convention. Single-character shorthand 
 | `--retry`          | `string` | `"none"` | Default retry policy: `none`, `standard`, `aggressive`, `linear`, `patient` |
 | `--data-dir`       | `string` | `""`     | XDG-style data directory for persistent pipeline state |
 | `--base-url`       | `string` | `""`     | Custom API base URL for LLM providers              |
+| `--backend`        | `string` | `""`     | Agent backend: `agent` (default), `claude-code`; overridden by `MAMMOTH_BACKEND` env var |
 | `--tui`            | `bool`   | `false`  | Use the Bubble Tea terminal UI for pipeline display |
 | `--fresh`          | `bool`   | `false`  | Force a fresh run, ignoring any auto-resume state  |
 | `--verbose`        | `bool`   | `false`  | Print engine lifecycle events to stderr            |
@@ -186,7 +198,7 @@ error: <description>
 
 Written to stderr. Examples of error descriptions:
 
-- `pipeline file required (use mammoth <pipeline.dot>)` -- no pipeline file provided in non-server mode
+- (full help text via `printHelp()`) -- no pipeline file provided in non-server mode
 - `open /path/to/file.dot: no such file or directory` -- file not found
 - `parse error: <details>` -- DOT syntax error
 - `validation failed: pipeline validation failed with N error(s)` -- validation errors during run mode
@@ -210,15 +222,15 @@ A second signal is not handled specially; the first signal initiates an orderly 
 
 ## 8. Environment Variables
 
-The CLI binary itself does not read any environment variables. However, when running pipelines that use `codergen` nodes with an LLM backend, the following environment variables are read by the backend adapter layer (in `attractor/backend_agent.go`):
+The CLI reads environment variables for backend selection, API keys, and data directory configuration. It also auto-loads `.env` files from the current directory (and parents) and the executable's directory via `cmd/mammoth/dotenv.go`.
 
-| Variable            | Purpose                              |
-|---------------------|--------------------------------------|
-| `ANTHROPIC_API_KEY` | API key for Anthropic Claude models  |
-| `OPENAI_API_KEY`    | API key for OpenAI models            |
-| `GEMINI_API_KEY`    | API key for Google Gemini models     |
-
-These are only relevant when a pipeline includes `codergen` nodes backed by LLM calls.
+| Variable            | Purpose                              | Read in |
+|---------------------|--------------------------------------|---------|
+| `MAMMOTH_BACKEND`   | Default agent backend (`agent` or `claude-code`) | `cmd/mammoth/main.go` |
+| `ANTHROPIC_API_KEY` | API key for Anthropic Claude models  | `cmd/mammoth/main.go` |
+| `OPENAI_API_KEY`    | API key for OpenAI models            | `cmd/mammoth/main.go` |
+| `GEMINI_API_KEY`    | API key for Google Gemini models     | `cmd/mammoth/main.go` |
+| `XDG_DATA_HOME`     | Base directory for persistent data   | `cmd/mammoth/datadir.go` |
 
 ---
 
@@ -601,16 +613,12 @@ The following capabilities are not currently implemented but would be natural ex
 
 5. **`--list-handlers` flag** -- Enumerate registered handler types and their descriptions.
 
-6. **`--model` / `--backend` flag** -- Specify the preferred LLM backend for `codergen` nodes directly from the CLI.
+6. **`--timeout` flag** -- Set a global timeout for pipeline execution (currently relies on signal handling).
 
-7. **`--timeout` flag** -- Set a global timeout for pipeline execution (currently relies on signal handling).
+7. **Short flags** -- Single-character aliases like `-v` for `--verbose`, `-p` for `--port`, etc.
 
-8. **Short flags** -- Single-character aliases like `-v` for `--verbose`, `-p` for `--port`, etc.
+8. **`--quiet` flag** -- Suppress all non-essential output, complement to `--verbose`.
 
-9. **Subcommand style** -- Restructure as `mammoth run`, `mammoth validate`, `mammoth server` subcommands instead of flag-based mode selection.
+9. **Progress reporting** -- Real-time progress bar or percentage for pipeline execution in TTY mode.
 
-10. **`--quiet` flag** -- Suppress all non-essential output, complement to `--verbose`.
-
-11. **Progress reporting** -- Real-time progress bar or percentage for pipeline execution in TTY mode.
-
-12. **`--config` flag** -- Load configuration from a YAML/TOML file instead of requiring all options as flags.
+10. **`--config` flag** -- Load configuration from a YAML/TOML file instead of requiring all options as flags.

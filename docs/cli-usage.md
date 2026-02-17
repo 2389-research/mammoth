@@ -1,6 +1,6 @@
 # CLI Usage Guide
 
-Mammoth is a command-line tool for running DOT-based LLM agent pipelines. It supports three modes: pipeline execution, validation, and HTTP server mode.
+Mammoth is a command-line tool for running DOT-based LLM agent pipelines. It supports five modes: pipeline execution (with optional `run` subcommand), validation, HTTP server mode, the `serve` subcommand (unified web UI), and version display.
 
 ## Installation
 
@@ -22,9 +22,11 @@ mammoth [options] <pipeline.dot>
 
 ```bash
 mammoth pipeline.dot
+# or equivalently:
+mammoth run pipeline.dot
 ```
 
-This is the default mode. Mammoth parses the DOT file, validates the graph, and executes the pipeline from the start node to an exit node. The pipeline runs synchronously -- the process blocks until completion or failure.
+This is the default mode. Mammoth parses the DOT file, validates the graph, and executes the pipeline from the start node to an exit node. The pipeline runs synchronously -- the process blocks until completion or failure. The optional `run` subcommand is accepted for clarity.
 
 ### Validate a Pipeline
 
@@ -50,6 +52,15 @@ mammoth -version
 
 Prints the version string and exits.
 
+### Start Unified Web UI (serve)
+
+```bash
+mammoth serve
+mammoth serve -port 8080 -data-dir ./data
+```
+
+Starts the unified web UI that combines the spec builder, DOT editor, and pipeline runner in a single interface. This is a separate subcommand (not a flag) with its own flag set.
+
 ## Flags
 
 | Flag | Type | Default | Description |
@@ -58,7 +69,12 @@ Prints the version string and exits.
 | `-port` | int | `2389` | Server listen port. Only used with `-server`. |
 | `-validate` | bool | `false` | Validate pipeline without executing. |
 | `-checkpoint-dir` | string | `""` | Directory for saving checkpoint files. Empty disables checkpointing. |
-| `-artifact-dir` | string | `""` | Directory for storing artifacts (large outputs). Empty uses temp directory. |
+| `-artifact-dir` | string | `""` | Directory for storing artifacts (large outputs). Empty uses `artifacts/<RunID>`. |
+| `-data-dir` | string | `""` | XDG-style data directory for persistent state (default: `$XDG_DATA_HOME/mammoth`). |
+| `-base-url` | string | `""` | Custom API base URL for the LLM provider. |
+| `-backend` | string | `""` | Agent backend: `agent` (default), `claude-code`. Also settable via `MAMMOTH_BACKEND` env var. |
+| `-tui` | bool | `false` | Run with interactive Bubble Tea terminal UI. |
+| `-fresh` | bool | `false` | Force a fresh run, skip auto-resume. |
 | `-retry` | string | `none` | Default retry policy preset. See [Retry Policies](#retry-policies). |
 | `-verbose` | bool | `false` | Enable verbose output. Prints engine lifecycle events to stderr. |
 | `-version` | bool | `false` | Print version and exit. |
@@ -203,8 +219,10 @@ When started with `-server`, mammoth exposes a REST API for managing pipelines.
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `GET /pipelines` | List all pipelines | Returns array of pipeline statuses |
 | `POST /pipelines` | Submit a pipeline for execution | Returns pipeline ID |
 | `GET /pipelines/{id}` | Get pipeline status | Returns status, completed nodes, errors |
+| `GET /pipelines/{id}/graph` | Get pipeline graph | Returns DOT graph rendering |
 | `GET /pipelines/{id}/events` | SSE event stream | Real-time engine events via Server-Sent Events |
 | `GET /pipelines/{id}/events/query` | Query events | Filtered event retrieval with pagination |
 | `GET /pipelines/{id}/events/tail` | Tail events | Last N events |
@@ -315,7 +333,17 @@ curl "http://localhost:2389/pipelines/{id}/events/tail?n=5"
 
 ## Environment Variables
 
-Mammoth reads LLM API keys from the environment. See [Backend Configuration](backend-config.md) for details.
+Mammoth reads environment variables from the process environment and auto-loads `.env` files from the current directory (and parent directories) and the executable's directory.
+
+| Variable | Purpose |
+|----------|---------|
+| `ANTHROPIC_API_KEY` | API key for Anthropic Claude models |
+| `OPENAI_API_KEY` | API key for OpenAI models |
+| `GEMINI_API_KEY` | API key for Google Gemini models |
+| `MAMMOTH_BACKEND` | Default agent backend (`agent` or `claude-code`); overridden by `-backend` flag |
+| `XDG_DATA_HOME` | Base directory for persistent data (default: `~/.local/share`); mammoth uses `$XDG_DATA_HOME/mammoth` |
+
+See [Backend Configuration](backend-config.md) for details.
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."

@@ -285,10 +285,10 @@ func DefaultRestartConfig() *RestartConfig
 type ArtifactStore struct { /* unexported fields */ }
 
 func NewArtifactStore(dir string) *ArtifactStore
-func (s *ArtifactStore) Store(id, contentType string, data []byte) (string, error)
+func (s *ArtifactStore) Store(id, name string, data []byte) (*ArtifactInfo, error)
 ```
 
-Stores large outputs (e.g., tool stdout exceeding 10KB) as files. Returns the artifact file path.
+Stores large outputs (e.g., tool stdout exceeding 100KB) as files. Returns artifact metadata including file path, size, and content type.
 
 ---
 
@@ -900,7 +900,7 @@ type EngineConfig struct {
 | `CheckpointDir` | `string` | `""` (disabled) | Directory for checkpoint files. Empty disables checkpointing. |
 | `AutoCheckpointPath` | `string` | `""` (disabled) | Path to overwrite with latest checkpoint after each node. Empty disables. |
 | `ArtifactDir` | `string` | `""` (temp dir) | Directory for artifact storage. Empty uses `ArtifactsBaseDir/<RunID>`. |
-| `ArtifactsBaseDir` | `string` | `"./artifacts"` | Base directory for run artifact subdirectories. |
+| `ArtifactsBaseDir` | `string` | `"artifacts"` | Base directory for run artifact subdirectories. |
 | `RunID` | `string` | auto-generated | Run identifier for the artifact subdirectory. Empty auto-generates a UUID. |
 | `Transforms` | `[]Transform` | `DefaultTransforms()` | AST transforms applied between parsing and validation. |
 | `ExtraLintRules` | `[]LintRule` | `nil` | Additional validation rules appended to built-in rules. |

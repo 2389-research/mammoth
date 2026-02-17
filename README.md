@@ -14,7 +14,7 @@ Mammoth is three layers, bottom-up:
 | **Agent Loop** | `agent/` | Agentic loop with provider profiles, tools, steering, and subagents |
 | **Pipeline Runner** | `attractor/` | DOT-based DAG execution, node handlers, human-in-the-loop gates |
 
-Supporting packages: `render/` (DOT→SVG/PNG), `tui/` (Bubble Tea terminal UI), `cmd/mammoth/` (CLI).
+Supporting packages: `dot/` (DOT parser/serializer), `spec/` (event-sourced spec builder), `web/` (unified web layer), `editor/` (DOT graph editor), `render/` (DOT→SVG/PNG), `tui/` (Bubble Tea terminal UI), `cmd/mammoth/` (CLI).
 
 ## Install
 
@@ -35,8 +35,8 @@ go install github.com/2389-research/mammoth/cmd/mammoth@latest
 Pre-built binaries for macOS and Linux (amd64/arm64) are available on the [releases page](https://github.com/2389-research/mammoth/releases/latest).
 
 ```bash
-# Example: Linux amd64 — replace VERSION with the desired release (e.g. 0.1.0)
-VERSION="0.1.0"
+# Example: Linux amd64 — replace VERSION with the desired release (e.g. 0.2.0)
+VERSION="0.2.0"
 curl -sL "https://github.com/2389-research/mammoth/releases/download/v${VERSION}/mammoth_${VERSION}_Linux_x86_64.tar.gz" | tar xz
 sudo mv mammoth /usr/local/bin/
 ```
@@ -66,10 +66,10 @@ mammoth run pipeline.dot
 
 ```bash
 # Validate a pipeline without running it
-mammoth validate pipeline.dot
+mammoth -validate pipeline.dot
 
 # Run with the terminal UI
-mammoth run --tui pipeline.dot
+mammoth run -tui pipeline.dot
 
 # Start the HTTP server
 mammoth -server -port 8080
@@ -78,7 +78,7 @@ mammoth -server -port 8080
 ## Testing
 
 ```bash
-# Run all tests (1,400+ tests)
+# Run all tests (5,200+ tests)
 go test ./...
 
 # Run with race detector
@@ -106,7 +106,7 @@ Browse the full docs hub at [`docs/index.html`](docs/index.html).
 
 ## Spec Parity
 
-192/196 Attractor spec requirements implemented (3 partial, 1 missing). See the [parity matrix](docs/parity-matrix.md) for details.
+192/195 Attractor spec requirements implemented (3 partial, 0 missing). See the [parity matrix](docs/parity-matrix.md) for details.
 
 ## License
 
