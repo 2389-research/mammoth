@@ -208,8 +208,46 @@ func printQuickStart(w io.Writer, configured []string) {
 	fmt.Fprintln(w)
 }
 
-// runSetup executes the interactive setup wizard.
+// runSetup executes the interactive setup wizard using stdin/stdout.
 func runSetup(cfg setupConfig) int {
-	printWelcome(os.Stdout)
+	return runSetupWithIO(cfg, os.Stdin, os.Stdout)
+}
+
+// runSetupWithIO executes the setup wizard with injectable I/O for testing.
+func runSetupWithIO(cfg setupConfig, r io.Reader, w io.Writer) int {
+	printWelcome(w)
+
+	providers := detectProviders()
+	printProviderStatus(w, providers)
+
+	var collected map[string]string
+	if !cfg.skipKeys {
+		collected = collectKeys(r, w, providers)
+
+		if err := writeEnvFile(cfg.envFile, collected); err != nil {
+			fmt.Fprintf(w, "Error writing %s: %v\n", cfg.envFile, err)
+			return 1
+		}
+
+		if len(collected) > 0 {
+			fmt.Fprintf(w, "\nWrote %d key(s) to %s\n", len(collected), cfg.envFile)
+		}
+	}
+
+	// Build list of configured provider names (existing + newly collected).
+	var configured []string
+	for _, p := range providers {
+		if p.isSet {
+			configured = append(configured, p.name)
+			continue
+		}
+		if collected != nil {
+			if _, ok := collected[p.envVar]; ok {
+				configured = append(configured, p.name)
+			}
+		}
+	}
+
+	printQuickStart(w, configured)
 	return 0
 }

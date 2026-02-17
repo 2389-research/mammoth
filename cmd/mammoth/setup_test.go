@@ -285,3 +285,119 @@ func TestPrintQuickStart_NoProviders(t *testing.T) {
 		t.Errorf("expected mammoth serve even with no keys:\n%s", out)
 	}
 }
+
+func TestRunSetupEndToEnd(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, ".env")
+
+	input := "sk-ant-test123\n\n\n"
+	r := strings.NewReader(input)
+	var w bytes.Buffer
+
+	cfg := setupConfig{envFile: envPath}
+	code := runSetupWithIO(cfg, r, &w)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("expected .env to exist: %v", err)
+	}
+	if !strings.Contains(string(data), "ANTHROPIC_API_KEY=sk-ant-test123") {
+		t.Errorf("expected key in .env:\n%s", string(data))
+	}
+
+	out := w.String()
+	if !strings.Contains(out, "Anthropic") {
+		t.Errorf("expected Anthropic in summary:\n%s", out)
+	}
+	if !strings.Contains(out, "mammoth serve") {
+		t.Errorf("expected quickstart in output:\n%s", out)
+	}
+}
+
+func TestRunSetupSkipKeys(t *testing.T) {
+	var w bytes.Buffer
+	r := strings.NewReader("")
+
+	dir := t.TempDir()
+	cfg := setupConfig{skipKeys: true, envFile: filepath.Join(dir, ".env")}
+	code := runSetupWithIO(cfg, r, &w)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+
+	if _, err := os.Stat(cfg.envFile); err == nil {
+		t.Error("expected no .env file when keys skipped")
+	}
+}
+
+func TestRunSetupEndToEnd_ExistingEnvFile(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, ".env")
+
+	if err := os.WriteFile(envPath, []byte("MY_CUSTOM_VAR=keepme\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	input := "sk-ant-integration\n\n\n"
+	r := strings.NewReader(input)
+	var w bytes.Buffer
+
+	cfg := setupConfig{envFile: envPath}
+	code := runSetupWithIO(cfg, r, &w)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "MY_CUSTOM_VAR=keepme") {
+		t.Errorf("custom var was clobbered:\n%s", content)
+	}
+	if !strings.Contains(content, "ANTHROPIC_API_KEY=sk-ant-integration") {
+		t.Errorf("new key not written:\n%s", content)
+	}
+}
+
+func TestRunSetupEndToEnd_PreExistingKeys(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-already-set")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, ".env")
+
+	input := "sk-openai-new\n\n"
+	r := strings.NewReader(input)
+	var w bytes.Buffer
+
+	cfg := setupConfig{envFile: envPath}
+	code := runSetupWithIO(cfg, r, &w)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+
+	out := w.String()
+	if !strings.Contains(out, "already set") {
+		t.Errorf("expected 'already set' for Anthropic:\n%s", out)
+	}
+	if !strings.Contains(out, "Anthropic") || !strings.Contains(out, "OpenAI") {
+		t.Errorf("expected both providers in summary:\n%s", out)
+	}
+}
