@@ -25,7 +25,7 @@
                 {{end}}
             </div>
             <div class="web-rail-links">
-                <a href="/" class="web-rail-link{{if eq .Title "Home"}} active{{end}}">Home</a>
+                <a href="/projects" class="web-rail-link{{if eq .Title "Projects"}} active{{end}}">Projects</a>
                 <a href="/projects/new" class="web-rail-link{{if eq .Title "New Project"}} active{{end}}">Start Project</a>
                 {{if .Project}}
                 <a href="/projects/{{.Project.ID}}" class="web-rail-link{{if eq .Title .Project.Name}} active{{end}}">Project Overview</a>
