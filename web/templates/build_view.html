@@ -176,6 +176,7 @@
     var currentConsoleTextEl = null;
 
     var consoleResumeBar = null;
+    var programmaticScroll = false;
 
     function showResumeBar() {
         if (consoleResumeBar) { return; }
@@ -201,6 +202,7 @@
     }
 
     consoleDiv.addEventListener('scroll', function() {
+        if (programmaticScroll) { return; }
         var atBottom = consoleDiv.scrollHeight - consoleDiv.scrollTop - consoleDiv.clientHeight < 30;
         consoleAutoScroll = atBottom;
         if (atBottom) {
@@ -260,7 +262,9 @@
     function consoleScrollToBottom() {
         if (consoleAutoScroll) {
             hideResumeBar();
+            programmaticScroll = true;
             consoleDiv.scrollTop = consoleDiv.scrollHeight;
+            setTimeout(function() { programmaticScroll = false; }, 100);
         }
     }
 

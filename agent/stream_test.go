@@ -572,3 +572,61 @@ func TestBuildResponseFromStream_EmptyAccumulator(t *testing.T) {
 		t.Errorf("expected empty finish reason, got %q", resp.FinishReason.Reason)
 	}
 }
+
+func TestConsumeStream_SplitUsageMerge(t *testing.T) {
+	// Anthropic sends input_tokens in StreamStart and output_tokens in StreamFinish.
+	// The accumulator must merge both into the final response.
+	session := NewSession(DefaultSessionConfig())
+	defer session.Close()
+
+	events := []llm.StreamEvent{
+		{Type: llm.StreamStart, Usage: &llm.Usage{InputTokens: 1500}},
+		{Type: llm.StreamTextStart},
+		{Type: llm.StreamTextDelta, Delta: "hello"},
+		{Type: llm.StreamTextEnd},
+		{Type: llm.StreamFinish, Usage: &llm.Usage{OutputTokens: 200}},
+	}
+
+	resp, err := consumeStream(context.Background(), session, sendEvents(events))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.Usage.InputTokens != 1500 {
+		t.Errorf("expected InputTokens=1500, got %d", resp.Usage.InputTokens)
+	}
+	if resp.Usage.OutputTokens != 200 {
+		t.Errorf("expected OutputTokens=200, got %d", resp.Usage.OutputTokens)
+	}
+	if resp.Usage.TotalTokens != 1700 {
+		t.Errorf("expected TotalTokens=1700, got %d", resp.Usage.TotalTokens)
+	}
+}
+
+func TestMergeUsage_TakesMaxValues(t *testing.T) {
+	acc := &streamAccumulator{}
+
+	// First merge: input tokens from message_start
+	acc.mergeUsage(&llm.Usage{InputTokens: 1000})
+	if acc.usage.InputTokens != 1000 {
+		t.Errorf("expected 1000, got %d", acc.usage.InputTokens)
+	}
+
+	// Second merge: output tokens from message_delta, should not clobber input
+	acc.mergeUsage(&llm.Usage{OutputTokens: 500})
+	if acc.usage.InputTokens != 1000 {
+		t.Errorf("expected InputTokens preserved at 1000, got %d", acc.usage.InputTokens)
+	}
+	if acc.usage.OutputTokens != 500 {
+		t.Errorf("expected OutputTokens=500, got %d", acc.usage.OutputTokens)
+	}
+	if acc.usage.TotalTokens != 1500 {
+		t.Errorf("expected TotalTokens=1500, got %d", acc.usage.TotalTokens)
+	}
+
+	// Third merge: nil should be safe
+	acc.mergeUsage(nil)
+	if acc.usage.TotalTokens != 1500 {
+		t.Errorf("nil merge should be no-op, got %d", acc.usage.TotalTokens)
+	}
+}

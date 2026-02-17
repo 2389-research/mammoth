@@ -892,6 +892,39 @@ func TestConvertStreamEvent(t *testing.T) {
 	}
 }
 
+func TestConvertStreamEvent_MessageStartCarriesUsage(t *testing.T) {
+	// Anthropic sends input_tokens in message_start. The adapter must forward
+	// this usage data on the StreamStart event so the accumulator can capture it.
+	evt := convertStreamEvent(muxllm.StreamEvent{
+		Type: muxllm.EventMessageStart,
+		Response: &muxllm.Response{
+			ID:    "msg_abc",
+			Usage: muxllm.Usage{InputTokens: 2048, OutputTokens: 0},
+		},
+	}, nil)
+
+	if evt.Type != StreamStart {
+		t.Fatalf("expected StreamStart, got %q", evt.Type)
+	}
+	if evt.Usage == nil {
+		t.Fatal("expected Usage on StreamStart for Anthropic message_start")
+	}
+	if evt.Usage.InputTokens != 2048 {
+		t.Errorf("expected InputTokens=2048, got %d", evt.Usage.InputTokens)
+	}
+}
+
+func TestConvertStreamEvent_MessageStartNoUsageWhenZero(t *testing.T) {
+	// OpenAI/Gemini send empty message_start. Usage should remain nil.
+	evt := convertStreamEvent(muxllm.StreamEvent{
+		Type: muxllm.EventMessageStart,
+	}, nil)
+
+	if evt.Usage != nil {
+		t.Errorf("expected nil Usage for message_start without response, got %+v", evt.Usage)
+	}
+}
+
 // intPtr is a helper for creating *int values in tests.
 func intPtr(v int) *int {
 	return &v

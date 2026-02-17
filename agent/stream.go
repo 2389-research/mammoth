@@ -36,6 +36,35 @@ type streamAccumulator struct {
 	provider   string
 }
 
+// mergeUsage takes the maximum of each token field from the incoming usage,
+// preserving values already captured from earlier events. This handles providers
+// that split usage across multiple events (Anthropic sends input_tokens in
+// message_start and output_tokens in message_delta).
+func (a *streamAccumulator) mergeUsage(u *llm.Usage) {
+	if u == nil {
+		return
+	}
+	if a.usage == nil {
+		a.usage = &llm.Usage{}
+	}
+	if u.InputTokens > a.usage.InputTokens {
+		a.usage.InputTokens = u.InputTokens
+	}
+	if u.OutputTokens > a.usage.OutputTokens {
+		a.usage.OutputTokens = u.OutputTokens
+	}
+	if u.ReasoningTokens != nil && (a.usage.ReasoningTokens == nil || *u.ReasoningTokens > *a.usage.ReasoningTokens) {
+		a.usage.ReasoningTokens = u.ReasoningTokens
+	}
+	if u.CacheReadTokens != nil && (a.usage.CacheReadTokens == nil || *u.CacheReadTokens > *a.usage.CacheReadTokens) {
+		a.usage.CacheReadTokens = u.CacheReadTokens
+	}
+	if u.CacheWriteTokens != nil && (a.usage.CacheWriteTokens == nil || *u.CacheWriteTokens > *a.usage.CacheWriteTokens) {
+		a.usage.CacheWriteTokens = u.CacheWriteTokens
+	}
+	a.usage.TotalTokens = a.usage.InputTokens + a.usage.OutputTokens
+}
+
 // consumeStream reads all events from the stream channel, emits agent session events
 // for observability, and accumulates stream data into an *llm.Response. It batches
 // text deltas to reduce event frequency: flushes occur when the buffer exceeds
@@ -73,7 +102,10 @@ func consumeStream(ctx context.Context, session *Session, stream <-chan llm.Stre
 
 			switch ev.Type {
 			case llm.StreamStart:
-				// Nothing to accumulate for stream start
+				// Anthropic sends input_tokens in message_start; capture early usage.
+				if ev.Usage != nil {
+					acc.mergeUsage(ev.Usage)
+				}
 
 			case llm.StreamTextStart:
 				session.Emit(EventAssistantTextStart, nil)
@@ -133,7 +165,7 @@ func consumeStream(ctx context.Context, session *Session, stream <-chan llm.Stre
 					acc.finishReason = ev.FinishReason
 				}
 				if ev.Usage != nil {
-					acc.usage = ev.Usage
+					acc.mergeUsage(ev.Usage)
 				}
 				// If the finish event carries a full embedded Response, extract metadata
 				if ev.Response != nil {

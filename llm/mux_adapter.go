@@ -293,7 +293,16 @@ func mapStopReason(reason muxllm.StopReason) FinishReason {
 func convertStreamEvent(evt muxllm.StreamEvent, currentBlockType *muxllm.ContentType) StreamEvent {
 	switch evt.Type {
 	case muxllm.EventMessageStart:
-		return StreamEvent{Type: StreamStart}
+		se := StreamEvent{Type: StreamStart}
+		// Anthropic sends usage (input_tokens) in message_start; capture it.
+		if evt.Response != nil && (evt.Response.Usage.InputTokens > 0 || evt.Response.Usage.OutputTokens > 0) {
+			se.Usage = &Usage{
+				InputTokens:  evt.Response.Usage.InputTokens,
+				OutputTokens: evt.Response.Usage.OutputTokens,
+				TotalTokens:  evt.Response.Usage.InputTokens + evt.Response.Usage.OutputTokens,
+			}
+		}
+		return se
 
 	case muxllm.EventContentStart:
 		if evt.Block != nil {
