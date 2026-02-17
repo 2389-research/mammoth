@@ -51,11 +51,14 @@ type serveConfig struct {
 func main() {
 	loadDotEnvAuto()
 
-	// Check for the "serve" subcommand before regular flag parsing, since
-	// it uses its own flag set and doesn't share flags with pipeline mode.
+	// Check for subcommands before regular flag parsing, since they use
+	// their own flag sets and don't share flags with pipeline mode.
 	if len(os.Args) > 1 {
 		if scfg, ok := parseServeArgs(os.Args[1:]); ok {
 			os.Exit(runServe(scfg))
+		}
+		if scfg, ok := parseSetupArgs(os.Args[1:]); ok {
+			os.Exit(runSetup(scfg))
 		}
 	}
 
