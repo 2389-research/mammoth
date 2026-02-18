@@ -254,53 +254,6 @@ func TestRenderBadTemplate(t *testing.T) {
 	}
 }
 
-func TestRenderStandalone(t *testing.T) {
-	engine, err := NewTemplateEngine()
-	if err != nil {
-		t.Fatalf("failed to create template engine: %v", err)
-	}
-
-	rec := httptest.NewRecorder()
-	data := PageData{Title: "Landing"}
-	if err := engine.RenderStandalone(rec, "landing.html", data); err != nil {
-		t.Fatalf("failed to render standalone: %v", err)
-	}
-
-	body := rec.Body.String()
-	if !strings.Contains(body, "<!DOCTYPE html>") {
-		t.Error("expected HTML5 doctype in standalone template")
-	}
-	// Standalone pages should NOT have the nav rail.
-	if strings.Contains(body, "nav-rail") {
-		t.Error("standalone template should not contain nav-rail")
-	}
-	// Should contain landing page content.
-	if !strings.Contains(body, "Software Factory") {
-		t.Error("expected landing page headline")
-	}
-}
-
-func TestRenderStandaloneTo(t *testing.T) {
-	engine, err := NewTemplateEngine()
-	if err != nil {
-		t.Fatalf("failed to create template engine: %v", err)
-	}
-
-	var buf bytes.Buffer
-	data := PageData{Title: "Landing"}
-	if err := engine.RenderStandaloneTo(&buf, "landing.html", data); err != nil {
-		t.Fatalf("failed to render standalone to buffer: %v", err)
-	}
-
-	body := buf.String()
-	if !strings.Contains(body, "<!DOCTYPE html>") {
-		t.Error("expected HTML5 doctype in standalone template")
-	}
-	if strings.Contains(body, "nav-rail") {
-		t.Error("standalone template should not contain nav-rail")
-	}
-}
-
 func TestRenderStandaloneBadTemplate(t *testing.T) {
 	engine, err := NewTemplateEngine()
 	if err != nil {
@@ -311,70 +264,6 @@ func TestRenderStandaloneBadTemplate(t *testing.T) {
 	err = engine.RenderStandalone(rec, "nonexistent.html", PageData{})
 	if err == nil {
 		t.Error("expected error when rendering nonexistent standalone template")
-	}
-}
-
-func TestLandingPageSections(t *testing.T) {
-	engine, err := NewTemplateEngine()
-	if err != nil {
-		t.Fatalf("failed to create template engine: %v", err)
-	}
-
-	rec := httptest.NewRecorder()
-	data := PageData{Title: "Home"}
-	if err := engine.RenderStandalone(rec, "landing.html", data); err != nil {
-		t.Fatalf("failed to render landing: %v", err)
-	}
-
-	body := rec.Body.String()
-
-	sections := []struct {
-		name   string
-		marker string
-	}{
-		{"hero", "cl-hero"},
-		{"pipeline", "cl-pipeline"},
-		{"stack", "cl-stack"},
-		{"how-it-works", "cl-how"},
-		{"telemetry", "cl-telemetry"},
-		{"cta", "cl-cta"},
-		{"footer", "cl-footer"},
-	}
-	for _, sec := range sections {
-		if !strings.Contains(body, sec.marker) {
-			t.Errorf("expected %s section (class %q) in landing page", sec.name, sec.marker)
-		}
-	}
-
-	if !strings.Contains(body, "Space+Grotesk") {
-		t.Error("expected Space Grotesk font import")
-	}
-	if !strings.Contains(body, "IBM+Plex+Mono") {
-		t.Error("expected IBM Plex Mono font import")
-	}
-	if !strings.Contains(body, "landing.css") {
-		t.Error("expected landing.css stylesheet link")
-	}
-	if !strings.Contains(body, "landing.js") {
-		t.Error("expected landing.js script reference")
-	}
-}
-
-func TestRenderStandaloneContentType(t *testing.T) {
-	engine, err := NewTemplateEngine()
-	if err != nil {
-		t.Fatalf("failed to create template engine: %v", err)
-	}
-
-	rec := httptest.NewRecorder()
-	data := PageData{Title: "Landing"}
-	if err := engine.RenderStandalone(rec, "landing.html", data); err != nil {
-		t.Fatalf("failed to render standalone: %v", err)
-	}
-
-	ct := rec.Header().Get("Content-Type")
-	if !strings.Contains(ct, "text/html") {
-		t.Errorf("expected Content-Type text/html, got %q", ct)
 	}
 }
 

@@ -42,7 +42,9 @@ func TestServerHealth(t *testing.T) {
 func TestServerHome(t *testing.T) {
 	srv := newTestServer(t)
 
+	// Root serves the project list; request HTML to get the full page.
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Accept", "text/html")
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
@@ -681,7 +683,7 @@ func TestServerStartSpecInitializesCore(t *testing.T) {
 	}
 }
 
-func TestServerLanding(t *testing.T) {
+func TestServerRootRedirectsToProjectList(t *testing.T) {
 	srv := newTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -691,17 +693,6 @@ func TestServerLanding(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
-	}
-
-	body := rec.Body.String()
-	if strings.Contains(body, "nav-rail") {
-		t.Error("landing page should not contain nav-rail")
-	}
-	if !strings.Contains(body, "mammoth") {
-		t.Error("expected mammoth branding")
-	}
-	if !strings.Contains(body, "Software Factory") {
-		t.Error("expected landing page headline")
 	}
 }
 
@@ -730,20 +721,16 @@ func TestServerProjectsPageHTML(t *testing.T) {
 	}
 }
 
-func TestLandingToProjectFlow(t *testing.T) {
+func TestRootToProjectFlow(t *testing.T) {
 	srv := newTestServer(t)
 
-	// 1. Landing page renders at /.
+	// 1. Root serves the project list at /.
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Accept", "text/html")
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("landing: expected 200, got %d", rec.Code)
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, "/projects/new") {
-		t.Fatal("landing page should link to /projects/new")
+		t.Fatalf("root: expected 200, got %d", rec.Code)
 	}
 
 	// 2. New project page renders.

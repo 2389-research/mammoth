@@ -69,10 +69,8 @@ func NewTemplateEngine() (*TemplateEngine, error) {
 	}
 
 	// Standalone templates are rendered without the layout wrapper.
-	// Used for pages that need full control of their HTML (e.g. landing page).
-	standalonePages := []string{
-		"landing.html",
-	}
+	// Used for pages that need full control of their HTML.
+	standalonePages := []string{}
 
 	for _, page := range standalonePages {
 		t, err := template.New(page).Funcs(funcs).ParseFS(

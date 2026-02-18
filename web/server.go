@@ -168,7 +168,7 @@ func (s *Server) buildRouter() chi.Router {
 	r.Use(middleware.Recoverer)
 
 	// Top-level routes
-	r.Get("/", s.handleLanding)
+	r.Get("/", s.handleProjectList)
 	r.Get("/health", s.handleHealth)
 
 	// Spec builder static assets served from embedded filesystem.
@@ -219,15 +219,6 @@ func (s *Server) buildRouter() chi.Router {
 	})
 
 	return r
-}
-
-// handleLanding renders the standalone landing page at /.
-func (s *Server) handleLanding(w http.ResponseWriter, r *http.Request) {
-	data := PageData{Title: "Home"}
-	if err := s.templates.RenderStandalone(w, "landing.html", data); err != nil {
-		log.Printf("component=web.server action=render_failed view=landing err=%v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-	}
 }
 
 // handleHealth returns a JSON health check response.
