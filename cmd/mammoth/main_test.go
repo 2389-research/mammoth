@@ -976,6 +976,9 @@ func TestParseServeSubcommand(t *testing.T) {
 	if scfg.dataDir != "" {
 		t.Errorf("expected empty dataDir by default, got %q", scfg.dataDir)
 	}
+	if scfg.global {
+		t.Error("expected global=false by default")
+	}
 }
 
 func TestParseServeSubcommandWithPort(t *testing.T) {
@@ -1023,6 +1026,55 @@ func TestParseServeArgsReturnsFalseForNonServe(t *testing.T) {
 	if ok {
 		t.Error("expected parseServeArgs to return false for '--server' flag")
 	}
+}
+
+func TestParseServeArgsGlobal(t *testing.T) {
+	scfg, ok := parseServeArgs([]string{"serve", "--global"})
+	if !ok {
+		t.Fatal("expected serve subcommand to be detected")
+	}
+	if !scfg.global {
+		t.Fatal("expected global flag to be true")
+	}
+}
+
+func TestParseServeArgsDefaultLocal(t *testing.T) {
+	scfg, ok := parseServeArgs([]string{"serve"})
+	if !ok {
+		t.Fatal("expected serve subcommand to be detected")
+	}
+	if scfg.global {
+		t.Fatal("expected global flag to be false by default")
+	}
+}
+
+func TestBuildWebServerDefaultLocal(t *testing.T) {
+	scfg := serveConfig{port: 0}
+	srv, err := buildWebServer(scfg)
+	if err != nil {
+		t.Fatalf("buildWebServer: %v", err)
+	}
+	// Server was created in local mode (CWD is root)
+	_ = srv
+}
+
+func TestBuildWebServerGlobal(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	scfg := serveConfig{port: 0, global: true}
+	srv, err := buildWebServer(scfg)
+	if err != nil {
+		t.Fatalf("buildWebServer: %v", err)
+	}
+	_ = srv
+}
+
+func TestBuildWebServerExplicitDataDir(t *testing.T) {
+	scfg := serveConfig{port: 0, dataDir: t.TempDir()}
+	srv, err := buildWebServer(scfg)
+	if err != nil {
+		t.Fatalf("buildWebServer: %v", err)
+	}
+	_ = srv
 }
 
 func TestRunServeStartsHealthEndpoint(t *testing.T) {

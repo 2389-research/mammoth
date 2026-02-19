@@ -46,6 +46,7 @@ type config struct {
 type serveConfig struct {
 	port    int
 	dataDir string
+	global  bool
 }
 
 func main() {
@@ -737,12 +738,14 @@ func parseServeArgs(args []string) (serveConfig, bool) {
 	var scfg serveConfig
 	fs := flag.NewFlagSet("mammoth serve", flag.ContinueOnError)
 	fs.IntVar(&scfg.port, "port", 2389, "Server port (default: 2389)")
-	fs.StringVar(&scfg.dataDir, "data-dir", "", "Data directory for projects (default: $XDG_DATA_HOME/mammoth)")
+	fs.StringVar(&scfg.dataDir, "data-dir", "", "Data directory for projects (overrides --global)")
+	fs.BoolVar(&scfg.global, "global", false, "Use global data directory (~/.local/share/mammoth) instead of local .mammoth/")
 
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: mammoth serve [flags]")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "Start the unified web server for the mammoth wizard flow.")
+		fmt.Fprintln(os.Stderr, "By default, uses current directory as project root (.mammoth/ for state).")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "Flags:")
 		fs.PrintDefaults()
@@ -759,21 +762,34 @@ func parseServeArgs(args []string) (serveConfig, bool) {
 }
 
 // buildWebServer creates a web.Server for the "mammoth serve" subcommand,
-// resolving the data directory and configuring the listen address.
+// choosing between local and global workspace modes based on flags.
+// Priority: --data-dir > --global > default (local mode, CWD is project root).
 func buildWebServer(scfg serveConfig) (*web.Server, error) {
-	dataDir := scfg.dataDir
-	if dataDir == "" {
+	var ws web.Workspace
+
+	if scfg.dataDir != "" {
+		// Explicit --data-dir: use it as a global workspace (backward compat).
+		ws = web.NewGlobalWorkspace(scfg.dataDir)
+	} else if scfg.global {
+		// --global: use XDG data dir as a global workspace.
 		resolved, err := resolveDataDir("")
 		if err != nil {
 			return nil, fmt.Errorf("resolve data dir: %w", err)
 		}
-		dataDir = resolved
+		ws = web.NewGlobalWorkspace(resolved)
+	} else {
+		// Default: local mode, CWD is root, state in .mammoth/.
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("get working directory: %w", err)
+		}
+		ws = web.NewLocalWorkspace(cwd)
 	}
 
 	addr := fmt.Sprintf("127.0.0.1:%d", scfg.port)
 	srv, err := web.NewServer(web.ServerConfig{
 		Addr:      addr,
-		Workspace: web.NewGlobalWorkspace(dataDir),
+		Workspace: ws,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create web server: %w", err)
@@ -813,7 +829,16 @@ func runServe(scfg serveConfig) int {
 		httpServer.Close()
 	}()
 
-	fmt.Fprintf(os.Stderr, "mammoth web UI: http://%s\n", addr)
+	// Display startup message indicating mode and data location.
+	if scfg.dataDir != "" {
+		fmt.Fprintf(os.Stderr, "mammoth web UI: http://%s (global: %s)\n", addr, scfg.dataDir)
+	} else if scfg.global {
+		resolved, _ := resolveDataDir("")
+		fmt.Fprintf(os.Stderr, "mammoth web UI: http://%s (global: %s)\n", addr, resolved)
+	} else {
+		cwd, _ := os.Getwd()
+		fmt.Fprintf(os.Stderr, "mammoth web UI: http://%s (local: %s)\n", addr, cwd)
+	}
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
