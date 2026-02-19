@@ -77,7 +77,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		cfg.Addr = "127.0.0.1:2389"
 	}
 	if cfg.Workspace.StateDir == "" {
-		return nil, fmt.Errorf("Workspace.StateDir must not be empty")
+		return nil, fmt.Errorf("workspace state dir must not be empty")
 	}
 
 	store := NewProjectStore(cfg.Workspace.ProjectStoreDir())

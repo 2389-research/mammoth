@@ -343,7 +343,7 @@ func TestServerArtifactEndpoints(t *testing.T) {
 		t.Fatalf("update project: %v", err)
 	}
 
-	base := filepath.Join(srv.workspace.StateDir, p.ID, "artifacts", p.RunID)
+	base := srv.workspace.ArtifactDir(p.ID, p.RunID)
 	if err := os.MkdirAll(filepath.Join(base, "logs"), 0o755); err != nil {
 		t.Fatalf("mkdir artifacts: %v", err)
 	}
@@ -438,7 +438,7 @@ func TestServerFinalTimeline(t *testing.T) {
 		t.Fatalf("update project: %v", err)
 	}
 
-	base := filepath.Join(srv.workspace.StateDir, p.ID, "artifacts", p.RunID)
+	base := srv.workspace.ProgressLogDir(p.ID, p.RunID)
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		t.Fatalf("mkdir artifacts: %v", err)
 	}
