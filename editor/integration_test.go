@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -27,8 +28,8 @@ const validTestDOT = `digraph test {
 func setupTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	store := NewStore(100, time.Hour)
-	// Template paths relative to the editor package directory
-	srv := NewServer(store, "templates", "static")
+	// contentFS relative to the editor package directory
+	srv := NewServer(store, os.DirFS("."))
 	return httptest.NewServer(srv)
 }
 

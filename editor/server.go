@@ -5,8 +5,8 @@ package editor
 
 import (
 	"html/template"
+	"io/fs"
 	"net/http"
-	"path/filepath"
 
 	"github.com/2389-research/mammoth/dot"
 	"github.com/go-chi/chi/v5"
@@ -73,8 +73,10 @@ type Server struct {
 }
 
 // NewServer creates a Server with all routes configured and templates parsed.
-// Optional ServerOption values configure additional behavior such as model options.
-func NewServer(store *Store, templateDir string, staticDir string, opts ...ServerOption) *Server {
+// contentFS must contain "templates/" and "static/" subtrees (e.g. the embedded
+// ContentFS or os.DirFS(".") for development). Optional ServerOption values
+// configure additional behavior such as model options.
+func NewServer(store *Store, contentFS fs.FS, opts ...ServerOption) *Server {
 	s := &Server{
 		store: store,
 	}
@@ -82,26 +84,35 @@ func NewServer(store *Store, templateDir string, staticDir string, opts ...Serve
 		opt(s)
 	}
 
+	templatesSub, err := fs.Sub(contentFS, "templates")
+	if err != nil {
+		panic("editor: templates sub-FS: " + err.Error())
+	}
+
 	// Parse shared templates: layout + partials
-	shared := template.Must(template.ParseGlob(filepath.Join(templateDir, "partials", "*.html")))
-	template.Must(shared.ParseFiles(filepath.Join(templateDir, "layout.html")))
+	shared := template.Must(template.New("").ParseFS(templatesSub, "partials/*.html"))
+	template.Must(shared.ParseFS(templatesSub, "layout.html"))
 	s.templates = shared
 
 	// Build page-specific template sets by cloning shared templates
 	// and adding the page that defines "content"
 	landingClone := template.Must(shared.Clone())
-	template.Must(landingClone.ParseFiles(filepath.Join(templateDir, "landing.html")))
+	template.Must(landingClone.ParseFS(templatesSub, "landing.html"))
 	s.landingTmpl = landingClone
 
 	editorClone := template.Must(shared.Clone())
-	template.Must(editorClone.ParseFiles(filepath.Join(templateDir, "editor.html")))
+	template.Must(editorClone.ParseFS(templatesSub, "editor.html"))
 	s.editorTmpl = editorClone
 
 	// Build router
 	r := chi.NewRouter()
 
 	// Static files
-	fileServer := http.FileServer(http.Dir(staticDir))
+	staticSub, err := fs.Sub(contentFS, "static")
+	if err != nil {
+		panic("editor: static sub-FS: " + err.Error())
+	}
+	fileServer := http.FileServer(http.FS(staticSub))
 	r.Handle("/static/*", http.StripPrefix("/static/", fileServer))
 
 	// Landing page

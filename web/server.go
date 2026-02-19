@@ -103,10 +103,6 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		return nil, fmt.Errorf("initializing spec templates: %w", err)
 	}
 
-	editorTemplateDir, editorStaticDir, err := resolveEditorAssetDirs()
-	if err != nil {
-		return nil, fmt.Errorf("resolving editor assets: %w", err)
-	}
 	editorStore := editor.NewStore(200, 24*time.Hour)
 	editorStore.StartCleanup(15 * time.Minute)
 
@@ -120,7 +116,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 			Provider:    m.Provider,
 		})
 	}
-	editorServer := editor.NewServer(editorStore, editorTemplateDir, editorStaticDir, editor.WithModelOptions(modelOpts))
+	editorServer := editor.NewServer(editorStore, editor.ContentFS, editor.WithModelOptions(modelOpts))
 
 	s := &Server{
 		store:        store,
@@ -688,6 +684,7 @@ func (s *Server) startBuildExecution(projectID string, p *Project, runID string,
 		ArtifactDir:        artifactDir,
 		RunID:              runID,
 		AutoCheckpointPath: checkpointPath,
+		DefaultRetry:       attractor.RetryPolicyNone(),
 		Backend:            detectBackendFromEnv(false),
 		Handlers:           handlers,
 		EventHandler: func(evt attractor.EngineEvent) {

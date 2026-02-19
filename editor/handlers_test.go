@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +29,7 @@ const invalidTestDOT = `not valid dot at all {{{`
 func newTestServer(t *testing.T) (*Server, *Store) {
 	t.Helper()
 	store := NewStore(100, time.Hour)
-	srv := NewServer(store, "templates", "static")
+	srv := NewServer(store, os.DirFS("."))
 	return srv, store
 }
 
@@ -774,7 +775,7 @@ func TestNewServerAcceptsModelOptions(t *testing.T) {
 		{ID: "claude-sonnet-4-5", DisplayName: "Claude Sonnet 4.5", Provider: "anthropic"},
 		{ID: "gpt-5.2", DisplayName: "GPT-5.2", Provider: "openai"},
 	}
-	srv := NewServer(store, "templates", "static", WithModelOptions(models))
+	srv := NewServer(store, os.DirFS("."), WithModelOptions(models))
 	if srv == nil {
 		t.Fatal("expected server to be created")
 	}
@@ -789,7 +790,7 @@ func TestNodeEditFormShowsModelDropdown(t *testing.T) {
 		{ID: "claude-sonnet-4-5", DisplayName: "Claude Sonnet 4.5", Provider: "anthropic"},
 		{ID: "gpt-5.2", DisplayName: "GPT-5.2", Provider: "openai"},
 	}
-	srv := NewServer(store, "templates", "static", WithModelOptions(models))
+	srv := NewServer(store, os.DirFS("."), WithModelOptions(models))
 
 	sessID := createTestSession(t, store)
 
@@ -819,7 +820,7 @@ func TestNodeEditFormShowsModelDropdown(t *testing.T) {
 
 func TestNodeEditFormShowsResolvedModel(t *testing.T) {
 	store := NewStore(100, time.Hour)
-	srv := NewServer(store, "templates", "static")
+	srv := NewServer(store, os.DirFS("."))
 
 	// Create session with model_stylesheet
 	dotWithStylesheet := `digraph test {
@@ -857,7 +858,7 @@ func TestNodeEditFormModelOverrideRoundTrip(t *testing.T) {
 		{ID: "claude-sonnet-4-5", DisplayName: "Claude Sonnet 4.5", Provider: "anthropic"},
 		{ID: "claude-opus-4-6", DisplayName: "Claude Opus 4.6", Provider: "anthropic"},
 	}
-	srv := NewServer(store, "templates", "static", WithModelOptions(models))
+	srv := NewServer(store, os.DirFS("."), WithModelOptions(models))
 
 	sessID := createTestSession(t, store)
 
