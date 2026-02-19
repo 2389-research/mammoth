@@ -50,7 +50,7 @@ func printHelp(w io.Writer, ver string) {
 	fmt.Fprintln(w, "Pipeline Flags:")
 	fmt.Fprintln(w, "  -retry <policy>       none, standard, aggressive, linear, patient (default: none)")
 	fmt.Fprintln(w, "  -checkpoint-dir <dir> Directory for checkpoint files")
-	fmt.Fprintln(w, "  -artifact-dir <dir>   Directory for artifact storage")
+	fmt.Fprintln(w, "  -artifact-dir <dir>   Directory for artifact storage (default: current directory)")
 	fmt.Fprintln(w, "  -data-dir <dir>       Persistent state directory (default: $XDG_DATA_HOME/mammoth)")
 	fmt.Fprintln(w, "  -base-url <url>       Custom API base URL for the LLM provider")
 	fmt.Fprintln(w, "  -tui                  Run with interactive terminal UI")

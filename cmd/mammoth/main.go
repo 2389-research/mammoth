@@ -82,7 +82,7 @@ func parseFlags() config {
 	fs.IntVar(&cfg.port, "port", 2389, "Server port (default: 2389)")
 	fs.BoolVar(&cfg.validateOnly, "validate", false, "Validate pipeline without executing")
 	fs.StringVar(&cfg.checkpointDir, "checkpoint-dir", "", "Directory for checkpoint files")
-	fs.StringVar(&cfg.artifactDir, "artifact-dir", "", "Directory for artifact storage")
+	fs.StringVar(&cfg.artifactDir, "artifact-dir", ".", "Directory for artifact storage (default: current directory)")
 	fs.StringVar(&cfg.dataDir, "data-dir", "", "Data directory for persistent state (default: $XDG_DATA_HOME/mammoth)")
 	fs.StringVar(&cfg.retryPolicy, "retry", "none", "Default retry policy: none, standard, aggressive, linear, patient")
 	fs.StringVar(&cfg.baseURL, "base-url", "", "Custom API base URL for the LLM provider")

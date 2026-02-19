@@ -65,8 +65,8 @@ func TestParseFlagsDefaults(t *testing.T) {
 	if cfg.checkpointDir != "" {
 		t.Errorf("expected empty checkpointDir, got %q", cfg.checkpointDir)
 	}
-	if cfg.artifactDir != "" {
-		t.Errorf("expected empty artifactDir, got %q", cfg.artifactDir)
+	if cfg.artifactDir != "." {
+		t.Errorf("expected artifactDir='.', got %q", cfg.artifactDir)
 	}
 	if cfg.dataDir != "" {
 		t.Errorf("expected empty dataDir, got %q", cfg.dataDir)
