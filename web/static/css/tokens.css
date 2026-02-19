@@ -9,22 +9,22 @@
     --bg-card: hsl(0, 0%, 100%);            /* #FFFFFF white */
     --text-primary: hsl(20, 14%, 12%);      /* #231F1B warm near-black */
     --text-secondary: hsl(20, 10%, 30%);    /* #4A4340 warm dark gray */
-    --text-muted: hsl(20, 6%, 52%);         /* #8A8480 warm medium gray */
+    --text-muted: hsl(20, 6%, 44%);         /* #766F6A warm medium gray — WCAG AA on white */
     --accent: hsl(30, 12%, 91%);            /* #E8E4DF warm accent */
     --accent-hover: hsl(30, 12%, 85%);      /* slightly darker */
     --border: hsl(30, 10%, 90%);            /* #E6E2DD warm border */
     --border-subtle: hsl(30, 10%, 93%);     /* #EDEBE8 lighter border */
-    --success: hsl(162, 30%, 48%);          /* teal green */
+    --success: hsl(162, 38%, 35%);          /* teal green — WCAG AA with white text */
     --warning: hsl(38, 50%, 55%);           /* warm amber */
     --danger: hsl(0, 60%, 50%);             /* red */
 
     /* Role/agent colors */
     --badge-manager: hsl(20, 14%, 12%);     /* dark - orchestrator */
-    --badge-brainstormer: hsl(162, 30%, 48%); /* teal - researcher */
+    --badge-brainstormer: hsl(162, 38%, 35%); /* teal - researcher */
     --badge-planner: hsl(250, 30%, 55%);    /* purple - architect */
-    --badge-dot_generator: hsl(162, 30%, 48%);
+    --badge-dot_generator: hsl(162, 38%, 35%);
     --badge-critic: hsl(38, 50%, 55%);
-    --badge-agent: hsl(20, 6%, 52%);
+    --badge-agent: hsl(20, 6%, 44%);
 
     /* Chat-specific colors — lighter, warmer versions */
     --human-bg: hsl(30, 12%, 93%);          /* secondary bg for human messages */

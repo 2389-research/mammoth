@@ -77,7 +77,6 @@ html, body {
 }
 .command-bar-chevron {
     color: var(--text-muted);
-    opacity: 0.5;
     font-size: 14px;
     flex-shrink: 0;
 }
@@ -148,6 +147,7 @@ html, body {
 .btn-success:hover {
     background: var(--success);
     color: #fff;
+    border-color: var(--success);
 }
 
 .btn-sm {

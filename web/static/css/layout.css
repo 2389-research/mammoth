@@ -43,9 +43,9 @@
     border: 1px solid var(--border);
     background: var(--bg-secondary);
 }
-.web-phase-spec { color: #3b82f6; }
-.web-phase-edit { color: #b45309; }
-.web-phase-build { color: #059669; }
+.web-phase-spec { color: #1D4ED8; }
+.web-phase-edit { color: #92400E; }
+.web-phase-build { color: #047857; }
 .web-phase-done { color: var(--text-muted); }
 
 /* --- Grid utilities --- */
