@@ -343,7 +343,7 @@ func TestServerArtifactEndpoints(t *testing.T) {
 		t.Fatalf("update project: %v", err)
 	}
 
-	base := filepath.Join(srv.dataDir, p.ID, "artifacts", p.RunID)
+	base := filepath.Join(srv.workspace.StateDir, p.ID, "artifacts", p.RunID)
 	if err := os.MkdirAll(filepath.Join(base, "logs"), 0o755); err != nil {
 		t.Fatalf("mkdir artifacts: %v", err)
 	}
@@ -438,7 +438,7 @@ func TestServerFinalTimeline(t *testing.T) {
 		t.Fatalf("update project: %v", err)
 	}
 
-	base := filepath.Join(srv.dataDir, p.ID, "artifacts", p.RunID)
+	base := filepath.Join(srv.workspace.StateDir, p.ID, "artifacts", p.RunID)
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		t.Fatalf("mkdir artifacts: %v", err)
 	}
@@ -755,6 +755,50 @@ func TestRootToProjectFlow(t *testing.T) {
 	}
 }
 
+func TestNewServerWithLocalWorkspace(t *testing.T) {
+	t.Setenv("MAMMOTH_BACKEND", "")
+	t.Setenv("MAMMOTH_DISABLE_PROGRESS_LOG", "1")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	tmpDir := t.TempDir()
+	ws := NewLocalWorkspace(tmpDir)
+	cfg := ServerConfig{
+		Addr:      "127.0.0.1:0",
+		Workspace: ws,
+	}
+	srv, err := NewServer(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if srv.workspace.Mode != ModeLocal {
+		t.Fatalf("expected local mode, got %s", srv.workspace.Mode)
+	}
+}
+
+func TestNewServerWithGlobalWorkspace(t *testing.T) {
+	t.Setenv("MAMMOTH_BACKEND", "")
+	t.Setenv("MAMMOTH_DISABLE_PROGRESS_LOG", "1")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	tmpDir := t.TempDir()
+	ws := NewGlobalWorkspace(tmpDir)
+	cfg := ServerConfig{
+		Addr:      "127.0.0.1:0",
+		Workspace: ws,
+	}
+	srv, err := NewServer(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if srv.workspace.Mode != ModeGlobal {
+		t.Fatalf("expected global mode, got %s", srv.workspace.Mode)
+	}
+}
+
 // newTestServer creates a Server with a temporary data directory for testing.
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
@@ -764,8 +808,8 @@ func newTestServer(t *testing.T) *Server {
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("GEMINI_API_KEY", "")
 	cfg := ServerConfig{
-		Addr:    "127.0.0.1:0",
-		DataDir: t.TempDir(),
+		Addr:      "127.0.0.1:0",
+		Workspace: NewGlobalWorkspace(t.TempDir()),
 	}
 	srv, err := NewServer(cfg)
 	if err != nil {

@@ -38,7 +38,7 @@ type Server struct {
 	templates *TemplateEngine
 	router    chi.Router
 	addr      string
-	dataDir   string
+	workspace Workspace
 
 	// Spec builder state and renderer, initialized from embedded FS.
 	specState    *server.AppState
@@ -66,8 +66,8 @@ type Server struct {
 
 // ServerConfig holds the configuration for the unified web server.
 type ServerConfig struct {
-	Addr    string // listen address (default: "127.0.0.1:2389")
-	DataDir string // data directory for projects
+	Addr      string    // listen address (default: "127.0.0.1:2389")
+	Workspace Workspace // workspace for path resolution
 }
 
 // NewServer creates a new Server with the given configuration. It initializes
@@ -76,13 +76,13 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if cfg.Addr == "" {
 		cfg.Addr = "127.0.0.1:2389"
 	}
-	if cfg.DataDir == "" {
-		return nil, fmt.Errorf("DataDir must not be empty")
+	if cfg.Workspace.StateDir == "" {
+		return nil, fmt.Errorf("Workspace.StateDir must not be empty")
 	}
 
-	store := NewProjectStore(cfg.DataDir)
-	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
-		return nil, fmt.Errorf("creating data directory: %w", err)
+	store := NewProjectStore(cfg.Workspace.ProjectStoreDir())
+	if err := os.MkdirAll(cfg.Workspace.StateDir, 0o755); err != nil {
+		return nil, fmt.Errorf("creating state directory: %w", err)
 	}
 	if err := store.LoadAll(); err != nil {
 		return nil, fmt.Errorf("loading projects: %w", err)
@@ -95,7 +95,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 
 	// Initialize spec builder state with provider detection.
 	providerStatus := server.DetectProviders()
-	specState := server.NewAppState(cfg.DataDir, providerStatus)
+	specState := server.NewAppState(cfg.Workspace.StateDir, providerStatus)
 	setupSpecLLMClient(specState, providerStatus)
 
 	specRenderer, err := specweb.NewTemplateRendererFromFS(specweb.ContentFS)
@@ -126,7 +126,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		store:        store,
 		templates:    tmpl,
 		addr:         cfg.Addr,
-		dataDir:      cfg.DataDir,
+		workspace:    cfg.Workspace,
 		specState:    specState,
 		specRenderer: specRenderer,
 		editorServer: editorServer,
@@ -662,15 +662,20 @@ func (s *Server) startBuildExecution(projectID string, p *Project, runID string,
 	s.builds[projectID] = run
 	s.buildsMu.Unlock()
 
-	artifactDir := filepath.Join(s.dataDir, projectID, "artifacts", runID)
-	checkpointPath := filepath.Join(artifactDir, "checkpoint.json")
+	artifactDir := s.workspace.ArtifactDir(projectID, runID)
+	checkpointDir := s.workspace.CheckpointDir(projectID, runID)
+	checkpointPath := filepath.Join(checkpointDir, "checkpoint.json")
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		log.Printf("component=web.build action=create_artifact_dir_failed project_id=%s run_id=%s err=%v", projectID, runID, err)
 	}
+	if err := os.MkdirAll(checkpointDir, 0o755); err != nil {
+		log.Printf("component=web.build action=create_checkpoint_dir_failed project_id=%s run_id=%s err=%v", projectID, runID, err)
+	}
+	progressLogDir := s.workspace.ProgressLogDir(projectID, runID)
 	var progressLogger *attractor.ProgressLogger
 	var progressErr error
 	if os.Getenv("MAMMOTH_DISABLE_PROGRESS_LOG") != "1" {
-		progressLogger, progressErr = attractor.NewProgressLogger(artifactDir)
+		progressLogger, progressErr = attractor.NewProgressLogger(progressLogDir)
 		if progressErr != nil {
 			log.Printf("component=web.build action=init_progress_logger_failed project_id=%s run_id=%s err=%v", projectID, runID, progressErr)
 		}
@@ -830,7 +835,7 @@ func (s *Server) handleFinalTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progressPath := filepath.Join(s.dataDir, projectID, "artifacts", p.RunID, "progress.ndjson")
+	progressPath := filepath.Join(s.workspace.ProgressLogDir(projectID, p.RunID), "progress.ndjson")
 	f, err := os.Open(progressPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -1198,7 +1203,7 @@ func (s *Server) handleArtifactList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	baseDir := filepath.Join(s.dataDir, projectID, "artifacts", p.RunID)
+	baseDir := s.workspace.ArtifactDir(projectID, p.RunID)
 	dirParam := strings.TrimSpace(r.URL.Query().Get("dir"))
 	dirParam = strings.TrimPrefix(filepath.ToSlash(path.Clean("/"+dirParam)), "/")
 	if dirParam == "." {
@@ -1312,7 +1317,7 @@ func (s *Server) handleArtifactFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	baseDir := filepath.Join(s.dataDir, projectID, "artifacts", p.RunID)
+	baseDir := s.workspace.ArtifactDir(projectID, p.RunID)
 	filePath := filepath.Join(baseDir, filepath.FromSlash(relPath))
 	absBase, err := filepath.Abs(baseDir)
 	if err != nil {

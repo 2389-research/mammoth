@@ -772,8 +772,8 @@ func buildWebServer(scfg serveConfig) (*web.Server, error) {
 
 	addr := fmt.Sprintf("127.0.0.1:%d", scfg.port)
 	srv, err := web.NewServer(web.ServerConfig{
-		Addr:    addr,
-		DataDir: dataDir,
+		Addr:      addr,
+		Workspace: web.NewGlobalWorkspace(dataDir),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create web server: %w", err)
