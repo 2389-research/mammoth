@@ -675,6 +675,9 @@ func executeWithRetry(
 	nodeRetries map[string]int,
 	onRetry func(attempt int),
 ) (*Outcome, error) {
+	if policy.MaxAttempts <= 0 {
+		policy.MaxAttempts = 1
+	}
 	shouldRetry := policy.ShouldRetry
 	if shouldRetry == nil {
 		shouldRetry = DefaultShouldRetry
