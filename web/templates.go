@@ -22,6 +22,7 @@ type PageData struct {
 	Mode        string // "idea" or "dot" for project_new
 	ActivePhase string // current wizard phase for highlighting
 	Diagnostics DiagnosticsView
+	Workspace   *Workspace // workspace info for display on project list
 }
 
 // TemplateEngine loads and renders embedded HTML templates.

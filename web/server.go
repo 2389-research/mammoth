@@ -238,9 +238,11 @@ func (s *Server) handleProjectList(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(projects)
 		return
 	}
+	ws := s.workspace
 	data := PageData{
-		Title:    "Projects",
-		Projects: projects,
+		Title:     "Projects",
+		Projects:  projects,
+		Workspace: &ws,
 	}
 	if err := s.templates.Render(w, "home.html", data); err != nil {
 		log.Printf("component=web.server action=render_failed view=home err=%v", err)
