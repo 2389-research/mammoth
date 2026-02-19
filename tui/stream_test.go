@@ -513,7 +513,7 @@ func TestStreamModelVerboseShowsLLMTurn(t *testing.T) {
 	}
 }
 
-func TestStreamModelNonVerboseHidesAgentEvents(t *testing.T) {
+func TestStreamModelAlwaysShowsAgentEvents(t *testing.T) {
 	m := testStreamModel() // non-verbose
 
 	// Start a node
@@ -539,9 +539,16 @@ func TestStreamModelNonVerboseHidesAgentEvents(t *testing.T) {
 	updated, _ = m.Update(toolEvt)
 	m = updated.(StreamModel)
 
-	// Agent lines should not be recorded in non-verbose mode
-	if lines, ok := m.agentLines["build"]; ok && len(lines) > 0 {
-		t.Error("non-verbose mode should not record agent event lines")
+	// Agent lines should be recorded even in non-verbose mode
+	lines := m.agentLines["build"]
+	if len(lines) == 0 {
+		t.Error("agent events should be recorded regardless of verbose flag")
+	}
+
+	// View should include the agent line under the running node
+	view := m.View()
+	if !strings.Contains(view, "read_file") {
+		t.Error("view should show agent tool call event under running node")
 	}
 }
 
@@ -1305,5 +1312,198 @@ func TestStreamModelSetResumeCmd(t *testing.T) {
 	m.resumeCmd()
 	if !called {
 		t.Error("expected resumeCmd to be called")
+	}
+}
+
+func TestFormatToolArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		toolName string
+		argsJSON string
+		want     string
+	}{
+		{"shell command", "shell", `{"command":"ls -la"}`, "$ ls -la"},
+		{"write file", "write_file", `{"path":"/tmp/foo.go"}`, "/tmp/foo.go"},
+		{"read file", "read_file", `{"path":"main.go"}`, "main.go"},
+		{"grep pattern", "grep", `{"pattern":"TODO"}`, "/TODO/"},
+		{"glob pattern", "glob", `{"pattern":"*.go"}`, "*.go"},
+		{"apply patch", "apply_patch", `{"patch":"..."}`, "(patch)"},
+		{"unknown tool", "unknown_tool", `{"foo":"bar"}`, ""},
+		{"invalid json", "shell", `not json`, ""},
+		{"empty args", "shell", `{}`, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatToolArgs(tt.toolName, tt.argsJSON)
+			if got != tt.want {
+				t.Errorf("formatToolArgs(%q, %q) = %q, want %q", tt.toolName, tt.argsJSON, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTruncateOneLine(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		maxLen int
+		want   string
+	}{
+		{"short string", "hello", 10, "hello"},
+		{"exact length", "hello", 5, "hello"},
+		{"truncated", "hello world", 8, "hello w…"},
+		{"multiline takes first", "line one\nline two", 20, "line one"},
+		{"empty lines skipped", "\n\nhello\n", 10, "hello"},
+		{"empty input", "", 10, ""},
+		{"whitespace trimmed", "  hello  ", 10, "hello"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateOneLine(tt.input, tt.maxLen)
+			if got != tt.want {
+				t.Errorf("truncateOneLine(%q, %d) = %q, want %q", tt.input, tt.maxLen, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStreamModelTextDeltaEvents(t *testing.T) {
+	m := testStreamModel()
+
+	// Start a node
+	started := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventStageStarted,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+		},
+	}
+	updated, _ := m.Update(started)
+	m = updated.(StreamModel)
+
+	// Send a text delta event
+	textEvt := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventAgentTextDelta,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+			Data:      map[string]any{"text": "I'll create the file now"},
+		},
+	}
+	updated, _ = m.Update(textEvt)
+	m = updated.(StreamModel)
+
+	lines := m.agentLines["build"]
+	if len(lines) == 0 {
+		t.Fatal("expected text delta to produce agent line")
+	}
+	if !strings.Contains(m.View(), "create the file") {
+		t.Error("view should show text delta content")
+	}
+}
+
+func TestStreamModelToolCallWithArgs(t *testing.T) {
+	m := testStreamModel()
+
+	// Start a node
+	started := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventStageStarted,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+		},
+	}
+	updated, _ := m.Update(started)
+	m = updated.(StreamModel)
+
+	// Send a tool call with shell arguments
+	toolEvt := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventAgentToolCallStart,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+			Data: map[string]any{
+				"tool_name": "shell",
+				"arguments": `{"command":"go build ./..."}`,
+			},
+		},
+	}
+	updated, _ = m.Update(toolEvt)
+	m = updated.(StreamModel)
+
+	view := m.View()
+	if !strings.Contains(view, "shell") {
+		t.Error("view should show tool name")
+	}
+	if !strings.Contains(view, "$ go build") {
+		t.Error("view should show shell command with $ prefix")
+	}
+}
+
+func TestStreamModelToolCallEndWithSnippet(t *testing.T) {
+	m := testStreamModel()
+
+	// Start a node
+	started := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventStageStarted,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+		},
+	}
+	updated, _ := m.Update(started)
+	m = updated.(StreamModel)
+
+	// Send tool end with output snippet
+	toolEnd := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventAgentToolCallEnd,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+			Data: map[string]any{
+				"tool_name":      "write_file",
+				"output_snippet": "wrote 42 bytes to index.html",
+				"duration_ms":    int64(150),
+			},
+		},
+	}
+	updated, _ = m.Update(toolEnd)
+	m = updated.(StreamModel)
+
+	view := m.View()
+	if !strings.Contains(view, "wrote 42 bytes") {
+		t.Error("view should show tool output snippet")
+	}
+}
+
+func TestStreamModelLoopDetectedEvent(t *testing.T) {
+	m := testStreamModel()
+
+	// Start a node
+	started := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventStageStarted,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+		},
+	}
+	updated, _ := m.Update(started)
+	m = updated.(StreamModel)
+
+	// Send loop detection event
+	loopEvt := EngineEventMsg{
+		Event: attractor.EngineEvent{
+			Type:      attractor.EventAgentLoopDetected,
+			NodeID:    "build",
+			Timestamp: time.Now(),
+			Data:      map[string]any{"message": "repeating pattern detected"},
+		},
+	}
+	updated, _ = m.Update(loopEvt)
+	m = updated.(StreamModel)
+
+	view := m.View()
+	if !strings.Contains(view, "loop detected") {
+		t.Error("view should show loop detection warning")
 	}
 }

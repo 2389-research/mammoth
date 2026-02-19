@@ -1,9 +1,10 @@
 // ABOUTME: StreamModel is an inline Bubble Tea model for streaming pipeline progress to the terminal.
-// ABOUTME: Displays node execution status, elapsed times, spinners, and optional verbose agent events without alt-screen.
+// ABOUTME: Displays node execution status, elapsed times, spinners, and agent activity feed (tool calls, LLM turns, text) without alt-screen.
 package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -13,8 +14,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// maxAgentLines limits the number of verbose agent log lines retained per node.
-const maxAgentLines = 5
+// maxAgentLines limits the number of agent log lines retained per node.
+const maxAgentLines = 20
 
 // ResumeInfo holds state from a previous run that is being resumed.
 type ResumeInfo struct {
@@ -60,7 +61,7 @@ type StreamModel struct {
 	startedAt map[string]time.Time     // per-node start time
 	durations map[string]time.Duration // per-node elapsed duration
 
-	// Agent events (verbose mode)
+	// Agent event activity feed (shown under running nodes)
 	agentLines map[string][]string // nodeID → recent agent log lines
 
 	// Token and model tracking
@@ -232,11 +233,11 @@ func (m StreamModel) View() string {
 		b.WriteString(line)
 		b.WriteString("\n")
 
-		// Verbose: show agent lines under running nodes
-		if m.verbose && status == NodeRunning {
+		// Show agent activity lines under running nodes
+		if status == NodeRunning {
 			if lines, ok := m.agentLines[id]; ok {
 				for _, al := range lines {
-					b.WriteString(PendingStyle.Render(fmt.Sprintf("      %s", al)))
+					b.WriteString(fmt.Sprintf("      %s", al))
 					b.WriteString("\n")
 				}
 			}
@@ -312,23 +313,44 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 	case attractor.EventAgentToolCallStart:
 		m.nodeToolCalls[evt.NodeID]++
 		m.totalToolCalls++
-		if m.verbose {
-			toolName := evt.Data["tool_name"]
-			line := fmt.Sprintf("tool: %v", toolName)
+		toolName := fmt.Sprintf("%v", evt.Data["tool_name"])
+		line := LogAgentToolStyle.Render(fmt.Sprintf("▸ %s", toolName))
+		// Show formatted arguments for common tools
+		if args, ok := evt.Data["arguments"].(string); ok && args != "" {
+			detail := formatToolArgs(toolName, args)
+			if detail != "" {
+				line += PendingStyle.Render(fmt.Sprintf(" %s", detail))
+			}
+		}
+		m.appendAgentLine(evt.NodeID, line)
+
+	case attractor.EventAgentToolCallEnd:
+		toolName := fmt.Sprintf("%v", evt.Data["tool_name"])
+		durMs := evt.Data["duration_ms"]
+		// Show output snippet if available
+		if snippet, ok := evt.Data["output_snippet"].(string); ok && snippet != "" {
+			short := truncateOneLine(snippet, 80)
+			line := LogAgentToolStyle.Render(fmt.Sprintf("  %s", toolName)) +
+				PendingStyle.Render(fmt.Sprintf(" → %s (%vms)", short, durMs))
+			m.appendAgentLine(evt.NodeID, line)
+		} else {
+			line := LogAgentToolStyle.Render(fmt.Sprintf("  %s done", toolName)) +
+				PendingStyle.Render(fmt.Sprintf(" (%vms)", durMs))
 			m.appendAgentLine(evt.NodeID, line)
 		}
 
-	case attractor.EventAgentToolCallEnd:
-		if m.verbose {
-			toolName := evt.Data["tool_name"]
-			durMs := evt.Data["duration_ms"]
-			line := fmt.Sprintf("tool: %v done (%vms)", toolName, durMs)
-			m.appendAgentLine(evt.NodeID, line)
+	case attractor.EventAgentTextDelta:
+		if text, ok := evt.Data["text"].(string); ok && text != "" {
+			// Show a truncated preview of streaming agent text
+			short := truncateOneLine(text, 100)
+			if short != "" {
+				line := PendingStyle.Render(fmt.Sprintf("  %s", short))
+				m.appendAgentLine(evt.NodeID, line)
+			}
 		}
 
 	case attractor.EventAgentLLMTurn:
-		// Accumulate tokens (always, not just verbose).
-		// Prefer total_tokens when present; otherwise sum input+output; fall back to legacy "tokens".
+		// Accumulate tokens
 		if evt.Data != nil {
 			turnTokens := 0
 			if totalTok, ok := evt.Data["total_tokens"]; ok && toInt(totalTok) > 0 {
@@ -350,24 +372,25 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 			m.totalTokens += turnTokens
 		}
 
-		if m.verbose {
-			if inputTok, ok := evt.Data["input_tokens"]; ok {
-				outputTok := evt.Data["output_tokens"]
-				line := fmt.Sprintf("llm turn (in:%v out:%v)", inputTok, outputTok)
-				m.appendAgentLine(evt.NodeID, line)
-			} else {
-				tokens := evt.Data["tokens"]
-				line := fmt.Sprintf("llm turn (%v tokens)", tokens)
-				m.appendAgentLine(evt.NodeID, line)
-			}
+		if inputTok, ok := evt.Data["input_tokens"]; ok {
+			outputTok := evt.Data["output_tokens"]
+			line := LogAgentTurnStyle.Render(fmt.Sprintf("  llm turn (in:%v out:%v)", inputTok, outputTok))
+			m.appendAgentLine(evt.NodeID, line)
+		} else {
+			tokens := evt.Data["tokens"]
+			line := LogAgentTurnStyle.Render(fmt.Sprintf("  llm turn (%v tokens)", tokens))
+			m.appendAgentLine(evt.NodeID, line)
 		}
 
 	case attractor.EventAgentSteering:
-		if m.verbose {
-			msg := evt.Data["message"]
-			line := fmt.Sprintf("steering: %v", msg)
-			m.appendAgentLine(evt.NodeID, line)
-		}
+		msg := evt.Data["message"]
+		line := LogAgentSteeringStyle.Render(fmt.Sprintf("  steering: %v", msg))
+		m.appendAgentLine(evt.NodeID, line)
+
+	case attractor.EventAgentLoopDetected:
+		msg := evt.Data["message"]
+		line := LogRetryStyle.Render(fmt.Sprintf("  ⚠ loop detected: %v", msg))
+		m.appendAgentLine(evt.NodeID, line)
 	}
 
 	return m, nil
@@ -758,6 +781,52 @@ func formatTokenCount(n int) string {
 		result = append(result, byte(c))
 	}
 	return string(result)
+}
+
+// formatToolArgs extracts a short display string from a tool's JSON arguments.
+// For shell/bash tools it shows the command; for file tools it shows the path.
+func formatToolArgs(toolName, argsJSON string) string {
+	var args map[string]any
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return ""
+	}
+	switch toolName {
+	case "shell", "bash", "execute_command":
+		if cmd, ok := args["command"].(string); ok {
+			return "$ " + truncateOneLine(cmd, 80)
+		}
+	case "write_file", "read_file", "edit_file":
+		if path, ok := args["path"].(string); ok {
+			return path
+		}
+	case "grep":
+		if pattern, ok := args["pattern"].(string); ok {
+			return fmt.Sprintf("/%s/", truncateOneLine(pattern, 60))
+		}
+	case "glob":
+		if pattern, ok := args["pattern"].(string); ok {
+			return pattern
+		}
+	case "apply_patch":
+		return "(patch)"
+	}
+	return ""
+}
+
+// truncateOneLine takes the first line of s, trims whitespace, and truncates to maxLen.
+func truncateOneLine(s string, maxLen int) string {
+	// Take first non-empty line
+	for _, line := range strings.Split(s, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if len(trimmed) > maxLen {
+			return trimmed[:maxLen-1] + "…"
+		}
+		return trimmed
+	}
+	return ""
 }
 
 // formatDuration formats a duration as a human-readable string like "0.1s" or "2.3s".
