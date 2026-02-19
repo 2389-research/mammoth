@@ -45,8 +45,11 @@ func TestGlobalWorkspacePaths(t *testing.T) {
 func TestLocalArtifactDir(t *testing.T) {
 	ws := NewLocalWorkspace("/home/user/projects/app")
 	got := ws.ArtifactDir("proj-123", "run-456")
-	if got != "/home/user/projects/app" {
-		t.Fatalf("local artifact dir should be root dir, got %s", got)
+	// Local mode: artifacts go directly in the project root so generated
+	// files appear in the user's working directory.
+	expected := "/home/user/projects/app"
+	if got != expected {
+		t.Fatalf("expected %s, got %s", expected, got)
 	}
 }
 

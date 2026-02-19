@@ -1,5 +1,5 @@
 // ABOUTME: Workspace abstraction that resolves all paths based on local vs global mode.
-// ABOUTME: Local mode stores state in .mammoth/ and outputs artifacts to CWD.
+// ABOUTME: All state and artifacts are namespaced under the state directory.
 
 package web
 
@@ -9,7 +9,7 @@ import "path/filepath"
 type WorkspaceMode string
 
 const (
-	// ModeLocal stores state in .mammoth/ under CWD and outputs artifacts to CWD.
+	// ModeLocal stores state and artifacts in .mammoth/ under CWD.
 	ModeLocal WorkspaceMode = "local"
 	// ModeGlobal stores everything under a centralized data directory (XDG).
 	ModeGlobal WorkspaceMode = "global"
@@ -23,7 +23,7 @@ type Workspace struct {
 }
 
 // NewLocalWorkspace creates a workspace rooted at the given directory.
-// State goes in {rootDir}/.mammoth/, artifacts output to {rootDir}/.
+// State and artifacts go in {rootDir}/.mammoth/.
 func NewLocalWorkspace(rootDir string) Workspace {
 	return Workspace{
 		Mode:     ModeLocal,
@@ -53,8 +53,9 @@ func (w Workspace) RunStateDir() string {
 }
 
 // ArtifactDir returns where build artifacts (generated code) should be written.
-// In local mode this is the project root (CWD). In global mode it is nested
-// under the state directory.
+// In local mode, artifacts go directly into the project root so the user sees
+// generated files in their working directory. In global mode, artifacts are
+// namespaced under the state directory by project and run.
 func (w Workspace) ArtifactDir(projectID, runID string) string {
 	if w.Mode == ModeLocal {
 		return w.RootDir
