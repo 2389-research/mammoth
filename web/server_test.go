@@ -799,6 +799,74 @@ func TestNewServerWithGlobalWorkspace(t *testing.T) {
 	}
 }
 
+func TestLocalModeProjectRoundTrip(t *testing.T) {
+	t.Setenv("MAMMOTH_BACKEND", "")
+	t.Setenv("MAMMOTH_DISABLE_PROGRESS_LOG", "1")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	tmpDir := t.TempDir()
+	ws := NewLocalWorkspace(tmpDir)
+	cfg := ServerConfig{
+		Addr:      "127.0.0.1:0",
+		Workspace: ws,
+	}
+	srv, err := NewServer(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify .mammoth was created
+	mammothDir := filepath.Join(tmpDir, ".mammoth")
+	if _, err := os.Stat(mammothDir); os.IsNotExist(err) {
+		t.Fatal("expected .mammoth directory to be created")
+	}
+
+	// Create a project via POST /projects
+	form := url.Values{"prompt": {"Build a test app"}}
+	req := httptest.NewRequest(http.MethodPost, "/projects", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther && rec.Code != http.StatusOK {
+		t.Fatalf("expected redirect or 200, got %d", rec.Code)
+	}
+
+	// Verify project.json was created under .mammoth/
+	projects := srv.store.List()
+	if len(projects) != 1 {
+		t.Fatalf("expected 1 project, got %d", len(projects))
+	}
+
+	p := projects[0]
+	projectJSON := filepath.Join(mammothDir, p.ID, "project.json")
+	if _, err := os.Stat(projectJSON); os.IsNotExist(err) {
+		t.Fatalf("expected project.json at %s", projectJSON)
+	}
+
+	// Verify the project appears in GET /projects listing (JSON)
+	listReq := httptest.NewRequest(http.MethodGet, "/projects", nil)
+	listRec := httptest.NewRecorder()
+	srv.ServeHTTP(listRec, listReq)
+
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for project list, got %d", listRec.Code)
+	}
+
+	var listed []*Project
+	if err := json.NewDecoder(listRec.Body).Decode(&listed); err != nil {
+		t.Fatalf("failed to decode project list: %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("expected 1 project in listing, got %d", len(listed))
+	}
+	if listed[0].ID != p.ID {
+		t.Fatalf("expected project ID %q in listing, got %q", p.ID, listed[0].ID)
+	}
+}
+
 // newTestServer creates a Server with a temporary data directory for testing.
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
