@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -156,6 +157,15 @@ func run(cfg config) int {
 // the pipeline automatically resumes from the last checkpoint. Use -fresh
 // to force a new run.
 func runPipeline(cfg config) int {
+	// Resolve artifact dir to absolute path so the agent backend and LLM
+	// always work with a concrete directory, not a relative ".".
+	if cfg.artifactDir != "" {
+		abs, err := filepath.Abs(cfg.artifactDir)
+		if err == nil {
+			cfg.artifactDir = abs
+		}
+	}
+
 	source, err := os.ReadFile(cfg.pipelineFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -174,10 +184,17 @@ func runPipeline(cfg config) int {
 	// Compute content hash for auto-resume matching
 	sourceHash := attractor.SourceHash(string(source))
 
-	// Resolve data directory for persistent state
-	dataDir, err := resolveDataDir(cfg.dataDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not resolve data dir: %v\n", err)
+	// Resolve data directory for persistent state.
+	// CLI pipeline mode defaults to .mammoth/ in CWD (matching web local mode),
+	// not the XDG data dir. Use -data-dir to override.
+	dataDir := cfg.dataDir
+	if dataDir == "" {
+		cwd, cwdErr := os.Getwd()
+		if cwdErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not get working directory: %v\n", cwdErr)
+		} else {
+			dataDir = filepath.Join(cwd, ".mammoth")
+		}
 	}
 
 	// Set up persistent run state store
@@ -227,6 +244,9 @@ func runPipelineResume(
 	}
 
 	engine := attractor.NewEngine(engineCfg)
+
+	// Wire event handler: always persist to events.jsonl, optionally print verbose.
+	engine.SetEventHandler(buildEventHandler(store, resumeState.ID, cfg.verbose))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -299,12 +319,21 @@ func runPipelineResumeWithStream(
 		PreviousNodes: cp.CompletedNodes,
 	}
 
+	// Capture the persistence handler already wired by the caller.
+	persistHandler := engine.GetEventHandler()
+
 	model := tui.NewStreamModel(graph, engine, cfg.pipelineFile, ctx, cfg.verbose, tui.WithResumeInfo(resumeInfo))
 
 	p := tea.NewProgram(model)
 
 	bridge := tui.NewEventBridge(p.Send)
-	engine.SetEventHandler(bridge.HandleEvent)
+	// Chain: persist event to events.jsonl, then forward to TUI bridge.
+	engine.SetEventHandler(func(evt attractor.EngineEvent) {
+		if persistHandler != nil {
+			persistHandler(evt)
+		}
+		bridge.HandleEvent(evt)
+	})
 
 	tui.WireHumanGate(engine, model.HumanGate())
 
@@ -333,9 +362,8 @@ func runPipelineResumeDirect(
 	graph *attractor.Graph,
 	cpPath string,
 ) (*attractor.RunResult, error) {
-	if cfg.verbose {
-		engine.SetEventHandler(verboseEventHandler)
-	}
+	// Event handler is already wired by the caller (runPipelineResume)
+	// with both persistence and optional verbose output.
 
 	wireInterviewer(engine)
 
@@ -429,6 +457,9 @@ func runPipelineFresh(
 		}
 	}
 
+	// Wire event handler: always persist to events.jsonl, optionally print verbose.
+	engine.SetEventHandler(buildEventHandler(store, runID, cfg.verbose))
+
 	// Choose between inline streaming TUI (interactive) and direct execution
 	// (non-interactive: tests, CI, piped output).
 	var result *attractor.RunResult
@@ -491,12 +522,22 @@ func runPipelineWithStream(
 	ctx context.Context,
 	source string,
 ) (*attractor.RunResult, error) {
+	// Capture the persistence handler already wired by the caller so we can
+	// chain it with the TUI bridge handler below.
+	persistHandler := engine.GetEventHandler()
+
 	model := tui.NewStreamModel(graph, engine, cfg.pipelineFile, ctx, cfg.verbose)
 
 	p := tea.NewProgram(model)
 
 	bridge := tui.NewEventBridge(p.Send)
-	engine.SetEventHandler(bridge.HandleEvent)
+	// Chain: persist event to events.jsonl, then forward to TUI bridge.
+	engine.SetEventHandler(func(evt attractor.EngineEvent) {
+		if persistHandler != nil {
+			persistHandler(evt)
+		}
+		bridge.HandleEvent(evt)
+	})
 
 	tui.WireHumanGate(engine, model.HumanGate())
 
@@ -521,9 +562,8 @@ func runPipelineDirect(
 	ctx context.Context,
 	source string,
 ) (*attractor.RunResult, error) {
-	if cfg.verbose {
-		engine.SetEventHandler(verboseEventHandler)
-	}
+	// Event handler is already wired by the caller (runPipelineFresh/runPipelineResume)
+	// with both persistence and optional verbose output.
 
 	// Wire CLI interviewer for human gate nodes
 	wireInterviewer(engine)
@@ -953,6 +993,24 @@ func wireInterviewer(engine *attractor.Engine) {
 	}
 	if hh, ok := handler.(*attractor.WaitForHumanHandler); ok {
 		hh.Interviewer = attractor.NewConsoleInterviewer()
+	}
+}
+
+// buildEventHandler creates an event handler that always persists events to the
+// run state store (events.jsonl) and optionally prints verbose output to stderr.
+// This gives post-hoc observability into what the agent did (tool calls, LLM turns).
+func buildEventHandler(store *attractor.FSRunStateStore, runID string, verbose bool) func(attractor.EngineEvent) {
+	return func(evt attractor.EngineEvent) {
+		// Always persist to events.jsonl
+		if store != nil && runID != "" {
+			if err := store.AddEvent(runID, evt); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not persist event: %v\n", err)
+			}
+		}
+		// Print verbose output when requested
+		if verbose {
+			verboseEventHandler(evt)
+		}
 	}
 }
 
