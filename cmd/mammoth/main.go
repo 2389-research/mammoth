@@ -84,7 +84,7 @@ func parseFlags() config {
 	fs.BoolVar(&cfg.validateOnly, "validate", false, "Validate pipeline without executing")
 	fs.StringVar(&cfg.checkpointDir, "checkpoint-dir", "", "Directory for checkpoint files")
 	fs.StringVar(&cfg.artifactDir, "artifact-dir", ".", "Directory for artifact storage (default: current directory)")
-	fs.StringVar(&cfg.dataDir, "data-dir", "", "Data directory for persistent state (default: $XDG_DATA_HOME/mammoth)")
+	fs.StringVar(&cfg.dataDir, "data-dir", "", "Data directory for persistent state (default: .mammoth/ in CWD)")
 	fs.StringVar(&cfg.retryPolicy, "retry", "none", "Default retry policy: none, standard, aggressive, linear, patient")
 	fs.StringVar(&cfg.baseURL, "base-url", "", "Custom API base URL for the LLM provider")
 	fs.StringVar(&cfg.backendType, "backend", "", "Agent backend: agent (default), claude-code")
@@ -200,7 +200,7 @@ func runPipeline(cfg config) int {
 	// Set up persistent run state store
 	var store *attractor.FSRunStateStore
 	if dataDir != "" {
-		runsDir := dataDir + "/runs"
+		runsDir := filepath.Join(dataDir, "runs")
 		store, err = attractor.NewFSRunStateStore(runsDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not create run state store: %v\n", err)
@@ -707,7 +707,7 @@ func buildPipelineServer(cfg config) (*attractor.PipelineServer, error) {
 	server.RenderDOTSource = render.RenderDOTSource
 
 	// Wire persistent run state store
-	runsDir := dataDir + "/runs"
+	runsDir := filepath.Join(dataDir, "runs")
 	store, err := attractor.NewFSRunStateStore(runsDir)
 	if err != nil {
 		return nil, fmt.Errorf("create run state store: %w", err)

@@ -1,5 +1,5 @@
 // ABOUTME: Tests for the StreamModel inline Bubble Tea progress display.
-// ABOUTME: Covers constructor, Init, Update message handling, View rendering, verbose mode, and result channel.
+// ABOUTME: Covers constructor, Init, Update message handling, View rendering, agent activity feed, and result channel.
 package tui
 
 import (

@@ -51,7 +51,7 @@ type StreamModel struct {
 	title   string
 	ctx     context.Context
 	cancel  context.CancelFunc
-	verbose bool
+	verbose bool // reserved for future extra-detail output; agent activity always shown
 
 	humanGate HumanGateModel
 
@@ -313,6 +313,9 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 	case attractor.EventAgentToolCallStart:
 		m.nodeToolCalls[evt.NodeID]++
 		m.totalToolCalls++
+		if evt.Data == nil {
+			break
+		}
 		toolName := fmt.Sprintf("%v", evt.Data["tool_name"])
 		line := LogAgentToolStyle.Render(fmt.Sprintf("▸ %s", toolName))
 		// Show formatted arguments for common tools
@@ -325,6 +328,9 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 		m.appendAgentLine(evt.NodeID, line)
 
 	case attractor.EventAgentToolCallEnd:
+		if evt.Data == nil {
+			break
+		}
 		toolName := fmt.Sprintf("%v", evt.Data["tool_name"])
 		durMs := evt.Data["duration_ms"]
 		// Show output snippet if available
@@ -340,6 +346,9 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 		}
 
 	case attractor.EventAgentTextDelta:
+		if evt.Data == nil {
+			break
+		}
 		if text, ok := evt.Data["text"].(string); ok && text != "" {
 			// Show a truncated preview of streaming agent text
 			short := truncateOneLine(text, 100)
@@ -350,27 +359,28 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 		}
 
 	case attractor.EventAgentLLMTurn:
-		// Accumulate tokens
-		if evt.Data != nil {
-			turnTokens := 0
-			if totalTok, ok := evt.Data["total_tokens"]; ok && toInt(totalTok) > 0 {
-				turnTokens = toInt(totalTok)
-			} else {
-				if inputTok, ok := evt.Data["input_tokens"]; ok {
-					turnTokens += toInt(inputTok)
-				}
-				if outputTok, ok := evt.Data["output_tokens"]; ok {
-					turnTokens += toInt(outputTok)
-				}
-			}
-			if turnTokens == 0 {
-				if tok, ok := evt.Data["tokens"]; ok {
-					turnTokens = toInt(tok)
-				}
-			}
-			m.nodeTokens[evt.NodeID] += turnTokens
-			m.totalTokens += turnTokens
+		if evt.Data == nil {
+			break
 		}
+		// Accumulate tokens
+		turnTokens := 0
+		if totalTok, ok := evt.Data["total_tokens"]; ok && toInt(totalTok) > 0 {
+			turnTokens = toInt(totalTok)
+		} else {
+			if inputTok, ok := evt.Data["input_tokens"]; ok {
+				turnTokens += toInt(inputTok)
+			}
+			if outputTok, ok := evt.Data["output_tokens"]; ok {
+				turnTokens += toInt(outputTok)
+			}
+		}
+		if turnTokens == 0 {
+			if tok, ok := evt.Data["tokens"]; ok {
+				turnTokens = toInt(tok)
+			}
+		}
+		m.nodeTokens[evt.NodeID] += turnTokens
+		m.totalTokens += turnTokens
 
 		if inputTok, ok := evt.Data["input_tokens"]; ok {
 			outputTok := evt.Data["output_tokens"]
@@ -383,11 +393,17 @@ func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) 
 		}
 
 	case attractor.EventAgentSteering:
+		if evt.Data == nil {
+			break
+		}
 		msg := evt.Data["message"]
 		line := LogAgentSteeringStyle.Render(fmt.Sprintf("  steering: %v", msg))
 		m.appendAgentLine(evt.NodeID, line)
 
 	case attractor.EventAgentLoopDetected:
+		if evt.Data == nil {
+			break
+		}
 		msg := evt.Data["message"]
 		line := LogRetryStyle.Render(fmt.Sprintf("  ⚠ loop detected: %v", msg))
 		m.appendAgentLine(evt.NodeID, line)
@@ -662,7 +678,7 @@ func (m StreamModel) nodeIndexByID(id string) int {
 	return -1
 }
 
-// appendAgentLine adds a verbose agent log line for a node, keeping a bounded buffer.
+// appendAgentLine adds an agent log line for a node, keeping a bounded buffer.
 func (m *StreamModel) appendAgentLine(nodeID, line string) {
 	lines := m.agentLines[nodeID]
 	if len(lines) >= maxAgentLines {
@@ -815,6 +831,9 @@ func formatToolArgs(toolName, argsJSON string) string {
 
 // truncateOneLine takes the first line of s, trims whitespace, and truncates to maxLen.
 func truncateOneLine(s string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
 	// Take first non-empty line
 	for _, line := range strings.Split(s, "\n") {
 		trimmed := strings.TrimSpace(line)
