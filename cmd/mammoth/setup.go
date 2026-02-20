@@ -52,18 +52,19 @@ func parseSetupArgs(args []string) (setupConfig, bool) {
 
 // providerInfo holds the detection state for a single LLM provider.
 type providerInfo struct {
-	name   string
-	envVar string
-	prefix string // expected key prefix for format validation
-	isSet  bool
+	name       string
+	envVar     string
+	baseURLVar string // env var name for the provider's base URL
+	prefix     string // expected key prefix for format validation
+	isSet      bool
 }
 
 // detectProviders checks which LLM API keys are set in the environment.
 func detectProviders() []providerInfo {
 	providers := []providerInfo{
-		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", prefix: "sk-ant-"},
-		{name: "OpenAI", envVar: "OPENAI_API_KEY", prefix: "sk-"},
-		{name: "Gemini", envVar: "GEMINI_API_KEY", prefix: "AIza"},
+		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", baseURLVar: "ANTHROPIC_BASE_URL", prefix: "sk-ant-"},
+		{name: "OpenAI", envVar: "OPENAI_API_KEY", baseURLVar: "OPENAI_BASE_URL", prefix: "sk-"},
+		{name: "Gemini", envVar: "GEMINI_API_KEY", baseURLVar: "GEMINI_BASE_URL", prefix: "AIza"},
 	}
 	for i := range providers {
 		providers[i].isSet = os.Getenv(providers[i].envVar) != ""
@@ -138,6 +139,39 @@ func collectKeys(r io.Reader, w io.Writer, providers []providerInfo) map[string]
 		}
 
 		collected[p.envVar] = key
+	}
+
+	return collected
+}
+
+// collectBaseURLs interactively prompts for custom base URLs for providers
+// that have API keys configured. Returns a map of baseURLVar->url for URLs
+// the user entered. Providers without keys are skipped, and providers whose
+// base URL env var is already set in the environment are reported and skipped.
+func collectBaseURLs(r io.Reader, w io.Writer, providers []providerInfo) map[string]string {
+	scanner := bufio.NewScanner(r)
+	collected := map[string]string{}
+
+	for _, p := range providers {
+		if !p.isSet {
+			continue
+		}
+
+		if os.Getenv(p.baseURLVar) != "" {
+			fmt.Fprintf(w, "  %s base URL: already set ✓\n", p.name)
+			continue
+		}
+
+		fmt.Fprintf(w, "  %s base URL (%s): ", p.name, p.baseURLVar)
+		if !scanner.Scan() {
+			break
+		}
+		url := strings.TrimSpace(scanner.Text())
+		if url == "" {
+			continue
+		}
+
+		collected[p.baseURLVar] = url
 	}
 
 	return collected

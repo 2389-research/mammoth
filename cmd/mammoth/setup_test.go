@@ -72,8 +72,8 @@ func TestDetectProviders_NoneSet(t *testing.T) {
 func TestPrintProviderStatus(t *testing.T) {
 	var buf bytes.Buffer
 	providers := []providerInfo{
-		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", isSet: true},
-		{name: "OpenAI", envVar: "OPENAI_API_KEY", isSet: false},
+		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", baseURLVar: "ANTHROPIC_BASE_URL", isSet: true},
+		{name: "OpenAI", envVar: "OPENAI_API_KEY", baseURLVar: "OPENAI_BASE_URL", isSet: false},
 	}
 	printProviderStatus(&buf, providers)
 	out := buf.String()
@@ -114,9 +114,9 @@ func TestCollectKeys_SkipsSetProviders(t *testing.T) {
 	var w bytes.Buffer
 
 	providers := []providerInfo{
-		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", prefix: "sk-ant-", isSet: true},
-		{name: "OpenAI", envVar: "OPENAI_API_KEY", prefix: "sk-", isSet: false},
-		{name: "Gemini", envVar: "GEMINI_API_KEY", prefix: "AIza", isSet: false},
+		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", baseURLVar: "ANTHROPIC_BASE_URL", prefix: "sk-ant-", isSet: true},
+		{name: "OpenAI", envVar: "OPENAI_API_KEY", baseURLVar: "OPENAI_BASE_URL", prefix: "sk-", isSet: false},
+		{name: "Gemini", envVar: "GEMINI_API_KEY", baseURLVar: "GEMINI_BASE_URL", prefix: "AIza", isSet: false},
 	}
 
 	collected := collectKeys(r, &w, providers)
@@ -134,7 +134,7 @@ func TestCollectKeys_AcceptsValidKey(t *testing.T) {
 	var w bytes.Buffer
 
 	providers := []providerInfo{
-		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", prefix: "sk-ant-", isSet: false},
+		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", baseURLVar: "ANTHROPIC_BASE_URL", prefix: "sk-ant-", isSet: false},
 	}
 
 	collected := collectKeys(r, &w, providers)
@@ -152,7 +152,7 @@ func TestCollectKeys_WarnsOnBadFormat(t *testing.T) {
 	var w bytes.Buffer
 
 	providers := []providerInfo{
-		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", prefix: "sk-ant-", isSet: false},
+		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", baseURLVar: "ANTHROPIC_BASE_URL", prefix: "sk-ant-", isSet: false},
 	}
 
 	collected := collectKeys(r, &w, providers)
@@ -170,7 +170,7 @@ func TestCollectKeys_RejectsOnBadFormatWhenUserDeclines(t *testing.T) {
 	var w bytes.Buffer
 
 	providers := []providerInfo{
-		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", prefix: "sk-ant-", isSet: false},
+		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", baseURLVar: "ANTHROPIC_BASE_URL", prefix: "sk-ant-", isSet: false},
 	}
 
 	collected := collectKeys(r, &w, providers)
@@ -372,6 +372,58 @@ func TestRunSetupEndToEnd_ExistingEnvFile(t *testing.T) {
 	}
 	if !strings.Contains(content, "ANTHROPIC_API_KEY=sk-ant-integration") {
 		t.Errorf("new key not written:\n%s", content)
+	}
+}
+
+func TestCollectBaseURLs_PromptsForConfiguredProviders(t *testing.T) {
+	input := "https://custom.anthropic.example.com\n\n"
+	r := strings.NewReader(input)
+	var w bytes.Buffer
+
+	providers := []providerInfo{
+		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", baseURLVar: "ANTHROPIC_BASE_URL", prefix: "sk-ant-", isSet: true},
+		{name: "OpenAI", envVar: "OPENAI_API_KEY", baseURLVar: "OPENAI_BASE_URL", prefix: "sk-", isSet: true},
+	}
+
+	collected := collectBaseURLs(r, &w, providers)
+	if collected["ANTHROPIC_BASE_URL"] != "https://custom.anthropic.example.com" {
+		t.Errorf("expected Anthropic base URL, got %q", collected["ANTHROPIC_BASE_URL"])
+	}
+	if _, ok := collected["OPENAI_BASE_URL"]; ok {
+		t.Error("expected no OpenAI base URL when blank entered")
+	}
+}
+
+func TestCollectBaseURLs_SkipsProvidersWithoutKeys(t *testing.T) {
+	r := strings.NewReader("")
+	var w bytes.Buffer
+
+	providers := []providerInfo{
+		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", baseURLVar: "ANTHROPIC_BASE_URL", prefix: "sk-ant-", isSet: false},
+	}
+
+	collected := collectBaseURLs(r, &w, providers)
+	if len(collected) != 0 {
+		t.Errorf("expected no base URLs for providers without keys, got %d", len(collected))
+	}
+}
+
+func TestCollectBaseURLs_SkipsAlreadySetBaseURLs(t *testing.T) {
+	t.Setenv("ANTHROPIC_BASE_URL", "https://existing.example.com")
+
+	r := strings.NewReader("")
+	var w bytes.Buffer
+
+	providers := []providerInfo{
+		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", baseURLVar: "ANTHROPIC_BASE_URL", prefix: "sk-ant-", isSet: true},
+	}
+
+	collected := collectBaseURLs(r, &w, providers)
+	if len(collected) != 0 {
+		t.Errorf("expected no base URLs when already set, got %d", len(collected))
+	}
+	if !strings.Contains(w.String(), "already set") {
+		t.Error("expected 'already set' message for existing base URL")
 	}
 }
 
