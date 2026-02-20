@@ -8,9 +8,38 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
+	"time"
 
 	muxllm "github.com/2389-research/mux/llm"
 )
+
+// rateLimitRetryPolicy returns a RetryPolicy tuned for rate limit backoff.
+// Uses exponential backoff (2s base, 3x multiplier) with up to 5 retries,
+// giving the API up to ~3 minutes to recover.
+func rateLimitRetryPolicy() RetryPolicy {
+	return RetryPolicy{
+		MaxRetries:        5,
+		BaseDelay:         2 * time.Second,
+		MaxDelay:          90 * time.Second,
+		BackoffMultiplier: 3.0,
+		Jitter:            true,
+		OnRetry: func(err error, attempt int, delay time.Duration) {
+			log.Printf("component=llm.mux action=rate_limit_retry attempt=%d delay=%s err=%v", attempt+1, delay, err)
+		},
+	}
+}
+
+// isRateLimitError detects 429 rate limit errors from mux provider SDKs.
+// The underlying SDKs (anthropic-sdk-go, openai-go, genai) surface 429 status
+// codes in their error messages.
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "429") || strings.Contains(msg, "rate limit") || strings.Contains(msg, "rate_limit")
+}
 
 // MuxAdapter wraps a mux/llm.Client as a mammoth ProviderAdapter. This allows
 // mammoth's agent loop to use mux as an LLM provider without any changes to
@@ -30,10 +59,19 @@ func (a *MuxAdapter) Name() string {
 	return a.name
 }
 
-// Complete sends a completion request through the mux client.
+// Complete sends a completion request through the mux client. Rate limit
+// errors (429) are automatically retried with exponential backoff.
 func (a *MuxAdapter) Complete(ctx context.Context, req Request) (*Response, error) {
 	muxReq := convertRequest(req)
-	muxResp, err := a.client.CreateMessage(ctx, muxReq)
+
+	var muxResp *muxllm.Response
+	policy := rateLimitRetryPolicy()
+
+	err := retryOnRateLimit(ctx, policy, func() error {
+		var callErr error
+		muxResp, callErr = a.client.CreateMessage(ctx, muxReq)
+		return callErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("mux adapter complete: %w", err)
 	}
@@ -41,10 +79,19 @@ func (a *MuxAdapter) Complete(ctx context.Context, req Request) (*Response, erro
 }
 
 // Stream sends a streaming request through the mux client, converting each mux
-// stream event into a mammoth StreamEvent.
+// stream event into a mammoth StreamEvent. Rate limit errors (429) on the
+// initial connection are automatically retried with exponential backoff.
 func (a *MuxAdapter) Stream(ctx context.Context, req Request) (<-chan StreamEvent, error) {
 	muxReq := convertRequest(req)
-	muxCh, err := a.client.CreateMessageStream(ctx, muxReq)
+
+	var muxCh <-chan muxllm.StreamEvent
+	policy := rateLimitRetryPolicy()
+
+	err := retryOnRateLimit(ctx, policy, func() error {
+		var callErr error
+		muxCh, callErr = a.client.CreateMessageStream(ctx, muxReq)
+		return callErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("mux adapter stream: %w", err)
 	}
@@ -82,6 +129,33 @@ func (a *MuxAdapter) Stream(ctx context.Context, req Request) (<-chan StreamEven
 // does not expose a Close method, so this is a no-op.
 func (a *MuxAdapter) Close() error {
 	return nil
+}
+
+// retryOnRateLimit retries fn when it returns a rate limit error (429).
+// Uses the provided RetryPolicy for backoff timing. Non-rate-limit errors
+// are returned immediately without retry.
+func retryOnRateLimit(ctx context.Context, policy RetryPolicy, fn func() error) error {
+	var lastErr error
+	for attempt := 0; ; attempt++ {
+		lastErr = fn()
+		if lastErr == nil {
+			return nil
+		}
+		if !isRateLimitError(lastErr) || attempt >= policy.MaxRetries {
+			return lastErr
+		}
+
+		delay := policy.CalculateDelay(attempt)
+		if policy.OnRetry != nil {
+			policy.OnRetry(lastErr, attempt, delay)
+		}
+
+		select {
+		case <-ctx.Done():
+			return lastErr
+		case <-time.After(delay):
+		}
+	}
 }
 
 // convertRequest translates a mammoth Request into a mux Request. System and

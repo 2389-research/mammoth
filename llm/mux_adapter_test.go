@@ -725,6 +725,131 @@ func TestMuxAdapter_Stream_ErrorEvent(t *testing.T) {
 	}
 }
 
+// rateLimitStub fails with a 429 error for the first N calls, then succeeds.
+type rateLimitStub struct {
+	failCount    int
+	callCount    int
+	response     *muxllm.Response
+	streamEvents []muxllm.StreamEvent
+}
+
+func (s *rateLimitStub) CreateMessage(_ context.Context, req *muxllm.Request) (*muxllm.Response, error) {
+	s.callCount++
+	if s.callCount <= s.failCount {
+		return nil, fmt.Errorf("429 Too Many Requests: rate limit exceeded")
+	}
+	return s.response, nil
+}
+
+func (s *rateLimitStub) CreateMessageStream(_ context.Context, req *muxllm.Request) (<-chan muxllm.StreamEvent, error) {
+	s.callCount++
+	if s.callCount <= s.failCount {
+		return nil, fmt.Errorf("429 Too Many Requests: rate limit exceeded")
+	}
+	ch := make(chan muxllm.StreamEvent, len(s.streamEvents))
+	for _, evt := range s.streamEvents {
+		ch <- evt
+	}
+	close(ch)
+	return ch, nil
+}
+
+func TestMuxAdapter_Complete_RetriesOnRateLimit(t *testing.T) {
+	stub := &rateLimitStub{
+		failCount: 2,
+		response: &muxllm.Response{
+			ID:    "msg_retry",
+			Model: "test-model",
+			Content: []muxllm.ContentBlock{
+				{Type: muxllm.ContentTypeText, Text: "recovered"},
+			},
+		},
+	}
+	adapter := NewMuxAdapter("mux", stub)
+
+	resp, err := adapter.Complete(context.Background(), Request{
+		Model:    "test-model",
+		Messages: []Message{UserMessage("hello")},
+	})
+	if err != nil {
+		t.Fatalf("Complete() after retries: %v", err)
+	}
+	if stub.callCount != 3 {
+		t.Errorf("expected 3 calls (2 failures + 1 success), got %d", stub.callCount)
+	}
+	if resp.Message.Content[0].Text != "recovered" {
+		t.Errorf("unexpected response text: %q", resp.Message.Content[0].Text)
+	}
+}
+
+func TestMuxAdapter_Stream_RetriesOnRateLimit(t *testing.T) {
+	stub := &rateLimitStub{
+		failCount: 1,
+		streamEvents: []muxllm.StreamEvent{
+			{Type: muxllm.EventMessageStart, Response: &muxllm.Response{ID: "msg_stream_retry"}},
+			{Type: muxllm.EventMessageStop},
+		},
+	}
+	adapter := NewMuxAdapter("mux", stub)
+
+	ch, err := adapter.Stream(context.Background(), Request{
+		Model:    "test-model",
+		Messages: []Message{UserMessage("hello")},
+	})
+	if err != nil {
+		t.Fatalf("Stream() after retries: %v", err)
+	}
+	// Drain events to verify stream works after retry.
+	count := 0
+	for range ch {
+		count++
+	}
+	if stub.callCount != 2 {
+		t.Errorf("expected 2 calls (1 failure + 1 success), got %d", stub.callCount)
+	}
+	if count == 0 {
+		t.Error("expected stream events after retry")
+	}
+}
+
+func TestMuxAdapter_Complete_NoRetryOnNonRateLimitError(t *testing.T) {
+	stub := &stubMuxClient{
+		err: fmt.Errorf("authentication failed: invalid API key"),
+	}
+	adapter := NewMuxAdapter("mux", stub)
+
+	_, err := adapter.Complete(context.Background(), Request{
+		Model:    "test-model",
+		Messages: []Message{UserMessage("hello")},
+	})
+	if err == nil {
+		t.Fatal("expected error for auth failure")
+	}
+	// Should not retry auth errors - only 1 call.
+}
+
+func TestIsRateLimitError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil error", nil, false},
+		{"429 in message", fmt.Errorf("429 Too Many Requests"), true},
+		{"rate limit phrase", fmt.Errorf("Number of concurrent connections has exceeded your rate limit"), true},
+		{"rate_limit_error type", fmt.Errorf("error type: rate_limit_error"), true},
+		{"auth error", fmt.Errorf("401 Unauthorized"), false},
+		{"connection refused", fmt.Errorf("connection refused"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isRateLimitError(tt.err); got != tt.want {
+				t.Errorf("isRateLimitError(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestConvertContentPartsToBlocks_MixedContent(t *testing.T) {
 	args := json.RawMessage(`{"key":"value"}`)
 	parts := []ContentPart{
