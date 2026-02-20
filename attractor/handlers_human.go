@@ -101,10 +101,15 @@ func (h *WaitForHumanHandler) Execute(ctx context.Context, node *Node, pctx *Con
 		}
 	}
 
-	// Build question
+	// Build question from label and prompt attributes.
+	// The prompt provides context about what the gate is for (e.g. open questions
+	// to resolve), while the label is a short display name.
 	question := node.Attrs["label"]
 	if question == "" {
 		question = "Select an option:"
+	}
+	if prompt := node.Attrs["prompt"]; prompt != "" {
+		question = fmt.Sprintf("%s\n%s", question, prompt)
 	}
 
 	// Build the context for the interviewer call, attaching node ID and

@@ -443,14 +443,16 @@ func TestHumanHandler_TimeoutDefaultChoiceMatchesByAccelerator(t *testing.T) {
 
 // --- Node ID injection into context ---
 
-// spyInterviewer captures the context passed to Ask so we can inspect it.
+// spyInterviewer captures the context and question passed to Ask so we can inspect them.
 type spyInterviewer struct {
-	capturedCtx context.Context
-	answer      string
+	capturedCtx      context.Context
+	capturedQuestion string
+	answer           string
 }
 
 func (s *spyInterviewer) Ask(ctx context.Context, question string, options []string) (string, error) {
 	s.capturedCtx = ctx
+	s.capturedQuestion = question
 	return s.answer, nil
 }
 
@@ -509,5 +511,72 @@ func TestHumanHandler_InterviewerErrorWithTimeout_ReturnsFailure(t *testing.T) {
 	}
 	if outcome.Status != StatusFail {
 		t.Errorf("expected status fail on interviewer error, got %v", outcome.Status)
+	}
+}
+
+// --- Prompt attribute included in question ---
+
+func TestHumanHandler_PromptAttributeIncludedInQuestion(t *testing.T) {
+	spy := &spyInterviewer{answer: "[A] Approve"}
+	h := &WaitForHumanHandler{Interviewer: spy}
+
+	g := newTestGraph()
+	node := addNode(g, "review_gate", map[string]string{
+		"shape":  "hexagon",
+		"label":  "Review",
+		"prompt": "Open questions: Which database should we use? PostgreSQL vs MySQL",
+	})
+	addNode(g, "approve", map[string]string{})
+	addNode(g, "reject", map[string]string{})
+	addEdge(g, "review_gate", "approve", map[string]string{"label": "[A] Approve"})
+	addEdge(g, "review_gate", "reject", map[string]string{"label": "[R] Reject"})
+
+	pctx := newContextWithGraph(g)
+	store := NewArtifactStore(t.TempDir())
+
+	outcome, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if outcome.Status != StatusSuccess {
+		t.Errorf("expected success, got %v (reason: %s)", outcome.Status, outcome.FailureReason)
+	}
+
+	// The question should include both the label and the prompt
+	if !strings.Contains(spy.capturedQuestion, "Review") {
+		t.Errorf("question should contain label 'Review', got %q", spy.capturedQuestion)
+	}
+	if !strings.Contains(spy.capturedQuestion, "Which database should we use") {
+		t.Errorf("question should contain prompt text, got %q", spy.capturedQuestion)
+	}
+}
+
+func TestHumanHandler_NoPromptAttribute_UsesLabelOnly(t *testing.T) {
+	spy := &spyInterviewer{answer: "[Y] Yes"}
+	h := &WaitForHumanHandler{Interviewer: spy}
+
+	g := newTestGraph()
+	node := addNode(g, "deploy_gate", map[string]string{
+		"shape": "hexagon",
+		"label": "Approve deployment?",
+		// No prompt attribute
+	})
+	addNode(g, "deploy", map[string]string{})
+	addEdge(g, "deploy_gate", "deploy", map[string]string{"label": "[Y] Yes"})
+
+	pctx := newContextWithGraph(g)
+	store := NewArtifactStore(t.TempDir())
+
+	outcome, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if outcome.Status != StatusSuccess {
+		t.Errorf("expected success, got %v (reason: %s)", outcome.Status, outcome.FailureReason)
+	}
+
+	// Without a prompt, question should be just the label
+	if spy.capturedQuestion != "Approve deployment?" {
+		t.Errorf("expected question to be just the label, got %q", spy.capturedQuestion)
 	}
 }
