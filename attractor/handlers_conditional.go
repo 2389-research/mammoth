@@ -61,7 +61,11 @@ func (h *ConditionalHandler) Execute(ctx context.Context, node *Node, pctx *Cont
 }
 
 // executePassThrough implements the original pass-through behavior for diamond
-// nodes without a prompt attribute.
+// nodes without a prompt attribute. It reads the upstream "outcome" from the
+// pipeline context and returns it as this node's status. The "outcome" key is
+// intentionally NOT set in ContextUpdates here — the upstream value already
+// lives in the context and edge selection evaluates against the Outcome.Status
+// returned by this handler, not the context key.
 func (h *ConditionalHandler) executePassThrough(node *Node, pctx *Context) (*Outcome, error) {
 	status := StatusSuccess
 	if prev, ok := pctx.Get("outcome").(string); ok && prev != "" {

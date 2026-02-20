@@ -4,6 +4,7 @@ package attractor
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -511,6 +512,43 @@ func TestEngineWiresBackendIntoConditionalHandler(t *testing.T) {
 	}
 	if ch2.BaseURL != "https://test.example.com" {
 		t.Errorf("expected base URL to be wired, got %q", ch2.BaseURL)
+	}
+}
+
+func TestConditionalHandlerWithPromptBackendError(t *testing.T) {
+	backend := &fakeBackend{
+		runAgentFn: func(ctx context.Context, config AgentRunConfig) (*AgentRunResult, error) {
+			return nil, fmt.Errorf("connection refused")
+		},
+	}
+	h := &ConditionalHandler{Backend: backend}
+
+	node := &Node{
+		ID: "verify_backend_err",
+		Attrs: map[string]string{
+			"shape":  "diamond",
+			"prompt": "Run tests",
+		},
+	}
+	pctx := NewContext()
+	store := NewArtifactStore(t.TempDir())
+
+	outcome, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected Go error (should be nil): %v", err)
+	}
+
+	if outcome.Status != StatusFail {
+		t.Errorf("expected StatusFail from backend error, got %v", outcome.Status)
+	}
+	if !strings.Contains(outcome.FailureReason, "connection refused") {
+		t.Errorf("expected failure reason to contain 'connection refused', got %q", outcome.FailureReason)
+	}
+	if outcome.ContextUpdates == nil {
+		t.Fatal("expected context updates to be set")
+	}
+	if outcome.ContextUpdates["outcome"] != "fail" {
+		t.Errorf("expected outcome=fail in context updates, got %v", outcome.ContextUpdates["outcome"])
 	}
 }
 
