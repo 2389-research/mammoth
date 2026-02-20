@@ -3,9 +3,12 @@
 package attractor
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/2389-research/mammoth/llm"
 )
 
 // AuditRequest holds all the data needed to generate an audit narrative.
@@ -129,8 +132,10 @@ func buildAuditContext(req AuditRequest) string {
 	return b.String()
 }
 
-// linearizeGraph walks the graph from start to exit via BFS and returns
-// a human-readable flow string like "start -> build -> verify -> exit".
+// linearizeGraph walks the graph from start via BFS and returns a
+// human-readable flow string like "start -> build -> verify -> exit".
+// For branching DAGs, all reachable nodes appear in breadth-first order.
+// The output is intended for LLM context, not programmatic interpretation.
 func linearizeGraph(g *Graph) string {
 	start := g.FindStartNode()
 	if start == nil {
@@ -156,4 +161,55 @@ func linearizeGraph(g *Graph) string {
 	}
 
 	return strings.Join(path, " -> ")
+}
+
+// auditSystemPrompt instructs the LLM to produce a structured audit narrative.
+const auditSystemPrompt = `You are a pipeline execution analyst for "mammoth", a DOT-based AI pipeline runner.
+
+Given the run metadata, pipeline graph, and event timeline, produce a concise audit report.
+
+Report format (use plain text, not markdown):
+
+SUMMARY
+One paragraph: what pipeline ran, what happened, how it ended.
+
+TIMELINE
+Chronological list of key events with relative timestamps (+0.0s format).
+Group repeated failures. Show each node's outcome (passed/failed/skipped).
+
+DIAGNOSIS
+Root cause analysis. Identify patterns:
+- Rate limits (429 errors) — transient, suggest retry policy
+- Retry loops — identify which node is looping and why
+- Agent errors — tool failures, LLM errors
+- Validation errors — graph structure issues
+- Context cancellation — user interrupted
+
+SUGGESTIONS
+2-4 actionable next steps. Reference specific mammoth flags when applicable
+(e.g. -retry patient, -fix, max_node_visits, goal_gate).
+
+Keep the report concise. Use plain language. No markdown headers — use ALL CAPS section names.`
+
+// GenerateAudit sends run data to an LLM and returns a narrative audit report.
+// The client parameter must be a configured *llm.Client (use llm.FromEnv()).
+func GenerateAudit(ctx context.Context, req AuditRequest, client *llm.Client) (*AuditReport, error) {
+	if client == nil {
+		return nil, fmt.Errorf("audit requires an LLM client — set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY")
+	}
+
+	auditCtx := buildAuditContext(req)
+
+	result, err := llm.Generate(ctx, llm.GenerateOptions{
+		System: auditSystemPrompt,
+		Prompt: auditCtx,
+		Client: client,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("LLM audit generation failed: %w", err)
+	}
+
+	return &AuditReport{
+		Narrative: result.Text,
+	}, nil
 }

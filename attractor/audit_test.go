@@ -3,6 +3,7 @@
 package attractor
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -90,8 +91,10 @@ func TestBuildAuditContext_IncludesFlowSummary(t *testing.T) {
 
 	ctx := buildAuditContext(req)
 
-	if !strings.Contains(ctx, "start") || !strings.Contains(ctx, "exit") {
-		t.Error("expected flow summary with start and exit nodes")
+	// Assert the full linearized path appears (not just individual node names,
+	// which could match elsewhere in the output).
+	if !strings.Contains(ctx, "start -> build -> verify -> exit") {
+		t.Errorf("expected complete flow path 'start -> build -> verify -> exit' in context:\n%s", ctx)
 	}
 }
 
@@ -125,5 +128,18 @@ func TestBuildAuditContext_VerboseIncludesToolDetails(t *testing.T) {
 	}
 	if !strings.Contains(ctx, "go build") {
 		t.Error("verbose mode should include tool arguments")
+	}
+}
+
+func TestGenerateAudit_RequiresClient(t *testing.T) {
+	req := AuditRequest{
+		State:  &RunState{ID: "test", Status: "failed", StartedAt: time.Now()},
+		Events: []EngineEvent{},
+		Graph:  &Graph{Nodes: map[string]*Node{}, Edges: []*Edge{}},
+	}
+
+	_, err := GenerateAudit(context.Background(), req, nil)
+	if err == nil {
+		t.Error("expected error when no LLM client provided")
 	}
 }
