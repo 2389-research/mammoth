@@ -395,7 +395,7 @@ type pipelineOptions struct {
 // Returns parsed options plus constraints text with markers removed.
 func parsePipelineOptions(raw string) (pipelineOptions, string) {
 	opts := pipelineOptions{
-		HumanReview:     true,
+		HumanReview:     false,
 		ScenarioTesting: true,
 		TDD:             true,
 	}

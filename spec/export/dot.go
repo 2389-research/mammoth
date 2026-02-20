@@ -82,9 +82,6 @@ func ExportGraph(state *core.SpecState) *dot.Graph {
 	riskCards := filterCards(cards, func(c core.Card) bool {
 		return c.CardType == "risk"
 	})
-	questionCards := filterCards(cards, func(c core.Card) bool {
-		return c.CardType == "open_question"
-	})
 
 	// Split task cards into ordered segments: groups of regular tasks separated by
 	// conditional tasks. This preserves the original card ordering so conditionals
@@ -287,28 +284,6 @@ func ExportGraph(state *core.SpecState) *dot.Graph {
 			Attrs: map[string]string{"label": "success", "condition": "outcome = SUCCESS"},
 		})
 		lastNodeIDs = []string{successContinueID}
-	}
-
-	// Add human gate if there are open questions
-	if len(questionCards) > 0 {
-		humanID := "human_review"
-		questionSummary := summarizeCards(questionCards)
-		humanNode := &dot.Node{
-			ID: humanID,
-			Attrs: map[string]string{
-				"shape":  "hexagon",
-				"type":   "wait.human",
-				"label":  "Human Review",
-				"prompt": truncatePrompt(fmt.Sprintf("Open questions: %s", questionSummary)),
-			},
-		}
-		g.AddNode(humanNode)
-
-		for _, prevID := range lastNodeIDs {
-			g.AddEdge(&dot.Edge{From: prevID, To: humanID})
-		}
-
-		lastNodeIDs = []string{humanID}
 	}
 
 	// Connect final nodes to exit

@@ -165,8 +165,8 @@ func TestExportDOTWithRiskCard(t *testing.T) {
 	}
 }
 
-// 5. Spec with open_question card adds human gate
-func TestExportDOTWithOpenQuestion(t *testing.T) {
+// 5. Spec with open_question card does NOT auto-insert human gate
+func TestExportDOTWithOpenQuestionNoHumanGate(t *testing.T) {
 	state := makeState("Questions", "Has open questions", "Build with clarity")
 
 	task := makeCard("task", "Implement feature", "Plan", 1.0, "Build the feature", nil)
@@ -180,16 +180,11 @@ func TestExportDOTWithOpenQuestion(t *testing.T) {
 		t.Fatal("ExportGraph returned nil")
 	}
 
-	// Should have a human gate (hexagon shape, type=wait.human)
-	hasHumanGate := false
+	// Human gates should NOT be auto-inserted from open_question cards
 	for _, node := range g.Nodes {
 		if node.Attrs["shape"] == "hexagon" && node.Attrs["type"] == "wait.human" {
-			hasHumanGate = true
-			break
+			t.Error("open_question cards should not auto-insert human gates")
 		}
-	}
-	if !hasHumanGate {
-		t.Error("spec with open_question card should have a human gate (hexagon, wait.human)")
 	}
 }
 

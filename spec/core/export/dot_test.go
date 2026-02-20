@@ -14,6 +14,9 @@ import (
 
 func TestPipelineHasAll12Nodes(t *testing.T) {
 	state := makeStateWithCore()
+	// Opt in to human review to get all 12 nodes
+	constraints := "[mammoth.option.human_review=true]"
+	state.Core.Constraints = &constraints
 	dot := export.ExportDOT(state)
 
 	// Sentinel nodes
@@ -54,6 +57,18 @@ func TestMainChainIncludesTDDBeforeImplement(t *testing.T) {
 	}
 }
 
+func TestDefaultPipelineOmitsHumanReview(t *testing.T) {
+	state := makeStateWithCore()
+	dot := export.ExportDOT(state)
+
+	if strings.Contains(dot, "review_gate [shape=hexagon") {
+		t.Error("review_gate should be omitted by default (human_review defaults to false)")
+	}
+	if strings.Contains(dot, "polish [shape=box") {
+		t.Error("polish should be omitted by default (human_review defaults to false)")
+	}
+}
+
 func TestGraphAttributesUseCommasAndFixedRetryTarget(t *testing.T) {
 	state := makeStateWithCore()
 	dot := export.ExportDOT(state)
@@ -83,6 +98,9 @@ func TestGraphAttributesUseCommasAndFixedRetryTarget(t *testing.T) {
 
 func TestVerifyOKRoutesToScenarioTestOrImplement(t *testing.T) {
 	state := makeStateWithCore()
+	// Opt in to human review for the full pipeline
+	constraints := "[mammoth.option.human_review=true]"
+	state.Core.Constraints = &constraints
 	dot := export.ExportDOT(state)
 
 	if !strings.Contains(dot, `verify_ok -> scenario_test [label="Pass", condition="outcome=SUCCESS"]`) {
@@ -104,6 +122,8 @@ func TestScenarioTestFeedsIntoScenarioOKGate(t *testing.T) {
 
 func TestScenarioOKRoutesToReviewOrTDD(t *testing.T) {
 	state := makeStateWithCore()
+	constraints := "[mammoth.option.human_review=true]"
+	state.Core.Constraints = &constraints
 	dot := export.ExportDOT(state)
 
 	if !strings.Contains(dot, `scenario_ok -> review_gate [label="Pass", condition="outcome=SUCCESS"]`) {
@@ -116,6 +136,8 @@ func TestScenarioOKRoutesToReviewOrTDD(t *testing.T) {
 
 func TestHumanGateReviewGateHasWeightedBranches(t *testing.T) {
 	state := makeStateWithCore()
+	constraints := "[mammoth.option.human_review=true]"
+	state.Core.Constraints = &constraints
 	dot := export.ExportDOT(state)
 
 	if !strings.Contains(dot, `review_gate [shape=hexagon, type="wait.human"`) {
@@ -168,6 +190,8 @@ func TestPipelineOptionsDisableTDD(t *testing.T) {
 
 func TestPolishLoopsBackToTDD(t *testing.T) {
 	state := makeStateWithCore()
+	constraints := "[mammoth.option.human_review=true]"
+	state.Core.Constraints = &constraints
 	dot := export.ExportDOT(state)
 
 	if !strings.Contains(dot, "polish -> tdd") {
@@ -386,6 +410,8 @@ func TestCardsAggregateIntoPlanPrompt(t *testing.T) {
 
 func TestCardsAggregateIntoReviewPrompt(t *testing.T) {
 	state := makeStateWithCore()
+	constraints := "[mammoth.option.human_review=true]"
+	state.Core.Constraints = &constraints
 
 	question := makeCard("open_question", "What DB", "Plan", 1.0, "human")
 	state.Cards.Set(question.CardID, question)
@@ -402,6 +428,8 @@ func TestCardsAggregateIntoReviewPrompt(t *testing.T) {
 
 func TestCardsAggregateIntoPolishPrompt(t *testing.T) {
 	state := makeStateWithCore()
+	constraints := "[mammoth.option.human_review=true]"
+	state.Core.Constraints = &constraints
 
 	risk := makeCard("risk", "Data Loss", "Plan", 1.0, "human")
 	state.Cards.Set(risk.CardID, risk)
@@ -557,6 +585,8 @@ func TestLongPromptsAreTruncated(t *testing.T) {
 
 func TestAllCardTypesContributeToTheirPhases(t *testing.T) {
 	state := makeStateWithCore()
+	constraints := "[mammoth.option.human_review=true]"
+	state.Core.Constraints = &constraints
 
 	idea := makeCard("idea", "Brainstorm", "Plan", 1.0, "human")
 	task := makeCard("task", "Build API", "Spec", 1.0, "human")

@@ -53,8 +53,7 @@ const dotGeneratorSystemPrompt = "You are the diagram analyst. Your job is to re
 	"The diagram is auto-generated from cards and conforms to the DOT Runner constrained DSL:\n" +
 	"- digraph with snake_case graph ID and graph [goal=... rankdir=LR]\n" +
 	"- start [shape=Mdiamond] and done [shape=Msquare] sentinels\n" +
-	"- Node shapes: box (ideas/plans/tasks), diamond (decisions), hexagon + type=\"wait.human\" " +
-	"(assumptions/open questions), parallelogram (inspirations/vibes)\n" +
+	"- Node shapes: box (ideas/plans/tasks), diamond (decisions), parallelogram (inspirations/vibes)\n" +
 	"- Edges: start -> Ideas -> Plan -> Spec -> done with condition attributes\n" +
 	"- Nodes include prompt= from card body and goal_gate=true for Spec-lane tasks\n" +
 	"- All attribute syntax uses key=value only (never key: value)\n\n" +
