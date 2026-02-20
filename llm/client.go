@@ -139,6 +139,7 @@ func createAdapterForProvider(name, apiKey, baseURL string) ProviderAdapter {
 		}
 		return NewMuxAdapter(name, client)
 	default:
+		log.Printf("unknown provider %q, falling back to anthropic", name)
 		client := muxllm.NewAnthropicClient(apiKey, "")
 		return NewMuxAdapter("anthropic", client)
 	}
@@ -155,6 +156,7 @@ func createLegacyAdapterForProvider(name, apiKey, baseURL string) ProviderAdapte
 	case "gemini":
 		return NewGeminiAdapter(apiKey, WithGeminiBaseURL(baseURL))
 	default:
+		log.Printf("unknown provider %q with custom base URL, falling back to anthropic", name)
 		return NewAnthropicAdapter(apiKey, WithAnthropicBaseURL(baseURL))
 	}
 }

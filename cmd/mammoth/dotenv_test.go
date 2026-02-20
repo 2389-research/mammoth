@@ -126,9 +126,13 @@ func TestLoadDotEnvValueWithEquals(t *testing.T) {
 func TestLoadDotEnvAutoLoadsXDGConfig(t *testing.T) {
 	configDir := t.TempDir()
 	mammothDir := filepath.Join(configDir, "mammoth")
-	os.MkdirAll(mammothDir, 0755)
+	if err := os.MkdirAll(mammothDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	configPath := filepath.Join(mammothDir, "config.env")
-	os.WriteFile(configPath, []byte("TEST_XDG_AUTO_LOAD=from_xdg\n"), 0644)
+	if err := os.WriteFile(configPath, []byte("TEST_XDG_AUTO_LOAD=from_xdg\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 	t.Setenv("TEST_XDG_AUTO_LOAD", "")

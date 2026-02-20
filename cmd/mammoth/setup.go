@@ -151,6 +151,10 @@ func collectKeys(scanner *bufio.Scanner, w io.Writer, providers []providerInfo) 
 func collectBaseURLs(scanner *bufio.Scanner, w io.Writer, providers []providerInfo) map[string]string {
 	collected := map[string]string{}
 
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Custom base URLs (leave blank for provider defaults):")
+	fmt.Fprintln(w)
+
 	for _, p := range providers {
 		if !p.isSet {
 			continue
@@ -199,7 +203,12 @@ func writeEnvFile(path string, keys map[string]string) error {
 		for envVar, value := range keys {
 			lineKey := strings.TrimPrefix(trimmed, "export ")
 			if k, _, ok := strings.Cut(lineKey, "="); ok && strings.TrimSpace(k) == envVar {
-				outputLines = append(outputLines, envVar+"="+value)
+				// Preserve the "export " prefix if the original line had it.
+				prefix := ""
+				if strings.HasPrefix(trimmed, "export ") {
+					prefix = "export "
+				}
+				outputLines = append(outputLines, prefix+envVar+"="+value)
 				written[envVar] = true
 				updated = true
 				break

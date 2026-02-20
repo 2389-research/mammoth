@@ -246,6 +246,41 @@ func TestWriteEnvFile_AppendsWithoutClobber(t *testing.T) {
 	}
 }
 
+func TestWriteEnvFile_PreservesExportPrefix(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+
+	if err := os.WriteFile(path, []byte("export ANTHROPIC_API_KEY=old-key\nOPENAI_API_KEY=bare-key\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	keys := map[string]string{
+		"ANTHROPIC_API_KEY": "sk-ant-updated",
+		"OPENAI_API_KEY":    "sk-updated",
+	}
+
+	err := writeEnvFile(path, keys)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "export ANTHROPIC_API_KEY=sk-ant-updated") {
+		t.Errorf("expected export prefix preserved for ANTHROPIC_API_KEY:\n%s", content)
+	}
+	if !strings.Contains(content, "OPENAI_API_KEY=sk-updated") {
+		t.Errorf("expected bare format preserved for OPENAI_API_KEY:\n%s", content)
+	}
+	if strings.Contains(content, "export OPENAI_API_KEY") {
+		t.Errorf("export prefix should not be added where it wasn't present:\n%s", content)
+	}
+}
+
 func TestWriteEnvFile_EmptyKeys(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")
