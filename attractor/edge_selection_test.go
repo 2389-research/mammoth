@@ -433,3 +433,27 @@ func TestSelectEdgeFailedOutcomeFollowsConditionMatchedEdge(t *testing.T) {
 		t.Errorf("expected fail edge to 'recovery', got %q", got.To)
 	}
 }
+
+func TestSelectEdgePartialSuccessFollowsUnconditionalEdge(t *testing.T) {
+	// StatusPartialSuccess should follow unconditional edges (only StatusFail is blocked).
+	g := &Graph{
+		Nodes: map[string]*Node{
+			"a": {ID: "a", Attrs: map[string]string{}},
+			"b": {ID: "b", Attrs: map[string]string{}},
+		},
+		Edges: []*Edge{
+			{From: "a", To: "b", Attrs: map[string]string{}},
+		},
+	}
+	node := g.Nodes["a"]
+	outcome := &Outcome{Status: StatusPartialSuccess}
+	ctx := NewContext()
+
+	got := SelectEdge(node, outcome, ctx, g)
+	if got == nil {
+		t.Fatal("expected unconditional edge for partial_success, got nil")
+	}
+	if got.To != "b" {
+		t.Errorf("expected To='b', got %q", got.To)
+	}
+}

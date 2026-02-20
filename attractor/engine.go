@@ -287,7 +287,10 @@ func (e *Engine) ResumeFromCheckpoint(ctx context.Context, graph *Graph, checkpo
 	// Select the edge from the checkpoint node using the same logic as normal execution.
 	selectedEdge := SelectEdge(cpNode, cpOutcome, pctx, graph)
 	if selectedEdge == nil {
-		// Fallback: try first outgoing edge
+		if cpOutcome.Status == StatusFail {
+			return nil, fmt.Errorf("checkpoint node %q failed with no outgoing fail edge, cannot resume", cp.CurrentNode)
+		}
+		// Fallback: try first outgoing edge (non-failure case only)
 		outEdges := graph.OutgoingEdges(cp.CurrentNode)
 		if len(outEdges) == 0 {
 			return nil, fmt.Errorf("checkpoint node %q has no outgoing edges, cannot resume", cp.CurrentNode)
@@ -394,6 +397,7 @@ func (e *Engine) executeGraph(
 	completedNodes := make([]string, 0)
 	nodeOutcomes := make(map[string]*Outcome)
 	nodeRetries := make(map[string]int)
+	goalGateRetries := make(map[string]int)
 
 	// If resuming, pre-populate completed nodes and retry counters from checkpoint
 	if rs != nil {
@@ -455,6 +459,11 @@ func (e *Engine) executeGraph(
 			// Check goal gates
 			gateOK, failedNode := checkGoalGates(graph, nodeOutcomes)
 			if !gateOK {
+				const maxGoalGateRetries = 5
+				goalGateRetries[failedNode.ID]++
+				if goalGateRetries[failedNode.ID] > maxGoalGateRetries {
+					return nil, fmt.Errorf("goal gate for node %q exhausted %d retries", failedNode.ID, maxGoalGateRetries)
+				}
 				retryTarget := getRetryTarget(failedNode, graph)
 				if retryTarget != "" {
 					targetNode := graph.FindNode(retryTarget)
@@ -598,6 +607,11 @@ func (e *Engine) executeGraph(
 				// Before erroring, check if this failed node has a goal_gate
 				// retry target that allows re-execution from an earlier node.
 				if node.Attrs["goal_gate"] == "true" {
+					const maxGoalGateRetries = 5
+					goalGateRetries[node.ID]++
+					if goalGateRetries[node.ID] > maxGoalGateRetries {
+						return nil, fmt.Errorf("goal gate for node %q exhausted %d retries", node.ID, maxGoalGateRetries)
+					}
 					retryTarget := getRetryTarget(node, graph)
 					if retryTarget != "" {
 						targetNode := graph.FindNode(retryTarget)

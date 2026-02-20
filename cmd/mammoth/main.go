@@ -1042,15 +1042,19 @@ func verboseEventHandler(evt attractor.EngineEvent) {
 	case attractor.EventCheckpointSaved:
 		fmt.Fprintf(os.Stderr, "[checkpoint] saved at %s\n", evt.NodeID)
 	case attractor.EventAgentTextDelta:
-		if text, ok := evt.Data["text"].(string); ok && text != "" {
-			fmt.Fprint(os.Stderr, text)
+		if evt.Data != nil {
+			if text, ok := evt.Data["text"].(string); ok && text != "" {
+				fmt.Fprint(os.Stderr, text)
+			}
 		}
 	case attractor.EventAgentToolCallStart:
-		toolName := evt.Data["tool_name"]
-		if args, ok := evt.Data["arguments"].(string); ok && args != "" {
-			fmt.Fprintf(os.Stderr, "\n[agent] %s: tool %v(%s)\n", evt.NodeID, toolName, args)
-		} else {
-			fmt.Fprintf(os.Stderr, "\n[agent] %s: tool %v\n", evt.NodeID, toolName)
+		if evt.Data != nil {
+			toolName := evt.Data["tool_name"]
+			if args, ok := evt.Data["arguments"].(string); ok && args != "" {
+				fmt.Fprintf(os.Stderr, "\n[agent] %s: tool %v(%s)\n", evt.NodeID, toolName, args)
+			} else {
+				fmt.Fprintf(os.Stderr, "\n[agent] %s: tool %v\n", evt.NodeID, toolName)
+			}
 		}
 	case attractor.EventAgentToolCallEnd:
 		fmt.Fprintf(os.Stderr, "[agent] %s: tool %v done (%vms)\n", evt.NodeID, evt.Data["tool_name"], evt.Data["duration_ms"])
