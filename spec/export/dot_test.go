@@ -118,22 +118,28 @@ func TestExportDOTParallelTasks(t *testing.T) {
 		t.Fatal("ExportGraph returned nil")
 	}
 
-	// Parallel tasks should produce fork and join nodes
-	hasFork := false
-	hasJoin := false
-	for id, node := range g.Nodes {
-		if strings.Contains(id, "fork") || node.Attrs["type"] == "parallel" {
-			hasFork = true
-		}
-		if strings.Contains(id, "join") || node.Attrs["type"] == "parallel.fan_in" {
-			hasJoin = true
+	// Independent tasks without cross-refs produce a sequential chain
+	// (the spec builder's card order is preserved since parallel execution
+	// is not supported by the attractor engine).
+	codergenCount := 0
+	for _, node := range g.Nodes {
+		if node.Attrs["type"] == "codergen" {
+			codergenCount++
 		}
 	}
-	if !hasFork {
-		t.Error("parallel tasks should produce a fork node")
+	if codergenCount != 2 {
+		t.Errorf("expected 2 codergen nodes for 2 tasks, got %d", codergenCount)
 	}
-	if !hasJoin {
-		t.Error("parallel tasks should produce a join node")
+
+	// Verify sequential chain: start -> task_0_0 -> task_0_1 -> exit
+	hasChain := false
+	for _, e := range g.Edges {
+		if strings.Contains(e.From, "task_0_0") && strings.Contains(e.To, "task_0_1") {
+			hasChain = true
+		}
+	}
+	if !hasChain {
+		t.Error("independent tasks should form a sequential chain")
 	}
 }
 

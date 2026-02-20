@@ -13,7 +13,6 @@ import (
 
 	"github.com/2389-research/mammoth/dot"
 	"github.com/2389-research/mammoth/spec/core"
-	coreexport "github.com/2389-research/mammoth/spec/core/export"
 	"github.com/2389-research/mammoth/spec/export"
 	"github.com/2389-research/mammoth/spec/server"
 )
@@ -51,7 +50,11 @@ type DiagramStepEdge struct {
 
 // exportDOTSafe wraps export.ExportDOT and returns an error comment on failure.
 func exportDOTSafe(s *core.SpecState) string {
-	return coreexport.ExportDOT(s)
+	result, err := export.ExportDOT(s)
+	if err != nil {
+		return fmt.Sprintf("// DOT export error: %v", err)
+	}
+	return result
 }
 
 // Artifacts renders the artifacts tab with all three export formats.

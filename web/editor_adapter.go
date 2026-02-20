@@ -106,9 +106,22 @@ func (rw *editorProxyResponseWriter) WriteHeader(code int) {
 func (s *Server) ensureProjectEditorSession(projectID string, p *Project) (string, error) {
 	s.editorMu.Lock()
 	if sessionID := s.editorByProj[projectID]; sessionID != "" {
-		if _, ok := s.editorStore.Get(sessionID); ok {
+		if sess, ok := s.editorStore.Get(sessionID); ok {
 			s.editorMu.Unlock()
-			// Keep project phase/diagnostics in sync when returning to an existing session.
+
+			// If the project DOT was re-exported (e.g., spec builder produced
+			// a new graph), push the updated DOT into the editor session so
+			// the user sees the latest export instead of a stale cached version.
+			projectDOT := strings.TrimSpace(p.DOT)
+			sess.RLock()
+			sessionDOT := strings.TrimSpace(sess.RawDOT)
+			sess.RUnlock()
+			if projectDOT != "" && projectDOT != sessionDOT {
+				if err := sess.UpdateDOT(projectDOT); err != nil {
+					log.Printf("editor DOT push failed: project=%s session=%s err=%v", projectID, sessionID, err)
+				}
+			}
+
 			_ = s.syncProjectFromEditorSession(projectID, sessionID)
 			return sessionID, nil
 		}

@@ -9,7 +9,7 @@ import (
 	"github.com/2389-research/mammoth/dot"
 	"github.com/2389-research/mammoth/dot/validator"
 	"github.com/2389-research/mammoth/spec/core"
-	coreexport "github.com/2389-research/mammoth/spec/core/export"
+	"github.com/2389-research/mammoth/spec/export"
 )
 
 // TransitionSpecToEditor generates DOT from a spec state and updates the project
@@ -82,11 +82,14 @@ func exportAndValidate(specState *core.SpecState) (string, []dot.Diagnostic, err
 		return "", nil, fmt.Errorf("export DOT: spec state is nil")
 	}
 
-	dotStr := coreexport.ExportDOT(specState)
-
-	g, err := dot.Parse(dotStr)
+	dotStr, err := export.ExportDOT(specState)
 	if err != nil {
-		return "", nil, fmt.Errorf("parse exported DOT: %w", err)
+		return "", nil, fmt.Errorf("export DOT: %w", err)
+	}
+
+	g, parseErr := dot.Parse(dotStr)
+	if parseErr != nil {
+		return "", nil, fmt.Errorf("parse exported DOT: %w", parseErr)
 	}
 
 	diags := validator.Lint(g)

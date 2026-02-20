@@ -76,11 +76,15 @@ func ExportGraph(state *core.SpecState) *dot.Graph {
 
 	// Extract actionable cards (exclude Ideas lane)
 	cards := collectCards(state)
-	taskCards := filterCards(cards, func(c core.Card) bool {
-		return c.CardType == "task" || c.CardType == "plan"
-	})
 	riskCards := filterCards(cards, func(c core.Card) bool {
 		return c.CardType == "risk"
+	})
+	// All non-risk cards are potential task nodes. The spec builder agents create
+	// cards with varied types (idea, task, plan, decision, constraint, etc.) and
+	// cards reaching this point have already been filtered to exclude the Ideas
+	// lane, so they are promoted/actionable items.
+	taskCards := filterCards(cards, func(c core.Card) bool {
+		return c.CardType != "risk"
 	})
 
 	// Split task cards into ordered segments: groups of regular tasks separated by
@@ -125,7 +129,6 @@ func ExportGraph(state *core.SpecState) *dot.Graph {
 	} else {
 		// Track counters for unique node ID prefixes across segments
 		taskCounter := 0
-		indCounter := 0
 		condCounter := 0
 
 		lastNodeIDs = []string{"start"}
@@ -190,36 +193,23 @@ func ExportGraph(state *core.SpecState) *dot.Graph {
 					lastNodeIDs = buildSequentialChain(g, sequential, fromID, prefix)
 					taskCounter++
 				} else if len(independent) > 0 && len(sequential) == 0 {
-					// All tasks in this segment are independent (parallel)
-					lastNodeIDs = buildParallelBranchWithCounter(g, independent, fromID, &indCounter)
-				} else {
-					// Mix of sequential and independent within this segment
-					// Sequential chain from the current position; independent tasks fork
-					// from the same position. Both converge before downstream nodes.
-					seqPrefix := fmt.Sprintf("task_%d", taskCounter)
-					seqEndIDs := buildSequentialChain(g, sequential, fromID, seqPrefix)
+					// All tasks are independent (no cross-refs). The spec
+					// builder's card order is more meaningful than an N-way
+					// parallel fan-out, so use sequential chaining.
+					prefix := fmt.Sprintf("task_%d", taskCounter)
+					lastNodeIDs = buildSequentialChain(g, independent, fromID, prefix)
 					taskCounter++
-					indEndIDs := buildParallelBranchWithCounter(g, independent, fromID, &indCounter)
-
-					// Merge both branches into a single set of last node IDs
-					mergedIDs := append(seqEndIDs, indEndIDs...)
-					if len(mergedIDs) > 1 {
-						mergeID := fmt.Sprintf("merge_%d", taskCounter)
-						g.AddNode(&dot.Node{
-							ID: mergeID,
-							Attrs: map[string]string{
-								"shape": "diamond",
-								"type":  "parallel.fan_in",
-								"label": "Merge",
-							},
-						})
-						for _, endID := range mergedIDs {
-							g.AddEdge(&dot.Edge{From: endID, To: mergeID})
-						}
-						lastNodeIDs = []string{mergeID}
-					} else {
-						lastNodeIDs = mergedIDs
-					}
+				} else {
+					// Mix of sequential and independent within this segment.
+					// Chain the sequential tasks first, then append the
+					// independent tasks. All run in sequence since the
+					// attractor engine doesn't support parallel execution.
+					allTasks := make([]core.Card, 0, len(sequential)+len(independent))
+					allTasks = append(allTasks, sequential...)
+					allTasks = append(allTasks, independent...)
+					prefix := fmt.Sprintf("task_%d", taskCounter)
+					lastNodeIDs = buildSequentialChain(g, allTasks, fromID, prefix)
+					taskCounter++
 				}
 			}
 		}
@@ -491,56 +481,6 @@ func buildSequentialChain(g *dot.Graph, tasks []core.Card, fromID string, prefix
 	return []string{prevID}
 }
 
-// buildParallelBranchWithCounter adds a fork node, parallel task nodes, and a join node.
-// The counter parameter generates unique node IDs across multiple calls.
-func buildParallelBranchWithCounter(g *dot.Graph, tasks []core.Card, fromID string, counter *int) []string {
-	if len(tasks) == 1 {
-		// Single independent task doesn't need fork/join
-		prefix := fmt.Sprintf("ind_%d", *counter)
-		*counter++
-		return buildSequentialChain(g, tasks, fromID, prefix)
-	}
-
-	forkID := fmt.Sprintf("fork_%d", *counter)
-	g.AddNode(&dot.Node{
-		ID: forkID,
-		Attrs: map[string]string{
-			"shape": "diamond",
-			"type":  "parallel",
-			"label": "Fork",
-		},
-	})
-	g.AddEdge(&dot.Edge{From: fromID, To: forkID})
-
-	joinID := fmt.Sprintf("join_%d", *counter)
-	g.AddNode(&dot.Node{
-		ID: joinID,
-		Attrs: map[string]string{
-			"shape": "diamond",
-			"type":  "parallel.fan_in",
-			"label": "Join",
-		},
-	})
-
-	for i, t := range tasks {
-		nodeID := fmt.Sprintf("par_%d_%d", *counter, i)
-		g.AddNode(&dot.Node{
-			ID: nodeID,
-			Attrs: map[string]string{
-				"shape":  "box",
-				"type":   "codergen",
-				"label":  truncatePrompt(t.Title),
-				"prompt": synthesizePrompt(t),
-			},
-		})
-		g.AddEdge(&dot.Edge{From: forkID, To: nodeID})
-		g.AddEdge(&dot.Edge{From: nodeID, To: joinID})
-	}
-
-	*counter++
-	return []string{joinID}
-}
-
 // synthesizePrompt builds a prompt string from a card's title and body.
 func synthesizePrompt(card core.Card) string {
 	parts := []string{card.Title}
@@ -559,15 +499,11 @@ func summarizeCards(cards []core.Card) string {
 	return strings.Join(titles, "; ")
 }
 
-// hasConditionalLanguage returns true if the card's title or body contains if/when language.
+// hasConditionalLanguage returns true if the card's title contains if/when language.
+// Only titles are checked — card bodies routinely contain "if"/"when" in code examples
+// and natural language descriptions, which would cause false positives.
 func hasConditionalLanguage(card core.Card) bool {
-	if conditionalPattern.MatchString(card.Title) {
-		return true
-	}
-	if card.Body != nil && conditionalPattern.MatchString(*card.Body) {
-		return true
-	}
-	return false
+	return conditionalPattern.MatchString(card.Title)
 }
 
 // truncatePrompt truncates a string to at most maxPromptLen runes.
