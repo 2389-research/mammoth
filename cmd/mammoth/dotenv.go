@@ -1,4 +1,4 @@
-// ABOUTME: Loads environment variables from a .env file at startup.
+// ABOUTME: Loads environment variables from .env files and XDG config at startup.
 // ABOUTME: Sets variables only when not already present in the environment (no clobber).
 package main
 
@@ -56,9 +56,10 @@ func loadDotEnv(path string) {
 }
 
 // loadDotEnvAuto loads .env files from common locations without clobbering
-// existing environment variables. Search order:
+// existing environment variables. Search order (highest priority first):
 //  1. .env in current directory and its parents
 //  2. .env next to the current executable
+//  3. config.env in the XDG config directory (~/.config/mammoth/)
 func loadDotEnvAuto() {
 	seen := map[string]bool{}
 
@@ -84,5 +85,10 @@ func loadDotEnvAuto() {
 
 	if exe, err := os.Executable(); err == nil {
 		addPath(filepath.Join(filepath.Dir(exe), ".env"))
+	}
+
+	// XDG config directory (lowest priority — loaded last so local .env wins).
+	if cfgDir, err := defaultConfigDir(); err == nil {
+		addPath(filepath.Join(cfgDir, "config.env"))
 	}
 }

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"os"
 	"path/filepath"
@@ -18,8 +19,8 @@ func TestParseSetupArgs_DetectsSetup(t *testing.T) {
 	if cfg.skipKeys {
 		t.Error("expected skipKeys to default to false")
 	}
-	if cfg.envFile != ".env" {
-		t.Errorf("expected envFile=.env, got %q", cfg.envFile)
+	if cfg.envFile != "" {
+		t.Errorf("expected envFile empty (XDG default), got %q", cfg.envFile)
 	}
 }
 
@@ -119,7 +120,7 @@ func TestCollectKeys_SkipsSetProviders(t *testing.T) {
 		{name: "Gemini", envVar: "GEMINI_API_KEY", baseURLVar: "GEMINI_BASE_URL", prefix: "AIza", isSet: false},
 	}
 
-	collected := collectKeys(r, &w, providers)
+	collected := collectKeys(bufio.NewScanner(r), &w, providers)
 	if len(collected) != 0 {
 		t.Errorf("expected no keys collected when user enters nothing, got %d", len(collected))
 	}
@@ -137,7 +138,7 @@ func TestCollectKeys_AcceptsValidKey(t *testing.T) {
 		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", baseURLVar: "ANTHROPIC_BASE_URL", prefix: "sk-ant-", isSet: false},
 	}
 
-	collected := collectKeys(r, &w, providers)
+	collected := collectKeys(bufio.NewScanner(r), &w, providers)
 	if len(collected) != 1 {
 		t.Fatalf("expected 1 key collected, got %d", len(collected))
 	}
@@ -155,7 +156,7 @@ func TestCollectKeys_WarnsOnBadFormat(t *testing.T) {
 		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", baseURLVar: "ANTHROPIC_BASE_URL", prefix: "sk-ant-", isSet: false},
 	}
 
-	collected := collectKeys(r, &w, providers)
+	collected := collectKeys(bufio.NewScanner(r), &w, providers)
 	if len(collected) != 1 {
 		t.Fatalf("expected 1 key collected (user confirmed), got %d", len(collected))
 	}
@@ -173,7 +174,7 @@ func TestCollectKeys_RejectsOnBadFormatWhenUserDeclines(t *testing.T) {
 		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", baseURLVar: "ANTHROPIC_BASE_URL", prefix: "sk-ant-", isSet: false},
 	}
 
-	collected := collectKeys(r, &w, providers)
+	collected := collectKeys(bufio.NewScanner(r), &w, providers)
 	if len(collected) != 0 {
 		t.Errorf("expected 0 keys when user declines, got %d", len(collected))
 	}
@@ -290,11 +291,15 @@ func TestRunSetupEndToEnd(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("ANTHROPIC_BASE_URL", "")
+	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("GEMINI_BASE_URL", "")
 
 	dir := t.TempDir()
 	envPath := filepath.Join(dir, ".env")
 
-	input := "sk-ant-test123\n\n\n"
+	// Input: anthropic key, blank openai, blank gemini, blank anthropic base URL
+	input := "sk-ant-test123\n\n\n\n"
 	r := strings.NewReader(input)
 	var w bytes.Buffer
 
@@ -323,6 +328,13 @@ func TestRunSetupEndToEnd(t *testing.T) {
 }
 
 func TestRunSetupSkipKeys(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("ANTHROPIC_BASE_URL", "")
+	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("GEMINI_BASE_URL", "")
+
 	var w bytes.Buffer
 	r := strings.NewReader("")
 
@@ -343,6 +355,9 @@ func TestRunSetupEndToEnd_ExistingEnvFile(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("ANTHROPIC_BASE_URL", "")
+	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("GEMINI_BASE_URL", "")
 
 	dir := t.TempDir()
 	envPath := filepath.Join(dir, ".env")
@@ -351,7 +366,8 @@ func TestRunSetupEndToEnd_ExistingEnvFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	input := "sk-ant-integration\n\n\n"
+	// Input: anthropic key, blank openai, blank gemini, blank anthropic base URL
+	input := "sk-ant-integration\n\n\n\n"
 	r := strings.NewReader(input)
 	var w bytes.Buffer
 
@@ -376,6 +392,9 @@ func TestRunSetupEndToEnd_ExistingEnvFile(t *testing.T) {
 }
 
 func TestCollectBaseURLs_PromptsForConfiguredProviders(t *testing.T) {
+	t.Setenv("ANTHROPIC_BASE_URL", "")
+	t.Setenv("OPENAI_BASE_URL", "")
+
 	input := "https://custom.anthropic.example.com\n\n"
 	r := strings.NewReader(input)
 	var w bytes.Buffer
@@ -385,7 +404,7 @@ func TestCollectBaseURLs_PromptsForConfiguredProviders(t *testing.T) {
 		{name: "OpenAI", envVar: "OPENAI_API_KEY", baseURLVar: "OPENAI_BASE_URL", prefix: "sk-", isSet: true},
 	}
 
-	collected := collectBaseURLs(r, &w, providers)
+	collected := collectBaseURLs(bufio.NewScanner(r), &w, providers)
 	if collected["ANTHROPIC_BASE_URL"] != "https://custom.anthropic.example.com" {
 		t.Errorf("expected Anthropic base URL, got %q", collected["ANTHROPIC_BASE_URL"])
 	}
@@ -402,7 +421,7 @@ func TestCollectBaseURLs_SkipsProvidersWithoutKeys(t *testing.T) {
 		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", baseURLVar: "ANTHROPIC_BASE_URL", prefix: "sk-ant-", isSet: false},
 	}
 
-	collected := collectBaseURLs(r, &w, providers)
+	collected := collectBaseURLs(bufio.NewScanner(r), &w, providers)
 	if len(collected) != 0 {
 		t.Errorf("expected no base URLs for providers without keys, got %d", len(collected))
 	}
@@ -418,7 +437,7 @@ func TestCollectBaseURLs_SkipsAlreadySetBaseURLs(t *testing.T) {
 		{name: "Anthropic", envVar: "ANTHROPIC_API_KEY", baseURLVar: "ANTHROPIC_BASE_URL", prefix: "sk-ant-", isSet: true},
 	}
 
-	collected := collectBaseURLs(r, &w, providers)
+	collected := collectBaseURLs(bufio.NewScanner(r), &w, providers)
 	if len(collected) != 0 {
 		t.Errorf("expected no base URLs when already set, got %d", len(collected))
 	}
@@ -431,11 +450,15 @@ func TestRunSetupEndToEnd_PreExistingKeys(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-already-set")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("ANTHROPIC_BASE_URL", "")
+	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("GEMINI_BASE_URL", "")
 
 	dir := t.TempDir()
 	envPath := filepath.Join(dir, ".env")
 
-	input := "sk-openai-new\n\n"
+	// Input: openai key, blank gemini, blank anthropic base URL, blank openai base URL
+	input := "sk-openai-new\n\n\n\n"
 	r := strings.NewReader(input)
 	var w bytes.Buffer
 
@@ -451,5 +474,71 @@ func TestRunSetupEndToEnd_PreExistingKeys(t *testing.T) {
 	}
 	if !strings.Contains(out, "Anthropic") || !strings.Contains(out, "OpenAI") {
 		t.Errorf("expected both providers in summary:\n%s", out)
+	}
+}
+
+func TestRunSetupWritesToXDGConfig(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("ANTHROPIC_BASE_URL", "")
+	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("GEMINI_BASE_URL", "")
+
+	configDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+
+	// Input: anthropic key + blank base URL + blank for remaining providers/URLs
+	input := "sk-ant-xdg-test\n\n\n\n"
+	r := strings.NewReader(input)
+	var w bytes.Buffer
+
+	cfg := setupConfig{} // no envFile override — should use XDG default
+	code := runSetupWithIO(cfg, r, &w)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d\noutput:\n%s", code, w.String())
+	}
+
+	expectedPath := filepath.Join(configDir, "mammoth", "config.env")
+	data, err := os.ReadFile(expectedPath)
+	if err != nil {
+		t.Fatalf("expected config.env at %s: %v", expectedPath, err)
+	}
+	if !strings.Contains(string(data), "ANTHROPIC_API_KEY=sk-ant-xdg-test") {
+		t.Errorf("expected key in config.env:\n%s", string(data))
+	}
+}
+
+func TestRunSetupCollectsBaseURLs(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-existing")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("ANTHROPIC_BASE_URL", "")
+	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("GEMINI_BASE_URL", "")
+
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, "test.env")
+
+	// Input: blank openai key, blank gemini key, anthropic base URL
+	input := "\n\nhttps://custom.anthropic.example.com\n"
+	r := strings.NewReader(input)
+	var w bytes.Buffer
+
+	cfg := setupConfig{envFile: envPath}
+	code := runSetupWithIO(cfg, r, &w)
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d\noutput:\n%s", code, w.String())
+	}
+
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("expected env file: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "ANTHROPIC_BASE_URL=https://custom.anthropic.example.com") {
+		t.Errorf("expected base URL in config:\n%s", content)
 	}
 }

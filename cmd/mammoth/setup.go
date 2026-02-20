@@ -1,4 +1,4 @@
-// ABOUTME: Interactive setup wizard for mammoth — collects API keys, writes .env, prints quickstart.
+// ABOUTME: Interactive setup wizard for mammoth — collects API keys and base URLs, writes XDG config.
 // ABOUTME: Follows the same subcommand pattern as "mammoth serve" with its own flag set.
 package main
 
@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -29,7 +30,7 @@ func parseSetupArgs(args []string) (setupConfig, bool) {
 	var cfg setupConfig
 	fs := flag.NewFlagSet("mammoth setup", flag.ContinueOnError)
 	fs.BoolVar(&cfg.skipKeys, "skip-keys", false, "Skip API key collection")
-	fs.StringVar(&cfg.envFile, "env-file", ".env", "Path to write .env file")
+	fs.StringVar(&cfg.envFile, "env-file", "", "Path to write config file (default: ~/.config/mammoth/config.env)")
 
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: mammoth setup [flags]")
@@ -103,8 +104,7 @@ func validateKeyFormat(key, prefix string) bool {
 
 // collectKeys interactively prompts for API keys for providers that aren't
 // already set. Returns a map of envVar->key for keys the user entered.
-func collectKeys(r io.Reader, w io.Writer, providers []providerInfo) map[string]string {
-	scanner := bufio.NewScanner(r)
+func collectKeys(scanner *bufio.Scanner, w io.Writer, providers []providerInfo) map[string]string {
 	collected := map[string]string{}
 
 	fmt.Fprintln(w)
@@ -148,8 +148,7 @@ func collectKeys(r io.Reader, w io.Writer, providers []providerInfo) map[string]
 // that have API keys configured. Returns a map of baseURLVar->url for URLs
 // the user entered. Providers without keys are skipped, and providers whose
 // base URL env var is already set in the environment are reported and skipped.
-func collectBaseURLs(r io.Reader, w io.Writer, providers []providerInfo) map[string]string {
-	scanner := bufio.NewScanner(r)
+func collectBaseURLs(scanner *bufio.Scanner, w io.Writer, providers []providerInfo) map[string]string {
 	collected := map[string]string{}
 
 	for _, p := range providers {
@@ -254,18 +253,55 @@ func runSetupWithIO(cfg setupConfig, r io.Reader, w io.Writer) int {
 	providers := detectProviders()
 	printProviderStatus(w, providers)
 
-	var collected map[string]string
-	if !cfg.skipKeys {
-		collected = collectKeys(r, w, providers)
+	// Create a single shared scanner so that collectKeys and collectBaseURLs
+	// read from the same buffered stream without losing data between calls.
+	scanner := bufio.NewScanner(r)
 
-		if err := writeEnvFile(cfg.envFile, collected); err != nil {
-			fmt.Fprintf(w, "Error writing %s: %v\n", cfg.envFile, err)
+	// Resolve config file path: explicit flag or XDG default.
+	envFile := cfg.envFile
+	if envFile == "" {
+		cfgDir, err := defaultConfigDir()
+		if err != nil {
+			fmt.Fprintf(w, "Error resolving config directory: %v\n", err)
 			return 1
 		}
-
-		if len(collected) > 0 {
-			fmt.Fprintf(w, "\nWrote %d key(s) to %s\n", len(collected), cfg.envFile)
+		if err := os.MkdirAll(cfgDir, 0755); err != nil {
+			fmt.Fprintf(w, "Error creating config directory: %v\n", err)
+			return 1
 		}
+		envFile = filepath.Join(cfgDir, "config.env")
+	}
+
+	allConfig := map[string]string{}
+
+	if !cfg.skipKeys {
+		collected := collectKeys(scanner, w, providers)
+		for k, v := range collected {
+			allConfig[k] = v
+		}
+
+		// Update isSet for providers that just got keys, so base URL
+		// collection knows which providers to prompt for.
+		for i := range providers {
+			if _, ok := collected[providers[i].envVar]; ok {
+				providers[i].isSet = true
+			}
+		}
+
+		// Collect base URLs for providers that have API keys.
+		baseURLs := collectBaseURLs(scanner, w, providers)
+		for k, v := range baseURLs {
+			allConfig[k] = v
+		}
+	}
+
+	if err := writeEnvFile(envFile, allConfig); err != nil {
+		fmt.Fprintf(w, "Error writing %s: %v\n", envFile, err)
+		return 1
+	}
+
+	if len(allConfig) > 0 {
+		fmt.Fprintf(w, "\nWrote %d setting(s) to %s\n", len(allConfig), envFile)
 	}
 
 	// Build list of configured provider names (existing + newly collected).
@@ -273,12 +309,6 @@ func runSetupWithIO(cfg setupConfig, r io.Reader, w io.Writer) int {
 	for _, p := range providers {
 		if p.isSet {
 			configured = append(configured, p.name)
-			continue
-		}
-		if collected != nil {
-			if _, ok := collected[p.envVar]; ok {
-				configured = append(configured, p.name)
-			}
 		}
 	}
 

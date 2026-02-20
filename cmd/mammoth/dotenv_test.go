@@ -122,3 +122,21 @@ func TestLoadDotEnvValueWithEquals(t *testing.T) {
 		t.Errorf("expected TEST_DOTENV_EQ=a=b=c, got %q", got)
 	}
 }
+
+func TestLoadDotEnvAutoLoadsXDGConfig(t *testing.T) {
+	configDir := t.TempDir()
+	mammothDir := filepath.Join(configDir, "mammoth")
+	os.MkdirAll(mammothDir, 0755)
+	configPath := filepath.Join(mammothDir, "config.env")
+	os.WriteFile(configPath, []byte("TEST_XDG_AUTO_LOAD=from_xdg\n"), 0644)
+
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("TEST_XDG_AUTO_LOAD", "")
+	os.Unsetenv("TEST_XDG_AUTO_LOAD")
+
+	loadDotEnvAuto()
+
+	if got := os.Getenv("TEST_XDG_AUTO_LOAD"); got != "from_xdg" {
+		t.Errorf("expected TEST_XDG_AUTO_LOAD=from_xdg, got %q", got)
+	}
+}
