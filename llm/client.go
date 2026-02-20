@@ -6,8 +6,11 @@ package llm
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"sync"
+
+	muxllm "github.com/2389-research/mux/llm"
 )
 
 // Middleware is a function that wraps an LLM call, enabling request/response
@@ -71,48 +74,22 @@ func NewClient(opts ...ClientOption) *Client {
 	return c
 }
 
-// envProviderAdapter is a placeholder adapter for providers detected via environment
-// variables. It returns a ConfigurationError for all operations, indicating that real
-// adapters have not yet been wired in. This placeholder enables FromEnv to register
-// detected providers so routing logic works once real adapters are available.
-type envProviderAdapter struct {
-	providerName string
-	apiKey       string
-}
-
-func (a *envProviderAdapter) Name() string { return a.providerName }
-
-func (a *envProviderAdapter) Complete(ctx context.Context, req Request) (*Response, error) {
-	return nil, &ConfigurationError{
-		SDKError: SDKError{
-			Message: fmt.Sprintf("provider %q detected from environment but real adapter not yet implemented", a.providerName),
-		},
-	}
-}
-
-func (a *envProviderAdapter) Stream(ctx context.Context, req Request) (<-chan StreamEvent, error) {
-	return nil, &ConfigurationError{
-		SDKError: SDKError{
-			Message: fmt.Sprintf("provider %q detected from environment but real adapter not yet implemented", a.providerName),
-		},
-	}
-}
-
-func (a *envProviderAdapter) Close() error { return nil }
-
 // FromEnv creates a Client by detecting API keys in the environment. It checks
-// OPENAI_API_KEY, ANTHROPIC_API_KEY, and GEMINI_API_KEY. The first detected
-// provider becomes the default. Returns a ConfigurationError if no keys are found.
+// ANTHROPIC_API_KEY, OPENAI_API_KEY, and GEMINI_API_KEY. The first detected
+// provider becomes the default. Provider-specific base URL env vars
+// (ANTHROPIC_BASE_URL, OPENAI_BASE_URL, GEMINI_BASE_URL) are checked and
+// used when present. Returns a ConfigurationError if no keys are found.
 func FromEnv() (*Client, error) {
 	type envProvider struct {
-		envVar string
-		name   string
+		envVar     string
+		name       string
+		baseEnvVar string
 	}
 
 	providers := []envProvider{
-		{envVar: "OPENAI_API_KEY", name: "openai"},
-		{envVar: "ANTHROPIC_API_KEY", name: "anthropic"},
-		{envVar: "GEMINI_API_KEY", name: "gemini"},
+		{envVar: "ANTHROPIC_API_KEY", name: "anthropic", baseEnvVar: "ANTHROPIC_BASE_URL"},
+		{envVar: "OPENAI_API_KEY", name: "openai", baseEnvVar: "OPENAI_BASE_URL"},
+		{envVar: "GEMINI_API_KEY", name: "gemini", baseEnvVar: "GEMINI_BASE_URL"},
 	}
 
 	var opts []ClientOption
@@ -121,10 +98,8 @@ func FromEnv() (*Client, error) {
 	for _, p := range providers {
 		key := os.Getenv(p.envVar)
 		if key != "" {
-			adapter := &envProviderAdapter{
-				providerName: p.name,
-				apiKey:       key,
-			}
+			baseURL := os.Getenv(p.baseEnvVar)
+			adapter := createAdapterForProvider(p.name, key, baseURL)
 			opts = append(opts, WithProvider(p.name, adapter))
 			found = true
 		}
@@ -133,12 +108,55 @@ func FromEnv() (*Client, error) {
 	if !found {
 		return nil, &ConfigurationError{
 			SDKError: SDKError{
-				Message: "no API keys found in environment (checked OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY)",
+				Message: "no API keys found in environment (checked ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY)",
 			},
 		}
 	}
 
 	return NewClient(opts...), nil
+}
+
+// createAdapterForProvider creates a real ProviderAdapter for the given provider.
+// When baseURL is set, legacy adapters are used (mux clients do not support
+// base URL overrides). Otherwise mux-based adapters are preferred.
+func createAdapterForProvider(name, apiKey, baseURL string) ProviderAdapter {
+	if baseURL != "" {
+		return createLegacyAdapterForProvider(name, apiKey, baseURL)
+	}
+
+	switch name {
+	case "anthropic":
+		client := muxllm.NewAnthropicClient(apiKey, "")
+		return NewMuxAdapter(name, client)
+	case "openai":
+		client := muxllm.NewOpenAIClient(apiKey, "")
+		return NewMuxAdapter(name, client)
+	case "gemini":
+		client, err := muxllm.NewGeminiClient(context.Background(), apiKey, "")
+		if err != nil {
+			log.Printf("failed to create Gemini mux client, falling back to built-in adapter: %v", err)
+			return NewGeminiAdapter(apiKey)
+		}
+		return NewMuxAdapter(name, client)
+	default:
+		client := muxllm.NewAnthropicClient(apiKey, "")
+		return NewMuxAdapter("anthropic", client)
+	}
+}
+
+// createLegacyAdapterForProvider creates a legacy ProviderAdapter with a custom
+// base URL. Used as fallback when mux clients do not support base URL overrides.
+func createLegacyAdapterForProvider(name, apiKey, baseURL string) ProviderAdapter {
+	switch name {
+	case "anthropic":
+		return NewAnthropicAdapter(apiKey, WithAnthropicBaseURL(baseURL))
+	case "openai":
+		return NewOpenAIAdapter(apiKey, WithOpenAIBaseURL(baseURL))
+	case "gemini":
+		return NewGeminiAdapter(apiKey, WithGeminiBaseURL(baseURL))
+	default:
+		return NewAnthropicAdapter(apiKey, WithAnthropicBaseURL(baseURL))
+	}
 }
 
 // resolveProvider determines which ProviderAdapter should handle the request.
