@@ -117,9 +117,19 @@ func FromEnv() (*Client, error) {
 }
 
 // createAdapterForProvider creates a real ProviderAdapter for the given provider.
-// When baseURL is set, legacy adapters are used (mux clients do not support
-// base URL overrides). Otherwise mux-based adapters are preferred.
+// For OpenAI with a custom base URL, uses OpenAICompatClient which speaks the
+// standard /v1/chat/completions endpoint (compatible with Cerebras, OpenRouter,
+// Cloudflare AI Gateway, etc.). Other providers with custom base URLs fall back
+// to legacy adapters.
 func createAdapterForProvider(name, apiKey, baseURL string) ProviderAdapter {
+	// OpenAI with custom base URL: use the compat client (chat/completions).
+	// The legacy OpenAI adapter uses /v1/responses which most compatible
+	// providers don't support.
+	if name == "openai" && baseURL != "" {
+		client := NewOpenAICompatClient(apiKey, "", baseURL)
+		return NewMuxAdapter(name, client)
+	}
+
 	if baseURL != "" {
 		return createLegacyAdapterForProvider(name, apiKey, baseURL)
 	}

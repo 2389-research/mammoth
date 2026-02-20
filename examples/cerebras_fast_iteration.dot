@@ -1,0 +1,80 @@
+// Fast-iteration pipeline using Cerebras inference for high-speed token generation.
+// Demonstrates using an OpenAI-compatible provider via base URL override.
+//
+// Prerequisites:
+//   OPENAI_API_KEY=your-cerebras-api-key
+//   OPENAI_BASE_URL=https://api.cerebras.ai/v1
+//
+// Run:
+//   mammoth examples/cerebras_fast_iteration.dot
+digraph cerebras_fast_iteration {
+    graph [
+        goal="Build a snake game in Python using curses",
+        retry_target="plan",
+        default_max_retry=3,
+        model_stylesheet="
+            * { llm_model: gpt-oss-120b; llm_provider: openai; }
+        "
+    ]
+    rankdir=LR
+
+    // Terminal nodes
+    start [shape=Mdiamond, label="Start"]
+    done  [shape=Msquare, label="Done"]
+
+    // Phase 1: Plan
+    plan [
+        label="Plan",
+        prompt="Plan a Snake game in Python using the curses library for: $goal.
+Design:
+- Single snake_game.py file
+- curses for terminal rendering
+- Arrow keys for movement
+- Food spawns at random positions
+- Snake grows when eating food
+- Game over on wall or self collision
+- Score display
+- Increasing speed as score goes up
+Output a clear plan with data structures and game loop design."
+    ]
+
+    // Phase 2: Implement (goal gate)
+    implement [
+        label="Implement",
+        prompt="Implement the full Snake game in snake_game.py based on the plan.
+Requirements:
+- curses.wrapper for clean terminal setup/teardown
+- Snake as a deque of (y, x) positions
+- Non-blocking input via curses.nodelay
+- Food placement avoiding snake body
+- Collision detection for walls and self
+- Score and speed scaling
+- Game over screen with replay option
+Write the complete implementation.",
+        goal_gate=true,
+        max_retries=3
+    ]
+
+    // Phase 3: Verify
+    verify [
+        label="Verify",
+        prompt="Check the snake_game.py file:
+1. Run 'python3 -c \"import ast; ast.parse(open(\"snake_game.py\").read())\"' to verify syntax
+2. Check for common issues: missing imports, undefined variables, logic errors
+3. Verify curses usage is correct (wrapper, nodelay, etc.)
+Report any issues found."
+    ]
+
+    // Phase 4: Verify gate
+    verify_ok [shape=diamond, label="Valid?"]
+
+    // Edges: main flow
+    start -> plan -> implement -> verify -> verify_ok
+    verify_ok -> done      [label="Pass", condition="outcome=success"]
+    verify_ok -> implement [label="Fail", condition="outcome=fail"]
+
+    // Fail edges: recover from LLM errors
+    plan -> plan             [condition="outcome=fail", label="Retry"]
+    implement -> implement   [condition="outcome=fail", label="Retry"]
+    verify -> implement      [condition="outcome=fail", label="Fix"]
+}

@@ -378,23 +378,26 @@ func TestAgentRunConfigBaseURLDefaultEmpty(t *testing.T) {
 
 func TestCreateProviderAdapterWithBaseURL(t *testing.T) {
 	tests := []struct {
-		name     string
-		provider string
+		name      string
+		provider  string
+		expectMux bool // OpenAI uses MuxAdapter with compat client; others use legacy
 	}{
-		{"anthropic", "anthropic"},
-		{"openai", "openai"},
-		{"gemini", "gemini"},
+		{"anthropic", "anthropic", false},
+		{"openai", "openai", true},
+		{"gemini", "gemini", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// With a base URL, should fall back to legacy (built-in) adapters
 			adapter := createProviderAdapter(context.Background(), tt.provider, "test-key", "https://custom.example.com")
 			if adapter == nil {
 				t.Error("expected non-nil adapter")
 			}
-			// Should NOT be a MuxAdapter when base URL is specified
-			if _, ok := adapter.(*llm.MuxAdapter); ok {
-				t.Errorf("expected legacy adapter with base URL, got *llm.MuxAdapter")
+			_, isMux := adapter.(*llm.MuxAdapter)
+			if tt.expectMux && !isMux {
+				t.Errorf("expected MuxAdapter (compat client) for %s with base URL, got %T", tt.provider, adapter)
+			}
+			if !tt.expectMux && isMux {
+				t.Errorf("expected legacy adapter for %s with base URL, got *llm.MuxAdapter", tt.provider)
 			}
 		})
 	}

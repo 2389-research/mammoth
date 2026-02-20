@@ -200,9 +200,16 @@ func createClientFromEnv(ctx context.Context, preferredProvider, baseURL string)
 // to mammoth's built-in adapters which support custom API endpoints.
 // Unknown providers default to Anthropic.
 func createProviderAdapter(ctx context.Context, name, apiKey, baseURL string) llm.ProviderAdapter {
-	// When a custom base URL is specified, fall back to mammoth's built-in
-	// adapters which support base URL overrides. The mux clients do not
-	// expose base URL configuration.
+	// OpenAI with custom base URL: use the compat client (chat/completions).
+	// This supports Cerebras, OpenRouter, Cloudflare AI Gateway, etc.
+	// The legacy OpenAI adapter uses /v1/responses which most compatible
+	// providers don't support.
+	if name == "openai" && baseURL != "" {
+		client := llm.NewOpenAICompatClient(apiKey, "", baseURL)
+		return llm.NewMuxAdapter(name, client)
+	}
+
+	// Other providers with custom base URL: fall back to legacy adapters.
 	if baseURL != "" {
 		return createLegacyProviderAdapter(name, apiKey, baseURL)
 	}
