@@ -525,6 +525,180 @@ func TestValidate_FailEdgeCoverage(t *testing.T) {
 	}
 }
 
+func TestAutoFix_DiamondLookup(t *testing.T) {
+	// When a codergen node has an unconditional edge to a diamond, and that
+	// diamond has an outcome=FAIL condition edge, AutoFix should reuse the
+	// diamond's fail target for the new fail edge on the codergen node.
+	g := &Graph{
+		Nodes: map[string]*Node{
+			"start":  {ID: "start", Attrs: map[string]string{"shape": "Mdiamond", "type": "start"}},
+			"verify": {ID: "verify", Attrs: map[string]string{"shape": "box", "prompt": "run tests"}},
+			"check":  {ID: "check", Attrs: map[string]string{"shape": "diamond"}},
+			"fix":    {ID: "fix", Attrs: map[string]string{"shape": "box", "prompt": "fix issues"}},
+			"exit":   {ID: "exit", Attrs: map[string]string{"shape": "Msquare", "type": "exit"}},
+		},
+		Edges: []*Edge{
+			{From: "start", To: "verify", Attrs: map[string]string{}},
+			{From: "verify", To: "check", Attrs: map[string]string{}},
+			{From: "check", To: "exit", Attrs: map[string]string{"condition": "outcome=SUCCESS"}},
+			{From: "check", To: "fix", Attrs: map[string]string{"condition": "outcome=FAIL"}},
+			{From: "fix", To: "verify", Attrs: map[string]string{}},
+		},
+	}
+
+	diags := AutoFix(g)
+
+	// Should have added a fail edge for "verify" (and "fix" too, since it also
+	// has no fail edge and no diamond downstream).
+	if len(diags) == 0 {
+		t.Fatal("expected AutoFix to return diagnostics for added edges")
+	}
+
+	// Check that verify got a fail edge pointing to "fix" (reusing diamond's target).
+	foundVerifyFix := false
+	for _, e := range g.OutgoingEdges("verify") {
+		cond := e.Attrs["condition"]
+		if cond == "outcome=FAIL" && e.To == "fix" {
+			foundVerifyFix = true
+		}
+	}
+	if !foundVerifyFix {
+		t.Errorf("expected verify -> fix fail edge via diamond lookup, edges: %+v", g.OutgoingEdges("verify"))
+	}
+
+	// Diagnostics should be INFO severity.
+	for _, d := range diags {
+		if d.Severity != SeverityInfo {
+			t.Errorf("expected INFO severity, got %s: %s", d.Severity, d.Message)
+		}
+	}
+}
+
+func TestAutoFix_SelfLoop(t *testing.T) {
+	// When a codergen node has no diamond downstream, AutoFix should create
+	// a self-loop fail edge.
+	g := &Graph{
+		Nodes: map[string]*Node{
+			"start": {ID: "start", Attrs: map[string]string{"shape": "Mdiamond", "type": "start"}},
+			"work":  {ID: "work", Attrs: map[string]string{"shape": "box", "prompt": "do stuff"}},
+			"exit":  {ID: "exit", Attrs: map[string]string{"shape": "Msquare", "type": "exit"}},
+		},
+		Edges: []*Edge{
+			{From: "start", To: "work", Attrs: map[string]string{}},
+			{From: "work", To: "exit", Attrs: map[string]string{}},
+		},
+	}
+
+	diags := AutoFix(g)
+
+	if len(diags) == 0 {
+		t.Fatal("expected AutoFix to return diagnostics")
+	}
+
+	// Check that work got a self-loop fail edge.
+	foundSelfLoop := false
+	for _, e := range g.OutgoingEdges("work") {
+		if e.Attrs["condition"] == "outcome=FAIL" && e.To == "work" {
+			foundSelfLoop = true
+		}
+	}
+	if !foundSelfLoop {
+		t.Errorf("expected work -> work self-loop fail edge, edges: %+v", g.OutgoingEdges("work"))
+	}
+}
+
+func TestAutoFix_GoalGateUntouched(t *testing.T) {
+	// goal_gate nodes should not be modified by AutoFix.
+	g := &Graph{
+		Nodes: map[string]*Node{
+			"start": {ID: "start", Attrs: map[string]string{"shape": "Mdiamond", "type": "start"}},
+			"impl":  {ID: "impl", Attrs: map[string]string{"shape": "box", "prompt": "implement", "goal_gate": "true", "retry_target": "start"}},
+			"exit":  {ID: "exit", Attrs: map[string]string{"shape": "Msquare", "type": "exit"}},
+		},
+		Edges: []*Edge{
+			{From: "start", To: "impl", Attrs: map[string]string{}},
+			{From: "impl", To: "exit", Attrs: map[string]string{}},
+		},
+	}
+
+	edgeCountBefore := len(g.Edges)
+	diags := AutoFix(g)
+
+	if len(diags) != 0 {
+		t.Errorf("expected no fixes for goal_gate node, got: %v", diags)
+	}
+	if len(g.Edges) != edgeCountBefore {
+		t.Errorf("expected edge count unchanged, was %d now %d", edgeCountBefore, len(g.Edges))
+	}
+}
+
+func TestAutoFix_AlreadyHasFailEdge(t *testing.T) {
+	// Nodes that already have a fail edge should not be modified.
+	g := &Graph{
+		Nodes: map[string]*Node{
+			"start": {ID: "start", Attrs: map[string]string{"shape": "Mdiamond", "type": "start"}},
+			"work":  {ID: "work", Attrs: map[string]string{"shape": "box", "prompt": "do stuff"}},
+			"exit":  {ID: "exit", Attrs: map[string]string{"shape": "Msquare", "type": "exit"}},
+		},
+		Edges: []*Edge{
+			{From: "start", To: "work", Attrs: map[string]string{}},
+			{From: "work", To: "exit", Attrs: map[string]string{"condition": "outcome=SUCCESS"}},
+			{From: "work", To: "start", Attrs: map[string]string{"condition": "outcome=FAIL"}},
+		},
+	}
+
+	edgeCountBefore := len(g.Edges)
+	diags := AutoFix(g)
+
+	if len(diags) != 0 {
+		t.Errorf("expected no fixes for node with existing fail edge, got: %v", diags)
+	}
+	if len(g.Edges) != edgeCountBefore {
+		t.Errorf("expected edge count unchanged, was %d now %d", edgeCountBefore, len(g.Edges))
+	}
+}
+
+func TestAutoFix_EdgeAttributes(t *testing.T) {
+	// Verify that auto-added fail edges have the correct attributes.
+	g := &Graph{
+		Nodes: map[string]*Node{
+			"start": {ID: "start", Attrs: map[string]string{"shape": "Mdiamond", "type": "start"}},
+			"work":  {ID: "work", Attrs: map[string]string{"shape": "box", "prompt": "do stuff"}},
+			"exit":  {ID: "exit", Attrs: map[string]string{"shape": "Msquare", "type": "exit"}},
+		},
+		Edges: []*Edge{
+			{From: "start", To: "work", Attrs: map[string]string{}},
+			{From: "work", To: "exit", Attrs: map[string]string{}},
+		},
+	}
+
+	AutoFix(g)
+
+	// Find the added fail edge.
+	var failEdge *Edge
+	for _, e := range g.OutgoingEdges("work") {
+		if e.Attrs["condition"] == "outcome=FAIL" {
+			failEdge = e
+			break
+		}
+	}
+	if failEdge == nil {
+		t.Fatal("expected a fail edge to be added")
+	}
+	if failEdge.Attrs["condition"] != "outcome=FAIL" {
+		t.Errorf("expected condition=outcome=FAIL, got %q", failEdge.Attrs["condition"])
+	}
+	if failEdge.Attrs["label"] != "Fail" {
+		t.Errorf("expected label=Fail, got %q", failEdge.Attrs["label"])
+	}
+	if failEdge.Attrs["style"] != "dashed" {
+		t.Errorf("expected style=dashed, got %q", failEdge.Attrs["style"])
+	}
+	if failEdge.Attrs["color"] != "red" {
+		t.Errorf("expected color=red, got %q", failEdge.Attrs["color"])
+	}
+}
+
 // testCustomRule is a custom lint rule used only in tests.
 type testCustomRule struct{}
 

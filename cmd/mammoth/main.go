@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/mammoth/dot"
+	"github.com/2389-research/mammoth/llm"
 	"github.com/2389-research/mammoth/render"
 	"github.com/2389-research/mammoth/tui"
 	"github.com/2389-research/mammoth/web"
@@ -30,6 +32,7 @@ type config struct {
 	serverMode    bool
 	port          int
 	validateOnly  bool
+	fixMode       bool
 	tuiMode       bool
 	fresh         bool
 	checkpointDir string
@@ -62,6 +65,9 @@ func main() {
 		if scfg, ok := parseSetupArgs(os.Args[1:]); ok {
 			os.Exit(runSetup(scfg))
 		}
+		if acfg, ok := parseAuditArgs(os.Args[1:]); ok {
+			os.Exit(runAudit(acfg))
+		}
 	}
 
 	cfg := parseFlags()
@@ -82,6 +88,7 @@ func parseFlags() config {
 	fs.BoolVar(&cfg.serverMode, "server", false, "Start HTTP server mode")
 	fs.IntVar(&cfg.port, "port", 2389, "Server port (default: 2389)")
 	fs.BoolVar(&cfg.validateOnly, "validate", false, "Validate pipeline without executing")
+	fs.BoolVar(&cfg.fixMode, "fix", false, "Auto-fix validation warnings (use with -validate)")
 	fs.StringVar(&cfg.checkpointDir, "checkpoint-dir", "", "Directory for checkpoint files")
 	fs.StringVar(&cfg.artifactDir, "artifact-dir", ".", "Directory for artifact storage (default: current directory)")
 	fs.StringVar(&cfg.dataDir, "data-dir", "", "Data directory for persistent state (default: .mammoth/ in CWD)")
@@ -888,6 +895,8 @@ func runServe(scfg serveConfig) int {
 }
 
 // validatePipeline parses and validates a DOT file without executing it.
+// When cfg.fixMode is true, it auto-fixes fixable warnings (e.g. missing fail
+// edges), writes the corrected graph back to the file, and re-validates.
 func validatePipeline(cfg config) int {
 	source, err := os.ReadFile(cfg.pipelineFile)
 	if err != nil {
@@ -905,6 +914,26 @@ func validatePipeline(cfg config) int {
 	graph = attractor.ApplyTransforms(graph, transforms...)
 
 	diags := attractor.Validate(graph)
+
+	// When -fix is enabled and there are fixable warnings, apply auto-fixes.
+	if cfg.fixMode && hasFixableWarnings(diags) {
+		fixes := attractor.AutoFix(graph)
+		for _, f := range fixes {
+			fmt.Fprintf(os.Stderr, "[FIX] %s\n", f.Message)
+		}
+
+		if len(fixes) > 0 {
+			fixed := dot.Serialize(graph)
+			if err := os.WriteFile(cfg.pipelineFile, []byte(fixed), 0644); err != nil {
+				fmt.Fprintf(os.Stderr, "error writing fixed pipeline: %v\n", err)
+				return 1
+			}
+			fmt.Fprintf(os.Stderr, "Wrote %d fix(es) to %s\n", len(fixes), cfg.pipelineFile)
+
+			// Re-validate to show remaining warnings.
+			diags = attractor.Validate(graph)
+		}
+	}
 
 	hasErrors := false
 	for _, d := range diags {
@@ -929,6 +958,17 @@ func validatePipeline(cfg config) int {
 
 	fmt.Println("Pipeline is valid.")
 	return 0
+}
+
+// hasFixableWarnings checks if any diagnostics are fixable warnings
+// (currently: fail_edge_coverage warnings).
+func hasFixableWarnings(diags []attractor.Diagnostic) bool {
+	for _, d := range diags {
+		if d.Severity == attractor.SeverityWarning && d.Rule == "fail_edge_coverage" {
+			return true
+		}
+	}
+	return false
 }
 
 // retryPolicyFromName maps a CLI retry policy name to an attractor RetryPolicy preset.
@@ -1012,6 +1052,134 @@ func buildEventHandler(store *attractor.FSRunStateStore, runID string, verbose b
 			verboseEventHandler(evt)
 		}
 	}
+}
+
+// auditConfig holds configuration for the "mammoth audit" subcommand.
+type auditConfig struct {
+	runID   string
+	verbose bool
+	dataDir string
+}
+
+// parseAuditArgs checks whether args starts with the "audit" subcommand and,
+// if so, parses audit-specific flags. Returns the config and true if "audit"
+// was detected, or a zero value and false otherwise.
+func parseAuditArgs(args []string) (auditConfig, bool) {
+	if len(args) == 0 || args[0] != "audit" {
+		return auditConfig{}, false
+	}
+
+	var cfg auditConfig
+	fs := flag.NewFlagSet("mammoth audit", flag.ContinueOnError)
+	fs.BoolVar(&cfg.verbose, "verbose", false, "Include full tool call details")
+	fs.StringVar(&cfg.dataDir, "data-dir", "", "Data directory (default: .mammoth/ in CWD)")
+
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, "Usage: mammoth audit [flags] [runID]")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Generate a narrative audit of a pipeline run.")
+		fmt.Fprintln(os.Stderr, "With no runID, audits the most recent run.")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Flags:")
+		fs.PrintDefaults()
+	}
+
+	if err := fs.Parse(args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			os.Exit(0)
+		}
+		os.Exit(2)
+	}
+
+	if fs.NArg() > 0 {
+		cfg.runID = fs.Arg(0)
+	}
+
+	return cfg, true
+}
+
+// runAudit loads a pipeline run and generates an LLM-powered audit narrative.
+func runAudit(cfg auditConfig) int {
+	// Resolve data directory.
+	dataDir := cfg.dataDir
+	if dataDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			return 1
+		}
+		dataDir = filepath.Join(cwd, ".mammoth")
+	}
+
+	runsDir := filepath.Join(dataDir, "runs")
+	store, err := attractor.NewFSRunStateStore(runsDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: could not open run store: %v\n", err)
+		return 1
+	}
+
+	// Find the target run.
+	runID := cfg.runID
+	if runID == "" {
+		// Find most recent run.
+		states, err := store.List()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			return 1
+		}
+		if len(states) == 0 {
+			fmt.Fprintln(os.Stderr, "error: no runs found in", runsDir)
+			return 1
+		}
+		// Pick the most recent by start time.
+		latest := states[0]
+		for _, s := range states[1:] {
+			if s.StartedAt.After(latest.StartedAt) {
+				latest = s
+			}
+		}
+		runID = latest.ID
+	}
+
+	state, err := store.Get(runID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: could not load run %s: %v\n", runID, err)
+		return 1
+	}
+
+	// Parse graph from stored source for flow summary.
+	var graph *attractor.Graph
+	if state.Source != "" {
+		g, parseErr := attractor.Parse(state.Source)
+		if parseErr == nil {
+			transforms := attractor.DefaultTransforms()
+			graph = attractor.ApplyTransforms(g, transforms...)
+		}
+	}
+
+	// Create LLM client.
+	client, err := llm.FromEnv()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error: audit requires an LLM API key")
+		fmt.Fprintln(os.Stderr, "Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY")
+		return 1
+	}
+
+	req := attractor.AuditRequest{
+		State:   state,
+		Events:  state.Events,
+		Graph:   graph,
+		Verbose: cfg.verbose,
+	}
+
+	report, err := attractor.GenerateAudit(context.Background(), req, client)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+
+	fmt.Println(report.Narrative)
+	return 0
 }
 
 // verboseEventHandler prints engine lifecycle events to stderr.

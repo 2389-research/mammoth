@@ -519,6 +519,76 @@ func (r *failEdgeCoverageRule) Apply(g *Graph) []Diagnostic {
 	return diags
 }
 
+// AutoFix mutates the graph to add missing fail edges on codergen nodes.
+// It returns INFO-severity diagnostics describing each fix applied.
+//
+// Heuristic for choosing the fail edge target:
+//  1. If the node has an unconditional outgoing edge to a diamond node, and
+//     that diamond has an outgoing edge with condition containing "outcome"
+//     and "FAIL", reuse that edge's target.
+//  2. Otherwise, add a self-loop (the node points back to itself).
+func AutoFix(g *Graph) []Diagnostic {
+	rule := &failEdgeCoverageRule{}
+	warnings := rule.Apply(g)
+
+	var fixes []Diagnostic
+	for _, w := range warnings {
+		if w.NodeID == "" {
+			continue
+		}
+
+		target := autoFixTarget(g, w.NodeID)
+		g.Edges = append(g.Edges, &Edge{
+			From: w.NodeID,
+			To:   target,
+			Attrs: map[string]string{
+				"condition": "outcome=FAIL",
+				"label":     "Fail",
+				"style":     "dashed",
+				"color":     "red",
+			},
+		})
+
+		fixes = append(fixes, Diagnostic{
+			Rule:     "auto_fix",
+			Severity: SeverityInfo,
+			Message:  fmt.Sprintf("added fail edge %s -> %s", w.NodeID, target),
+			NodeID:   w.NodeID,
+		})
+	}
+
+	return fixes
+}
+
+// autoFixTarget determines where a missing fail edge should point.
+// It looks for an unconditional edge to a diamond that already has a FAIL
+// condition edge, and reuses that target. Falls back to a self-loop.
+func autoFixTarget(g *Graph, nodeID string) string {
+	for _, e := range g.OutgoingEdges(nodeID) {
+		// Only consider unconditional edges (no condition attribute).
+		if e.Attrs["condition"] != "" {
+			continue
+		}
+		target := g.FindNode(e.To)
+		if target == nil {
+			continue
+		}
+		// Check if the target is a diamond (conditional) node.
+		if target.Attrs["shape"] != "diamond" && target.Attrs["type"] != "conditional" {
+			continue
+		}
+		// Look for a FAIL condition edge on the diamond.
+		for _, de := range g.OutgoingEdges(target.ID) {
+			cond := strings.ToUpper(de.Attrs["condition"])
+			if strings.Contains(cond, "OUTCOME") && strings.Contains(cond, "FAIL") {
+				return de.To
+			}
+		}
+	}
+	// Fallback: self-loop.
+	return nodeID
+}
+
 // promptOnLLMNodesRule checks that codergen nodes have a prompt or label attribute.
 type promptOnLLMNodesRule struct{}
 
