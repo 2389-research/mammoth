@@ -114,16 +114,20 @@ func SelectEdge(node *Node, outcome *Outcome, ctx *Context, graph *Graph) *Edge 
 		}
 	}
 
-	// Steps 4 & 5: Unconditional edges by weight then lexical
-	var unconditional []*Edge
-	for _, e := range edges {
-		cond, hasCond := e.Attrs["condition"]
-		if !hasCond || strings.TrimSpace(cond) == "" {
-			unconditional = append(unconditional, e)
+	// Steps 4 & 5: Unconditional edges by weight then lexical.
+	// Only follow unconditional edges on success/partial_success — a failed node
+	// must have an explicit condition="outcome = fail" edge to continue.
+	if outcome.Status != StatusFail {
+		var unconditional []*Edge
+		for _, e := range edges {
+			cond, hasCond := e.Attrs["condition"]
+			if !hasCond || strings.TrimSpace(cond) == "" {
+				unconditional = append(unconditional, e)
+			}
 		}
-	}
-	if len(unconditional) > 0 {
-		return bestByWeightThenLexical(unconditional)
+		if len(unconditional) > 0 {
+			return bestByWeightThenLexical(unconditional)
+		}
 	}
 
 	// All edges had conditions but none matched -- return nil

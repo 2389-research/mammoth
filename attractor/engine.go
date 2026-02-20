@@ -595,6 +595,19 @@ func (e *Engine) executeGraph(
 		nextEdge := SelectEdge(node, outcome, pctx, graph)
 		if nextEdge == nil {
 			if outcome.Status == StatusFail {
+				// Before erroring, check if this failed node has a goal_gate
+				// retry target that allows re-execution from an earlier node.
+				if node.Attrs["goal_gate"] == "true" {
+					retryTarget := getRetryTarget(node, graph)
+					if retryTarget != "" {
+						targetNode := graph.FindNode(retryTarget)
+						if targetNode != nil {
+							currentNode = targetNode
+							continue
+						}
+					}
+					return nil, fmt.Errorf("goal gate unsatisfied for node %q, no retry target available", node.ID)
+				}
 				return nil, fmt.Errorf("stage %q failed with no outgoing fail edge", node.ID)
 			}
 			// No next edge and not a failure -- pipeline ends naturally

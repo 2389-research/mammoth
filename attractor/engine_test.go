@@ -407,7 +407,8 @@ func TestEngineRunGraphRetryExhaustion(t *testing.T) {
 	g.Nodes["exit"] = &Node{ID: "exit", Attrs: map[string]string{"shape": "Msquare"}}
 	g.Edges = append(g.Edges,
 		&Edge{From: "start", To: "always_retry", Attrs: map[string]string{}},
-		&Edge{From: "always_retry", To: "exit", Attrs: map[string]string{}},
+		&Edge{From: "always_retry", To: "exit", Attrs: map[string]string{"condition": "outcome = fail"}},
+		&Edge{From: "always_retry", To: "exit", Attrs: map[string]string{"condition": "outcome = success"}},
 	)
 
 	startH := newSuccessHandler("start")

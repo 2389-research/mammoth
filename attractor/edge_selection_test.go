@@ -385,3 +385,51 @@ func TestSelectEdgePreferredLabelWithAccelerator(t *testing.T) {
 		t.Errorf("expected preferred label 'No' to match '[N] No' -> To='no', got %q", got.To)
 	}
 }
+
+func TestSelectEdgeFailedOutcomeDoesNotFollowUnconditionalEdge(t *testing.T) {
+	// When a node fails but only has unconditional edges (no condition="outcome = fail"),
+	// SelectEdge should return nil so the engine can halt with an error.
+	g := &Graph{
+		Nodes: map[string]*Node{
+			"a": {ID: "a", Attrs: map[string]string{}},
+			"b": {ID: "b", Attrs: map[string]string{}},
+		},
+		Edges: []*Edge{
+			{From: "a", To: "b", Attrs: map[string]string{}},
+		},
+	}
+	node := g.Nodes["a"]
+	outcome := &Outcome{Status: StatusFail, FailureReason: "some error"}
+	ctx := NewContext()
+
+	got := SelectEdge(node, outcome, ctx, g)
+	if got != nil {
+		t.Errorf("expected nil for failed outcome with only unconditional edges, got edge to %q", got.To)
+	}
+}
+
+func TestSelectEdgeFailedOutcomeFollowsConditionMatchedEdge(t *testing.T) {
+	// When a node fails and there IS a condition="outcome = fail" edge, it should be followed.
+	g := &Graph{
+		Nodes: map[string]*Node{
+			"a":        {ID: "a", Attrs: map[string]string{}},
+			"recovery": {ID: "recovery", Attrs: map[string]string{}},
+			"normal":   {ID: "normal", Attrs: map[string]string{}},
+		},
+		Edges: []*Edge{
+			{From: "a", To: "normal", Attrs: map[string]string{}},
+			{From: "a", To: "recovery", Attrs: map[string]string{"condition": "outcome = fail"}},
+		},
+	}
+	node := g.Nodes["a"]
+	outcome := &Outcome{Status: StatusFail, FailureReason: "some error"}
+	ctx := NewContext()
+
+	got := SelectEdge(node, outcome, ctx, g)
+	if got == nil {
+		t.Fatal("expected condition-matched fail edge, got nil")
+	}
+	if got.To != "recovery" {
+		t.Errorf("expected fail edge to 'recovery', got %q", got.To)
+	}
+}
