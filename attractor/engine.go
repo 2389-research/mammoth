@@ -398,6 +398,7 @@ func (e *Engine) executeGraph(
 	nodeOutcomes := make(map[string]*Outcome)
 	nodeRetries := make(map[string]int)
 	goalGateRetries := make(map[string]int)
+	nodeVisits := make(map[string]int) // Tracks graph-level re-visits per node
 
 	// If resuming, pre-populate completed nodes and retry counters from checkpoint
 	if rs != nil {
@@ -427,6 +428,16 @@ func (e *Engine) executeGraph(
 		}
 
 		node := currentNode
+
+		// Guard: enforce per-node visit limit to prevent unbounded loops
+		// from condition-based fail-back edges (e.g., diamond → earlier node).
+		// Configurable via graph attribute "max_node_visits" (default 3).
+		nodeVisits[node.ID]++
+		maxVisits := resolveMaxNodeVisits(node, graph)
+		if nodeVisits[node.ID] > maxVisits {
+			return nil, fmt.Errorf("node %q visited %d times (max %d) — likely a failing retry loop; fix the underlying issue or increase max_node_visits",
+				node.ID, nodeVisits[node.ID]-1, maxVisits)
+		}
 
 		// Step 1: Check for terminal node (shape=Msquare)
 		if isTerminal(node) {

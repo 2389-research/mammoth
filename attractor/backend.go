@@ -4,6 +4,7 @@ package attractor
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -71,4 +72,30 @@ type AgentRunResult struct {
 	ToolCallLog []ToolCallEntry // individual tool call details
 	TurnCount   int             // LLM call rounds
 	Usage       TokenUsage      // granular per-category token breakdown
+}
+
+// DetectOutcomeMarker scans text for outcome markers in common formats:
+//
+//	OUTCOME:FAIL, outcome=FAIL, outcome:fail, OUTCOME=SUCCESS, etc.
+//
+// Returns ("fail", true) or ("success"/"pass", true) if a marker is found,
+// or ("", false) if no marker is present. The check is case-insensitive and
+// accepts both ":" and "=" as separators. When both PASS/SUCCESS and FAIL
+// markers appear, FAIL wins (last-writer-wins would be fragile).
+func DetectOutcomeMarker(text string) (string, bool) {
+	upper := strings.ToUpper(text)
+	hasFail := strings.Contains(upper, "OUTCOME:FAIL") ||
+		strings.Contains(upper, "OUTCOME=FAIL")
+	hasPass := strings.Contains(upper, "OUTCOME:PASS") ||
+		strings.Contains(upper, "OUTCOME=PASS") ||
+		strings.Contains(upper, "OUTCOME:SUCCESS") ||
+		strings.Contains(upper, "OUTCOME=SUCCESS")
+
+	if hasFail {
+		return "fail", true
+	}
+	if hasPass {
+		return "success", true
+	}
+	return "", false
 }

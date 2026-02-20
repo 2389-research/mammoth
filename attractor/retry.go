@@ -226,3 +226,27 @@ func getRetryTarget(node *Node, graph *Graph) string {
 	}
 	return ""
 }
+
+// resolveMaxNodeVisits determines the maximum number of times a node may be
+// visited during pipeline execution. Checks node attribute "max_node_visits",
+// then graph attribute "max_node_visits", then defaults to 3.
+// This prevents unbounded loops from condition-based fail-back edges.
+func resolveMaxNodeVisits(node *Node, graph *Graph) int {
+	const defaultMaxVisits = 3
+
+	if node.Attrs != nil {
+		if v, ok := node.Attrs["max_node_visits"]; ok && v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	if graph.Attrs != nil {
+		if v, ok := graph.Attrs["max_node_visits"]; ok && v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	return defaultMaxVisits
+}

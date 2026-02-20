@@ -311,12 +311,11 @@ func extractResult(session *agent.Session) *AgentRunResult {
 		}
 	}
 
-	// Check the last assistant output for OUTCOME markers
+	// Check the last assistant output for OUTCOME markers using flexible
+	// case-insensitive detection (supports OUTCOME:FAIL, outcome=FAIL, etc.)
 	if result.Output != "" {
-		if strings.Contains(result.Output, "OUTCOME:FAIL") {
-			result.Success = false
-		} else if strings.Contains(result.Output, "OUTCOME:PASS") {
-			result.Success = true
+		if marker, found := DetectOutcomeMarker(result.Output); found {
+			result.Success = marker != "fail"
 		}
 	}
 

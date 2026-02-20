@@ -136,8 +136,10 @@ func (b *ClaudeCodeBackend) RunAgent(ctx context.Context, config AgentRunConfig)
 		cmd.Dir = config.WorkDir
 	}
 
-	// Inherit environment for ANTHROPIC_API_KEY, PATH, etc.
-	cmd.Env = os.Environ()
+	// Inherit environment for ANTHROPIC_API_KEY, PATH, etc., but strip
+	// CLAUDECODE so the child process doesn't refuse to start when mammoth
+	// is invoked from within a Claude Code session.
+	cmd.Env = filterEnv(os.Environ(), "CLAUDECODE")
 
 	// Capture stdout for JSONL parsing, stderr for diagnostics
 	var stderrBuf bytes.Buffer
@@ -397,17 +399,31 @@ func claudeUsageToTokenUsage(usage *claudeUsage) TokenUsage {
 }
 
 // claudeResultToSuccess determines the Success flag from the claude CLI result.
-// OUTCOME:FAIL in the result text always means failure. If is_error is true,
-// success is false. Otherwise, success defaults to true (matching the behavior
-// of extractResult in backend_agent.go).
+// Uses DetectOutcomeMarker for flexible, case-insensitive marker detection
+// (supports OUTCOME:FAIL, outcome=FAIL, etc.). If is_error is true, success
+// is false. Otherwise, success defaults to true.
 func claudeResultToSuccess(resultText string, isError bool) bool {
 	if isError {
 		return false
 	}
-	if strings.Contains(resultText, "OUTCOME:FAIL") {
-		return false
+	if marker, found := DetectOutcomeMarker(resultText); found {
+		return marker != "fail"
 	}
 	return true
+}
+
+// filterEnv returns a copy of env with all entries matching the given key
+// removed. Key matching is prefix-based (e.g., "CLAUDECODE" matches
+// "CLAUDECODE=1").
+func filterEnv(env []string, key string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		if !strings.HasPrefix(e, prefix) {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // Compile-time interface check
