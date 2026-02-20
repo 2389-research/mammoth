@@ -3,7 +3,7 @@ module github.com/2389-research/mammoth
 go 1.25.5
 
 require (
-	github.com/2389-research/mux v0.6.1
+	github.com/2389-research/mux v0.6.2
 	github.com/charmbracelet/bubbles v0.21.1
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0

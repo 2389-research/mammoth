@@ -341,8 +341,8 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 		sourceHint := sourceHintFromFilename(fileName)
 		if err := s.importProjectSpecFromContent(p.ID, seedText, sourceHint); err != nil {
 			log.Printf("component=web.server action=import_spec_failed project_id=%s err=%v", p.ID, err)
-			http.Error(w, "failed to initialize spec from input", http.StatusInternalServerError)
-			return
+			// Continue with project creation even if LLM import fails — the
+			// project is usable and the transcript is already seeded.
 		}
 		updated, ok := s.store.Get(p.ID)
 		if ok {

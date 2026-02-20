@@ -51,11 +51,14 @@ type ImportCard struct {
 func ParseWithLLM(ctx context.Context, content, sourceHint string, client llm.Client, model string) (*ImportResult, error) {
 	systemPrompt := BuildImportSystemPrompt(sourceHint)
 
+	// Use generous output limit — modern models support 64K+ output tokens.
+	// The default (4096) is far too small for structured JSON extraction from
+	// large specs that may produce dozens of cards.
 	req := &llm.Request{
 		Model:     model,
 		System:    systemPrompt,
 		Messages:  []llm.Message{llm.NewUserMessage(content)},
-		MaxTokens: 4096,
+		MaxTokens: 32768,
 	}
 
 	response, err := client.CreateMessage(ctx, req)

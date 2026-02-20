@@ -397,7 +397,7 @@ func (s *Server) importProjectSpecFromContent(projectID, content, sourceHint str
 		return fmt.Errorf("spec actor not found")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
 	result, err := specagents.ParseWithLLM(ctx, trimmed, sourceHint, s.specState.LLMClient, s.specState.LLMModel)
