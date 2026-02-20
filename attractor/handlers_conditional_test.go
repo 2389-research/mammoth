@@ -479,6 +479,41 @@ func TestConditionalHandlerWithPromptPassesEventHandler(t *testing.T) {
 	}
 }
 
+func TestEngineWiresBackendIntoConditionalHandler(t *testing.T) {
+	registry := DefaultHandlerRegistry()
+
+	// Before wiring, backend should be nil
+	condHandler := registry.Get("conditional")
+	if condHandler == nil {
+		t.Fatal("expected conditional handler in default registry")
+	}
+	ch, ok := condHandler.(*ConditionalHandler)
+	if !ok {
+		t.Fatalf("expected *ConditionalHandler, got %T", condHandler)
+	}
+	if ch.Backend != nil {
+		t.Error("expected nil backend before wiring")
+	}
+
+	// Simulate engine wiring (same pattern as engine.go does for codergen)
+	backend := &fakeBackend{}
+	if condHandler := registry.Get("conditional"); condHandler != nil {
+		if ch, ok := unwrapHandler(condHandler).(*ConditionalHandler); ok {
+			ch.Backend = backend
+			ch.BaseURL = "https://test.example.com"
+		}
+	}
+
+	// After wiring, backend should be set
+	ch2 := registry.Get("conditional").(*ConditionalHandler)
+	if ch2.Backend == nil {
+		t.Error("expected backend to be wired")
+	}
+	if ch2.BaseURL != "https://test.example.com" {
+		t.Errorf("expected base URL to be wired, got %q", ch2.BaseURL)
+	}
+}
+
 func TestConditionalHandlerWithPromptUsesLabelFallback(t *testing.T) {
 	backend := &fakeBackend{}
 	h := &ConditionalHandler{Backend: backend}

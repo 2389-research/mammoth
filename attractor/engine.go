@@ -175,6 +175,15 @@ func (e *Engine) RunGraph(ctx context.Context, graph *Graph) (*RunResult, error)
 				ch.EventHandler = e.emitEvent
 			}
 		}
+
+		// Wire backend into conditional handler for prompt-driven diamond nodes
+		if condHandler := registry.Get("conditional"); condHandler != nil {
+			if ch, ok := unwrapHandler(condHandler).(*ConditionalHandler); ok {
+				ch.Backend = e.config.Backend
+				ch.BaseURL = e.config.BaseURL
+				ch.EventHandler = e.emitEvent
+			}
+		}
 	}
 
 	// Phase 4: EXECUTE with restart loop
@@ -347,6 +356,15 @@ func (e *Engine) ResumeFromCheckpoint(ctx context.Context, graph *Graph, checkpo
 	if e.config.Backend != nil {
 		if codergenHandler := registry.Get("codergen"); codergenHandler != nil {
 			if ch, ok := unwrapHandler(codergenHandler).(*CodergenHandler); ok {
+				ch.Backend = e.config.Backend
+				ch.BaseURL = e.config.BaseURL
+				ch.EventHandler = e.emitEvent
+			}
+		}
+
+		// Wire backend into conditional handler for prompt-driven diamond nodes
+		if condHandler := registry.Get("conditional"); condHandler != nil {
+			if ch, ok := unwrapHandler(condHandler).(*ConditionalHandler); ok {
 				ch.Backend = e.config.Backend
 				ch.BaseURL = e.config.BaseURL
 				ch.EventHandler = e.emitEvent
