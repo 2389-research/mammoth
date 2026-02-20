@@ -1049,6 +1049,7 @@ func TestParseServeArgsDefaultLocal(t *testing.T) {
 }
 
 func TestBuildWebServerDefaultLocal(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-for-server-boot")
 	scfg := serveConfig{port: 0}
 	srv, err := buildWebServer(scfg)
 	if err != nil {
@@ -1059,6 +1060,7 @@ func TestBuildWebServerDefaultLocal(t *testing.T) {
 }
 
 func TestBuildWebServerGlobal(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-for-server-boot")
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	scfg := serveConfig{port: 0, global: true}
 	srv, err := buildWebServer(scfg)
@@ -1069,6 +1071,7 @@ func TestBuildWebServerGlobal(t *testing.T) {
 }
 
 func TestBuildWebServerExplicitDataDir(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-for-server-boot")
 	scfg := serveConfig{port: 0, dataDir: t.TempDir()}
 	srv, err := buildWebServer(scfg)
 	if err != nil {
@@ -1078,6 +1081,7 @@ func TestBuildWebServerExplicitDataDir(t *testing.T) {
 }
 
 func TestRunServeStartsHealthEndpoint(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-for-server-boot")
 	dataDir := t.TempDir()
 
 	scfg := serveConfig{
@@ -1114,6 +1118,7 @@ func TestRunServeStartsHealthEndpoint(t *testing.T) {
 }
 
 func TestRunServeGracefulShutdown(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-for-server-boot")
 	dataDir := t.TempDir()
 
 	scfg := serveConfig{
@@ -1151,6 +1156,7 @@ func TestRunServeGracefulShutdown(t *testing.T) {
 }
 
 func TestRunServeResolvesDefaultDataDir(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-for-server-boot")
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
 	scfg := serveConfig{

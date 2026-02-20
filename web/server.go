@@ -95,6 +95,9 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 
 	// Initialize spec builder state with provider detection.
 	providerStatus := server.DetectProviders()
+	if !providerStatus.AnyAvailable {
+		return nil, fmt.Errorf("no LLM provider configured: set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY")
+	}
 	specState := server.NewAppState(cfg.Workspace.StateDir, providerStatus)
 	setupSpecLLMClient(specState, providerStatus)
 

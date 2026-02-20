@@ -758,7 +758,7 @@ func TestRootToProjectFlow(t *testing.T) {
 func TestNewServerWithLocalWorkspace(t *testing.T) {
 	t.Setenv("MAMMOTH_BACKEND", "")
 	t.Setenv("MAMMOTH_DISABLE_PROGRESS_LOG", "1")
-	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-for-server-boot")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("GEMINI_API_KEY", "")
 
@@ -780,7 +780,7 @@ func TestNewServerWithLocalWorkspace(t *testing.T) {
 func TestNewServerWithGlobalWorkspace(t *testing.T) {
 	t.Setenv("MAMMOTH_BACKEND", "")
 	t.Setenv("MAMMOTH_DISABLE_PROGRESS_LOG", "1")
-	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-for-server-boot")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("GEMINI_API_KEY", "")
 
@@ -799,10 +799,29 @@ func TestNewServerWithGlobalWorkspace(t *testing.T) {
 	}
 }
 
+func TestNewServerFailsWithoutAPIKeys(t *testing.T) {
+	t.Setenv("MAMMOTH_BACKEND", "")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	cfg := ServerConfig{
+		Addr:      "127.0.0.1:0",
+		Workspace: NewGlobalWorkspace(t.TempDir()),
+	}
+	_, err := NewServer(cfg)
+	if err == nil {
+		t.Fatal("expected error when no API keys are set")
+	}
+	if !strings.Contains(err.Error(), "no LLM provider configured") {
+		t.Fatalf("expected 'no LLM provider configured' error, got: %v", err)
+	}
+}
+
 func TestLocalModeProjectRoundTrip(t *testing.T) {
 	t.Setenv("MAMMOTH_BACKEND", "")
 	t.Setenv("MAMMOTH_DISABLE_PROGRESS_LOG", "1")
-	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-for-server-boot")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("GEMINI_API_KEY", "")
 
@@ -872,7 +891,7 @@ func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	t.Setenv("MAMMOTH_BACKEND", "")
 	t.Setenv("MAMMOTH_DISABLE_PROGRESS_LOG", "1")
-	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-for-server-boot")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("GEMINI_API_KEY", "")
 	cfg := ServerConfig{
