@@ -514,6 +514,105 @@ func TestEngineWiresBackendIntoConditionalHandler(t *testing.T) {
 	}
 }
 
+func TestConditionalHandlerOutcomeAffectsEdgeSelection(t *testing.T) {
+	// Build a simple graph: start → verify (diamond with prompt) → pass_node / fail_node
+	graph := &Graph{
+		Attrs: map[string]string{},
+	}
+	graph.AddNode(&Node{ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}})
+	graph.AddNode(&Node{ID: "verify", Attrs: map[string]string{
+		"shape":  "diamond",
+		"prompt": "Run tests",
+	}})
+	graph.AddNode(&Node{ID: "pass_node", Attrs: map[string]string{"shape": "box"}})
+	graph.AddNode(&Node{ID: "fail_node", Attrs: map[string]string{"shape": "box"}})
+	graph.AddEdge(&Edge{From: "start", To: "verify"})
+	graph.AddEdge(&Edge{From: "verify", To: "pass_node", Attrs: map[string]string{"condition": "outcome = success"}})
+	graph.AddEdge(&Edge{From: "verify", To: "fail_node", Attrs: map[string]string{"condition": "outcome = fail"}})
+
+	// Agent reports OUTCOME:FAIL
+	backend := &fakeBackend{
+		runAgentFn: func(ctx context.Context, config AgentRunConfig) (*AgentRunResult, error) {
+			return &AgentRunResult{
+				Output:  "Tests failed: 2 errors\nOUTCOME:FAIL",
+				Success: true,
+			}, nil
+		},
+	}
+	h := &ConditionalHandler{Backend: backend}
+
+	verifyNode := graph.FindNode("verify")
+	pctx := NewContext()
+	store := NewArtifactStore(t.TempDir())
+
+	outcome, err := h.Execute(context.Background(), verifyNode, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if outcome.Status != StatusFail {
+		t.Fatalf("expected StatusFail, got %v", outcome.Status)
+	}
+
+	// Edge selection should pick the fail_node edge
+	edge := SelectEdge(verifyNode, outcome, pctx, graph)
+	if edge == nil {
+		t.Fatal("expected an edge to be selected")
+	}
+	if edge.To != "fail_node" {
+		t.Errorf("expected edge to fail_node, got %q", edge.To)
+	}
+}
+
+func TestConditionalHandlerOutcomeAffectsEdgeSelectionSuccess(t *testing.T) {
+	// Same graph but agent reports OUTCOME:PASS
+	graph := &Graph{
+		Attrs: map[string]string{},
+	}
+	graph.AddNode(&Node{ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}})
+	graph.AddNode(&Node{ID: "verify", Attrs: map[string]string{
+		"shape":  "diamond",
+		"prompt": "Run tests",
+	}})
+	graph.AddNode(&Node{ID: "pass_node", Attrs: map[string]string{"shape": "box"}})
+	graph.AddNode(&Node{ID: "fail_node", Attrs: map[string]string{"shape": "box"}})
+	graph.AddEdge(&Edge{From: "start", To: "verify"})
+	graph.AddEdge(&Edge{From: "verify", To: "pass_node", Attrs: map[string]string{"condition": "outcome = success"}})
+	graph.AddEdge(&Edge{From: "verify", To: "fail_node", Attrs: map[string]string{"condition": "outcome = fail"}})
+
+	backend := &fakeBackend{
+		runAgentFn: func(ctx context.Context, config AgentRunConfig) (*AgentRunResult, error) {
+			return &AgentRunResult{
+				Output:  "All tests pass!\nOUTCOME:PASS",
+				Success: true,
+			}, nil
+		},
+	}
+	h := &ConditionalHandler{Backend: backend}
+
+	verifyNode := graph.FindNode("verify")
+	pctx := NewContext()
+	store := NewArtifactStore(t.TempDir())
+
+	outcome, err := h.Execute(context.Background(), verifyNode, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if outcome.Status != StatusSuccess {
+		t.Fatalf("expected StatusSuccess, got %v", outcome.Status)
+	}
+
+	// Edge selection should pick the pass_node edge
+	edge := SelectEdge(verifyNode, outcome, pctx, graph)
+	if edge == nil {
+		t.Fatal("expected an edge to be selected")
+	}
+	if edge.To != "pass_node" {
+		t.Errorf("expected edge to pass_node, got %q", edge.To)
+	}
+}
+
 func TestConditionalHandlerWithPromptUsesLabelFallback(t *testing.T) {
 	backend := &fakeBackend{}
 	h := &ConditionalHandler{Backend: backend}
