@@ -1,5 +1,5 @@
-// ABOUTME: XDG-based data directory resolution for persistent pipeline state.
-// ABOUTME: Checks XDG_DATA_HOME, falls back to ~/.local/share/mammoth.
+// ABOUTME: XDG-based data and config directory resolution for mammoth CLI.
+// ABOUTME: Checks XDG_DATA_HOME / XDG_CONFIG_HOME, falls back to ~/.local/share/mammoth and ~/.config/mammoth.
 package main
 
 import (
@@ -21,4 +21,19 @@ func defaultDataDir() (string, error) {
 	}
 
 	return filepath.Join(home, ".local", "share", "mammoth"), nil
+}
+
+// defaultConfigDir returns the default config directory for mammoth configuration.
+// It checks XDG_CONFIG_HOME first, then falls back to ~/.config/mammoth.
+func defaultConfigDir() (string, error) {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "mammoth"), nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
+
+	return filepath.Join(home, ".config", "mammoth"), nil
 }
