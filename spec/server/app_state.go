@@ -138,7 +138,25 @@ func (s *AppState) TryStartAgents(specID ulid.ULID) bool {
 
 	orchestrator := agents.NewSwarmOrchestrator(specID, actor, s.LLMClient, s.LLMModel)
 	ctx, cancel := context.WithCancel(context.Background())
-	go orchestrator.RunLoop(ctx)
+
+	// Wrap RunLoop so we clean up the Swarms map entry when it exits.
+	// This allows agents to be restarted if the loop dies unexpectedly.
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("component=spec.server action=swarm_panic spec_id=%s panic=%v", specID, r)
+			}
+			cancel() // Release context resources
+			s.mu.Lock()
+			// Only delete our own entry — a replacement swarm may already exist.
+			if h, ok := s.Swarms[specID]; ok && h.Orchestrator == orchestrator {
+				delete(s.Swarms, specID)
+			}
+			s.mu.Unlock()
+			log.Printf("component=spec.server action=swarm_exited spec_id=%s", specID)
+		}()
+		orchestrator.RunLoop(ctx)
+	}()
 
 	s.Swarms[specID] = &SwarmHandle{
 		Orchestrator: orchestrator,

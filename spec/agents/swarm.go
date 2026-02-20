@@ -22,10 +22,11 @@ import (
 // AgentRunner wraps a single agent's role and mutable context.
 // The mu field protects concurrent access to Context fields.
 type AgentRunner struct {
-	Role    AgentRole
-	Context *AgentContext
-	AgentID string
-	mu      sync.RWMutex
+	Role             AgentRole
+	Context          *AgentContext
+	AgentID          string
+	mu               sync.RWMutex
+	consecutiveFails int
 }
 
 // NewAgentRunner creates a new runner for the given role with a unique agent ID.
@@ -267,9 +268,13 @@ func (s *SwarmOrchestrator) RunAgentStep(ctx context.Context, runner *AgentRunne
 
 	// Run the agent
 	if err := muxAgent.Run(ctx, taskPrompt); err != nil {
-		log.Printf("component=spec.agent action=step_failed agent_id=%s role=%s err=%v", runner.AgentID, runner.Role.Label(), err)
-		// Post a sanitized error message to the transcript
-		userMsg := fmt.Sprintf("[%s] encountered an issue and will retry on the next cycle.", runner.Role.Label())
+		runner.consecutiveFails++
+		log.Printf("component=spec.agent action=step_failed agent_id=%s role=%s consecutive_fails=%d err=%v",
+			runner.AgentID, runner.Role.Label(), runner.consecutiveFails, err)
+
+		// Surface the actual error so the user can diagnose the issue.
+		userMsg := fmt.Sprintf("[%s] step failed (attempt %d): %v",
+			runner.Role.Label(), runner.consecutiveFails, err)
 		_, _ = s.Actor.SendCommand(core.AppendTranscriptCommand{
 			Sender:  runner.AgentID,
 			Content: userMsg,
@@ -281,6 +286,9 @@ func (s *SwarmOrchestrator) RunAgentStep(ctx context.Context, runner *AgentRunne
 		})
 		return false
 	}
+
+	// Reset consecutive failure counter on success.
+	runner.consecutiveFails = 0
 
 	// Only emit the fallback FinishAgentStep if the agent didn't already
 	// finish via emit_diff_summary (which sets stepFinished).
@@ -368,12 +376,30 @@ func (s *SwarmOrchestrator) RunLoop(ctx context.Context) {
 				continue
 			}
 
-			s.RefreshContext(runner, eventCh)
-			didWork := s.RunAgentStep(ctx, runner)
-			if didWork {
-				anyWork = true
-				time.Sleep(100 * time.Millisecond)
-			}
+			// Wrap each agent step in panic recovery so one agent's crash
+			// doesn't kill the entire swarm goroutine (and the server).
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("component=spec.swarm action=agent_panic agent_id=%s role=%s spec_id=%s panic=%v",
+							runner.AgentID, runner.Role.Label(), s.SpecID, r)
+						_, _ = s.Actor.SendCommand(core.AppendTranscriptCommand{
+							Sender:  runner.AgentID,
+							Content: fmt.Sprintf("[%s] crashed unexpectedly: %v. Will recover on next cycle.", runner.Role.Label(), r),
+						})
+						_, _ = s.Actor.SendCommand(core.FinishAgentStepCommand{
+							AgentID:     runner.AgentID,
+							DiffSummary: "agent panicked",
+						})
+					}
+				}()
+				s.RefreshContext(runner, eventCh)
+				didWork := s.RunAgentStep(ctx, runner)
+				if didWork {
+					anyWork = true
+					time.Sleep(100 * time.Millisecond)
+				}
+			}()
 		}
 
 		// Wait between cycles. Use select so a human message notification
@@ -400,8 +426,24 @@ func (s *SwarmOrchestrator) RunLoop(ctx context.Context) {
 					eventCh := s.eventChannels[mgrIdx]
 					s.mu.Unlock()
 					if runner != nil {
-						s.RefreshContext(runner, eventCh)
-						s.RunAgentStep(ctx, runner)
+						func() {
+							defer func() {
+								if r := recover(); r != nil {
+									log.Printf("component=spec.swarm action=agent_panic agent_id=%s role=manager spec_id=%s panic=%v",
+										runner.AgentID, s.SpecID, r)
+									_, _ = s.Actor.SendCommand(core.AppendTranscriptCommand{
+										Sender:  runner.AgentID,
+										Content: fmt.Sprintf("[%s] crashed unexpectedly: %v. Will recover on next cycle.", runner.Role.Label(), r),
+									})
+									_, _ = s.Actor.SendCommand(core.FinishAgentStepCommand{
+										AgentID:     runner.AgentID,
+										DiffSummary: "agent panicked",
+									})
+								}
+							}()
+							s.RefreshContext(runner, eventCh)
+							s.RunAgentStep(ctx, runner)
+						}()
 					}
 				}
 			}
