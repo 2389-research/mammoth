@@ -466,6 +466,65 @@ func TestValidateOrError_NoError(t *testing.T) {
 	}
 }
 
+func TestValidate_FailEdgeCoverage(t *testing.T) {
+	// A codergen node with only an unconditional outgoing edge should trigger a warning.
+	// This catches the pattern where verify_* -> diamond has no fail edge on the verify node.
+	g := &Graph{
+		Nodes: map[string]*Node{
+			"start":  {ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}},
+			"verify": {ID: "verify", Attrs: map[string]string{"shape": "box", "prompt": "run tests, report outcome=FAIL if tests fail"}},
+			"check":  {ID: "check", Attrs: map[string]string{"shape": "diamond"}},
+			"exit":   {ID: "exit", Attrs: map[string]string{"shape": "Msquare"}},
+		},
+		Edges: []*Edge{
+			{From: "start", To: "verify", Attrs: map[string]string{}},
+			{From: "verify", To: "check", Attrs: map[string]string{}},
+			{From: "check", To: "exit", Attrs: map[string]string{"label": "Pass", "condition": "outcome=SUCCESS"}},
+			{From: "check", To: "verify", Attrs: map[string]string{"label": "Fail", "condition": "outcome=FAIL"}},
+		},
+	}
+
+	diags := Validate(g)
+	if !hasDiagnostic(diags, "fail_edge_coverage", SeverityWarning) {
+		t.Errorf("expected fail_edge_coverage WARNING for codergen node with no fail edge, got: %v", diags)
+	}
+
+	// A codergen node with a fail-condition edge should NOT trigger the warning.
+	g2 := &Graph{
+		Nodes: map[string]*Node{
+			"start":  {ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}},
+			"verify": {ID: "verify", Attrs: map[string]string{"shape": "box", "prompt": "run tests"}},
+			"exit":   {ID: "exit", Attrs: map[string]string{"shape": "Msquare"}},
+		},
+		Edges: []*Edge{
+			{From: "start", To: "verify", Attrs: map[string]string{}},
+			{From: "verify", To: "exit", Attrs: map[string]string{"condition": "outcome = SUCCESS"}},
+			{From: "verify", To: "start", Attrs: map[string]string{"condition": "outcome = FAIL"}},
+		},
+	}
+	diags2 := Validate(g2)
+	if hasDiagnostic(diags2, "fail_edge_coverage", SeverityWarning) {
+		t.Errorf("codergen node with fail edge should not trigger warning, got: %v", diags2)
+	}
+
+	// A codergen node with goal_gate=true should NOT trigger (goal_gate has its own retry).
+	g3 := &Graph{
+		Nodes: map[string]*Node{
+			"start": {ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}},
+			"impl":  {ID: "impl", Attrs: map[string]string{"shape": "box", "prompt": "implement", "goal_gate": "true", "retry_target": "start"}},
+			"exit":  {ID: "exit", Attrs: map[string]string{"shape": "Msquare"}},
+		},
+		Edges: []*Edge{
+			{From: "start", To: "impl", Attrs: map[string]string{}},
+			{From: "impl", To: "exit", Attrs: map[string]string{}},
+		},
+	}
+	diags3 := Validate(g3)
+	if hasDiagnostic(diags3, "fail_edge_coverage", SeverityWarning) {
+		t.Errorf("goal_gate node should not trigger fail_edge_coverage warning, got: %v", diags3)
+	}
+}
+
 // testCustomRule is a custom lint rule used only in tests.
 type testCustomRule struct{}
 

@@ -76,6 +76,7 @@ func builtinRules() []LintRule {
 		&retryTargetExistsRule{},
 		&goalGateHasRetryRule{},
 		&promptOnLLMNodesRule{},
+		&failEdgeCoverageRule{},
 	}
 }
 
@@ -463,6 +464,55 @@ func (r *goalGateHasRetryRule) Apply(g *Graph) []Diagnostic {
 				Message:  fmt.Sprintf("node %q has goal_gate=true but no retry_target", n.ID),
 				NodeID:   n.ID,
 				Fix:      "add a retry_target attribute pointing to a valid node",
+			})
+		}
+	}
+	return diags
+}
+
+// failEdgeCoverageRule checks that codergen nodes have an outgoing fail edge.
+// Without a fail-condition edge, the engine aborts with "failed with no outgoing
+// fail edge" when the node returns StatusFail. Nodes with goal_gate=true are
+// exempt because the engine retries them via retry_target instead.
+type failEdgeCoverageRule struct{}
+
+func (r *failEdgeCoverageRule) Name() string { return "fail_edge_coverage" }
+
+func (r *failEdgeCoverageRule) Apply(g *Graph) []Diagnostic {
+	var diags []Diagnostic
+	for _, n := range g.Nodes {
+		if isStartNode(n) || isTerminal(n) {
+			continue
+		}
+		// Only check codergen nodes (shape=box or explicit type=codergen).
+		// Diamond nodes use ConditionalHandler which passes through outcomes.
+		isCodergen := n.Attrs["type"] == "codergen"
+		if !isCodergen && n.Attrs["shape"] == "box" && n.Attrs["type"] == "" {
+			isCodergen = true
+		}
+		if !isCodergen {
+			continue
+		}
+		// goal_gate nodes have their own retry mechanism in the engine.
+		if n.Attrs["goal_gate"] == "true" {
+			continue
+		}
+		// Check if any outgoing edge has a condition matching outcome = fail.
+		hasFailEdge := false
+		for _, e := range g.OutgoingEdges(n.ID) {
+			cond := strings.ToUpper(e.Attrs["condition"])
+			if strings.Contains(cond, "OUTCOME") && strings.Contains(cond, "FAIL") {
+				hasFailEdge = true
+				break
+			}
+		}
+		if !hasFailEdge {
+			diags = append(diags, Diagnostic{
+				Rule:     r.Name(),
+				Severity: SeverityWarning,
+				Message:  fmt.Sprintf("codergen node %q has no outgoing fail edge; if this node fails, the pipeline will abort", n.ID),
+				NodeID:   n.ID,
+				Fix:      "add an edge with condition=\"outcome=FAIL\" or set goal_gate=true with a retry_target",
 			})
 		}
 	}
