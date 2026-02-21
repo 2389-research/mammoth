@@ -9,7 +9,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/2389-research/mammoth/agent"
 	"github.com/2389-research/mammoth/llm"
 )
 
@@ -207,9 +209,10 @@ func TestAgentBackendRespectsMaxTurns(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// The agent should have been limited by MaxTurns
-	if !result.Success {
-		t.Error("expected success even when hitting turn limit")
+	// The agent should have been limited by MaxTurns, and since no
+	// OUTCOME:SUCCESS marker was emitted, the result is marked as failure.
+	if result.Success {
+		t.Error("expected failure when hitting turn limit without explicit OUTCOME:SUCCESS marker")
 	}
 }
 
@@ -921,5 +924,76 @@ func TestBackendEmptySystemPromptOmitsHeader(t *testing.T) {
 
 	if strings.Contains(systemContent, "User Instructions") {
 		t.Error("empty SystemPrompt should not add User Instructions header")
+	}
+}
+
+// --- Turn exhaustion tests ---
+
+func TestExtractResultTurnExhaustedWithoutMarkerFails(t *testing.T) {
+	session := agent.NewSession(agent.SessionConfig{MaxTurns: 5})
+	defer session.Close()
+	session.HitTurnLimit = true
+	session.AppendTurn(agent.AssistantTurn{
+		Content:   "I created the first 3 files but ran out of time...",
+		Timestamp: time.Now(),
+	})
+	result := extractResult(session)
+	if result.Success {
+		t.Error("expected Success=false when turn limit hit without success marker")
+	}
+}
+
+func TestExtractResultTurnExhaustedWithSuccessMarkerSucceeds(t *testing.T) {
+	session := agent.NewSession(agent.SessionConfig{MaxTurns: 5})
+	defer session.Close()
+	session.HitTurnLimit = true
+	session.AppendTurn(agent.AssistantTurn{
+		Content:   "All work complete. OUTCOME:SUCCESS",
+		Timestamp: time.Now(),
+	})
+	result := extractResult(session)
+	if !result.Success {
+		t.Error("expected Success=true when explicit OUTCOME:SUCCESS marker present despite turn limit")
+	}
+}
+
+func TestExtractResultTurnExhaustedWithPassMarkerSucceeds(t *testing.T) {
+	session := agent.NewSession(agent.SessionConfig{MaxTurns: 5})
+	defer session.Close()
+	session.HitTurnLimit = true
+	session.AppendTurn(agent.AssistantTurn{
+		Content:   "All tests pass. OUTCOME:PASS",
+		Timestamp: time.Now(),
+	})
+	result := extractResult(session)
+	if !result.Success {
+		t.Error("expected Success=true when explicit OUTCOME:PASS marker present despite turn limit")
+	}
+}
+
+func TestExtractResultTurnExhaustedWithFailMarkerFails(t *testing.T) {
+	session := agent.NewSession(agent.SessionConfig{MaxTurns: 5})
+	defer session.Close()
+	session.HitTurnLimit = true
+	session.AppendTurn(agent.AssistantTurn{
+		Content:   "Could not complete. OUTCOME:FAIL",
+		Timestamp: time.Now(),
+	})
+	result := extractResult(session)
+	if result.Success {
+		t.Error("expected Success=false when OUTCOME:FAIL marker present and turn limit hit")
+	}
+}
+
+func TestExtractResultNoTurnLimitDefaultsToSuccess(t *testing.T) {
+	session := agent.NewSession(agent.DefaultSessionConfig())
+	defer session.Close()
+	session.AppendTurn(agent.AssistantTurn{
+		Content:   "I finished the work.",
+		Timestamp: time.Now(),
+	})
+	result := extractResult(session)
+	if !result.Success {
+		t.Error("expected Success=true when no turn limit was hit")
 	}
 }

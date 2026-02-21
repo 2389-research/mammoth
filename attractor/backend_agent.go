@@ -300,6 +300,11 @@ func buildAgentInput(prompt, goal, nodeID string) string {
 // The last assistant message is checked for OUTCOME:PASS or OUTCOME:FAIL
 // markers. If OUTCOME:FAIL is found, Success is set to false. If no marker
 // is present, Success defaults to true (backward compatible with codergen nodes).
+//
+// When the session hit the turn limit (HitTurnLimit=true) and no explicit
+// OUTCOME:SUCCESS/PASS marker was found, the result is marked as failure.
+// Agents that complete their work before the limit can declare OUTCOME:SUCCESS
+// to override this behavior.
 func extractResult(session *agent.Session) *AgentRunResult {
 	result := &AgentRunResult{
 		Success: true,
@@ -320,10 +325,20 @@ func extractResult(session *agent.Session) *AgentRunResult {
 
 	// Check the last assistant output for OUTCOME markers using flexible
 	// case-insensitive detection (supports OUTCOME:FAIL, outcome=FAIL, etc.)
+	hasExplicitSuccessMarker := false
 	if result.Output != "" {
 		if marker, found := DetectOutcomeMarker(result.Output); found {
 			result.Success = marker != "fail"
+			if marker != "fail" {
+				hasExplicitSuccessMarker = true
+			}
 		}
+	}
+
+	// Turn exhaustion without an explicit success marker = failure.
+	// Agents that complete their work can declare OUTCOME:SUCCESS to override.
+	if session.HitTurnLimit && !hasExplicitSuccessMarker {
+		result.Success = false
 	}
 
 	return result
