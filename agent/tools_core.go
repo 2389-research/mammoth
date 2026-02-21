@@ -169,6 +169,11 @@ func NewWriteFileTool() *RegisteredTool {
 				return "", err
 			}
 
+			// Strip line-number prefixes that read_file adds (e.g. "  1 | code").
+			// Agents sometimes copy read_file output directly into write_file content,
+			// which would permanently embed line numbers into the file.
+			content = stripLineNumbers(content)
+
 			if err := env.WriteFile(filePath, content); err != nil {
 				return "", err
 			}

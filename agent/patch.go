@@ -344,49 +344,54 @@ func ApplyPatch(patch *Patch, env ExecutionEnvironment) (*PatchResult, error) {
 	return result, nil
 }
 
-// lineNumberPattern matches the line-number prefix format from ReadFile (e.g. "   1\t").
-var lineNumberPattern = regexp.MustCompile(`^\s*\d+\t`)
+// lineNumberPipePattern matches pipe-delimited line-number prefixes (e.g. "  1 | code").
+// This is the format produced by formatLineNumbers in tools_core.go.
+var lineNumberPipePattern = regexp.MustCompile(`^\s*\d+\s*[|]\s?`)
 
-// stripLineNumbers removes line-number prefixes from ReadFile output.
-// Each line in the format "  NN\t<content>" becomes just "<content>".
-// If no line-number prefix is detected, the content is returned unchanged.
+// lineNumberTabPattern matches tab-delimited line-number prefixes (e.g. "   1\tcode").
+// Allows leading whitespace to match both "1\t" and "   1\t" formats.
+var lineNumberTabPattern = regexp.MustCompile(`^\s*\d+\t`)
+
+// stripLineNumbers removes line-number prefixes from content that was produced by
+// formatLineNumbers or similar line-numbering tools. It detects both pipe-delimited
+// ("  1 | code") and tab-delimited ("1\tcode") formats. A majority heuristic ensures
+// that content which happens to start with digits (e.g. bitwise OR expressions) is
+// not falsely stripped.
 func stripLineNumbers(content string) string {
+	if content == "" {
+		return content
+	}
+
 	lines := strings.Split(content, "\n")
-	if len(lines) == 0 {
+	matchCount := 0
+	nonEmptyCount := 0
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		nonEmptyCount++
+		if lineNumberPipePattern.MatchString(line) || lineNumberTabPattern.MatchString(line) {
+			matchCount++
+		}
+	}
+
+	// Only strip if a majority of non-empty lines match a line-number pattern.
+	if nonEmptyCount == 0 || matchCount*2 < nonEmptyCount {
 		return content
 	}
 
-	// Check if the first non-empty line has a line-number prefix
-	hasPrefix := false
-	for _, l := range lines {
-		if l == "" {
-			continue
+	var builder strings.Builder
+	for i, line := range lines {
+		stripped := lineNumberPipePattern.ReplaceAllString(line, "")
+		if stripped == line {
+			stripped = lineNumberTabPattern.ReplaceAllString(line, "")
 		}
-		if lineNumberPattern.MatchString(l) {
-			hasPrefix = true
-		}
-		break
-	}
-
-	if !hasPrefix {
-		return content
-	}
-
-	stripped := make([]string, 0, len(lines))
-	for _, l := range lines {
-		if l == "" {
-			stripped = append(stripped, "")
-			continue
-		}
-		loc := lineNumberPattern.FindStringIndex(l)
-		if loc != nil {
-			stripped = append(stripped, l[loc[1]:])
-		} else {
-			stripped = append(stripped, l)
+		builder.WriteString(stripped)
+		if i < len(lines)-1 {
+			builder.WriteByte('\n')
 		}
 	}
-
-	return strings.Join(stripped, "\n")
+	return builder.String()
 }
 
 // applyUpdateOperation reads a file, applies all hunks, and writes the result back.

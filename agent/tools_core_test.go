@@ -468,6 +468,160 @@ func TestGlobTool(t *testing.T) {
 	}
 }
 
+// --- stripLineNumbers tests ---
+
+func TestStripLineNumbers_MammothFormat(t *testing.T) {
+	// Mammoth's formatLineNumbers produces "NNN | content" format
+	input := "  1 | package main\n  2 | \n  3 | func main() {\n  4 | \tprintln(\"hello\")\n  5 | }"
+	want := "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}"
+
+	got := stripLineNumbers(input)
+	if got != want {
+		t.Errorf("stripLineNumbers mammoth format:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestStripLineNumbers_TabDelimited(t *testing.T) {
+	// Tab-delimited line numbers (cat -n style, no leading whitespace)
+	input := "1\tpackage main\n2\t\n3\tfunc main() {\n4\t\tprintln(\"hello\")\n5\t}"
+	want := "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}"
+
+	got := stripLineNumbers(input)
+	if got != want {
+		t.Errorf("stripLineNumbers tab-delimited:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestStripLineNumbers_TabDelimitedPadded(t *testing.T) {
+	// Tab-delimited with leading whitespace padding, as produced by LocalExecutionEnvironment.ReadFile
+	// which uses fmt.Fprintf("%4d\t%s\n", lineNum, line) format.
+	input := "   1\tpackage main\n   2\t\n   3\tfunc main() {\n   4\t\tprintln(\"hello\")\n   5\t}\n"
+	want := "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n"
+
+	got := stripLineNumbers(input)
+	if got != want {
+		t.Errorf("stripLineNumbers tab-delimited padded:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestStripLineNumbers_NoLineNumbers(t *testing.T) {
+	// Content without line numbers should pass through unchanged
+	input := "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}"
+
+	got := stripLineNumbers(input)
+	if got != input {
+		t.Errorf("stripLineNumbers passthrough:\ngot:  %q\nwant: %q", got, input)
+	}
+}
+
+func TestStripLineNumbers_BitwiseOR(t *testing.T) {
+	// Lines with bitwise OR operators should NOT be stripped.
+	// The majority heuristic prevents false positives here because
+	// most lines don't start with "digits | ".
+	input := "package main\n\nfunc flags() int {\n\tx := 123 | mask\n\treturn x\n}"
+
+	got := stripLineNumbers(input)
+	if got != input {
+		t.Errorf("stripLineNumbers should not strip bitwise OR:\ngot:  %q\nwant: %q", got, input)
+	}
+}
+
+func TestStripLineNumbers_MixedMajorityNumbered(t *testing.T) {
+	// If the majority of non-empty lines are numbered, strip them.
+	// One unnumbered blank line among several numbered lines.
+	input := "  1 | package main\n\n  3 | func main() {\n  4 | \tprintln(\"hello\")\n  5 | }"
+	want := "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}"
+
+	got := stripLineNumbers(input)
+	if got != want {
+		t.Errorf("stripLineNumbers mixed majority:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestStripLineNumbers_Empty(t *testing.T) {
+	got := stripLineNumbers("")
+	if got != "" {
+		t.Errorf("stripLineNumbers empty: got %q, want %q", got, "")
+	}
+}
+
+func TestStripLineNumbers_HighLineNumbers(t *testing.T) {
+	// High line numbers (3+ digits) should still be stripped
+	input := "100 | func hundredth() {\n101 | \treturn\n102 | }"
+	want := "func hundredth() {\n\treturn\n}"
+
+	got := stripLineNumbers(input)
+	if got != want {
+		t.Errorf("stripLineNumbers high line numbers:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestStripLineNumbers_MinorityNumbered(t *testing.T) {
+	// When fewer than half of non-empty lines look numbered, don't strip.
+	// Only one of five non-empty lines matches the pattern.
+	input := "normal line\nanother line\n  3 | this looks numbered\nyet another\nfinal line"
+
+	got := stripLineNumbers(input)
+	if got != input {
+		t.Errorf("stripLineNumbers minority numbered should passthrough:\ngot:  %q\nwant: %q", got, input)
+	}
+}
+
+func TestWriteFileStripsLineNumbers(t *testing.T) {
+	// Integration test: write_file tool should strip line numbers from content
+	// that was read via read_file (which adds "NNN | " prefixes).
+	env := newTestEnv()
+	tool := NewWriteFileTool()
+
+	// Simulate content as read_file would return it
+	numberedContent := "  1 | package main\n  2 | \n  3 | func main() {\n  4 | \tprintln(\"hello\")\n  5 | }"
+
+	result, err := tool.Execute(map[string]any{
+		"file_path": "/tmp/test/output.go",
+		"content":   numberedContent,
+	}, env)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	// Should return a success message
+	if !strings.Contains(result, "output.go") {
+		t.Errorf("expected confirmation mentioning file, got: %s", result)
+	}
+
+	// The file content should have line numbers stripped
+	written, ok := env.files["/tmp/test/output.go"]
+	if !ok {
+		t.Fatal("file was not written to env")
+	}
+
+	expected := "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}"
+	if written != expected {
+		t.Errorf("write_file should strip line numbers:\ngot:  %q\nwant: %q", written, expected)
+	}
+}
+
+func TestWriteFilePassthroughNoLineNumbers(t *testing.T) {
+	// write_file should not alter content that doesn't have line numbers.
+	env := newTestEnv()
+	tool := NewWriteFileTool()
+
+	plainContent := "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}"
+
+	_, err := tool.Execute(map[string]any{
+		"file_path": "/tmp/test/output.go",
+		"content":   plainContent,
+	}, env)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	written := env.files["/tmp/test/output.go"]
+	if written != plainContent {
+		t.Errorf("write_file should not alter non-numbered content:\ngot:  %q\nwant: %q", written, plainContent)
+	}
+}
+
 // --- RegisterCoreTools tests ---
 
 func TestRegisterCoreTools(t *testing.T) {
