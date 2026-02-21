@@ -77,7 +77,7 @@ func (h *VerifyHandler) Execute(ctx context.Context, node *Node, pctx *Context, 
 	if !result.Success {
 		failureReason = fmt.Sprintf("verify command failed (exit %d): %s", result.ExitCode, result.Stderr)
 		if result.TimedOut {
-			failureReason = fmt.Sprintf("verify command timed out after %s", timeout)
+			failureReason = fmt.Sprintf("verify command timed out after %s: %s", timeout, result.Stderr)
 		}
 	}
 

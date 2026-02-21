@@ -328,10 +328,8 @@ func extractResult(session *agent.Session) *AgentRunResult {
 	hasExplicitSuccessMarker := false
 	if result.Output != "" {
 		if marker, found := DetectOutcomeMarker(result.Output); found {
-			result.Success = marker != "fail"
-			if marker != "fail" {
-				hasExplicitSuccessMarker = true
-			}
+			result.Success = (marker == "success")
+			hasExplicitSuccessMarker = (marker == "success")
 		}
 	}
 

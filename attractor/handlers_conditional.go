@@ -185,11 +185,7 @@ func (h *ConditionalHandler) executeWithAgent(ctx context.Context, node *Node, a
 	// Post-execution verification: if verify_command is set, run it and
 	// override the outcome on failure regardless of what the agent claimed.
 	if verifyCmd := attrs["verify_command"]; verifyCmd != "" && status == StatusSuccess {
-		workDir := attrs["workdir"]
-		if workDir == "" && store != nil && store.BaseDir() != "" {
-			workDir = store.BaseDir()
-		}
-		vResult := runVerifyCommand(ctx, verifyCmd, workDir, defaultVerifyTimeout)
+		vResult := runVerifyCommand(ctx, verifyCmd, config.WorkDir, defaultVerifyTimeout)
 
 		// Store verify output as artifact
 		if store != nil {
