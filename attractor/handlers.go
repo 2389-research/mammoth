@@ -1,5 +1,5 @@
 // ABOUTME: Common handler interface, registry, and shape-to-type mapping for the attractor pipeline runner.
-// ABOUTME: All 9 built-in node handlers implement NodeHandler and are registered via DefaultHandlerRegistry.
+// ABOUTME: All 10 built-in node handlers implement NodeHandler and are registered via DefaultHandlerRegistry.
 package attractor
 
 import (
@@ -75,7 +75,7 @@ func (r *HandlerRegistry) Resolve(node *Node) NodeHandler {
 	return nil
 }
 
-// DefaultHandlerRegistry creates a registry with all 9 built-in handlers registered.
+// DefaultHandlerRegistry creates a registry with all 10 built-in handlers registered.
 func DefaultHandlerRegistry() *HandlerRegistry {
 	reg := NewHandlerRegistry()
 	reg.Register(&StartHandler{})
@@ -87,6 +87,7 @@ func DefaultHandlerRegistry() *HandlerRegistry {
 	reg.Register(&ToolHandler{})
 	reg.Register(&ManagerLoopHandler{})
 	reg.Register(&WaitForHumanHandler{})
+	reg.Register(&VerifyHandler{})
 	return reg
 }
 
@@ -101,6 +102,7 @@ var shapeToType = map[string]string{
 	"parallelogram": "tool",
 	"house":         "stack.manager_loop",
 	"hexagon":       "wait.human",
+	"octagon":       "verify",
 }
 
 // ShapeToHandlerType returns the handler type string for a given Graphviz shape.
