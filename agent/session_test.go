@@ -520,3 +520,12 @@ func TestSessionClose(t *testing.T) {
 		t.Errorf("expected state %s after close, got %s", StateClosed, session.State)
 	}
 }
+
+func TestSessionHitTurnLimitDefaultsFalse(t *testing.T) {
+	session := NewSession(DefaultSessionConfig())
+	defer session.Close()
+
+	if session.HitTurnLimit {
+		t.Error("expected HitTurnLimit to default to false")
+	}
+}

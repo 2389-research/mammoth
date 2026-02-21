@@ -29,12 +29,14 @@ func ProcessInput(ctx context.Context, session *Session, profile ProviderProfile
 	for {
 		// 1. Check round limit
 		if roundCount >= session.Config.MaxToolRoundsPerInput {
+			session.HitTurnLimit = true
 			session.Emit(EventTurnLimit, map[string]any{"round": roundCount})
 			break
 		}
 
 		// 2. Check turn limit
 		if session.Config.MaxTurns > 0 && session.TurnCount() >= session.Config.MaxTurns {
+			session.HitTurnLimit = true
 			session.Emit(EventTurnLimit, map[string]any{"total_turns": session.TurnCount()})
 			break
 		}

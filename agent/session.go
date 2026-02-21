@@ -125,6 +125,7 @@ type Session struct {
 	History       []Turn
 	State         SessionState
 	EventEmitter  *EventEmitter
+	HitTurnLimit  bool
 	steeringQueue []string
 	followupQueue []string
 	mu            sync.Mutex
