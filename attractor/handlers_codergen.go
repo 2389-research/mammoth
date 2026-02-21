@@ -188,6 +188,28 @@ func (h *CodergenHandler) Execute(ctx context.Context, node *Node, pctx *Context
 		}, nil
 	}
 
+	// Post-execution verification: if verify_command is set, run it and
+	// override the outcome on failure regardless of what the agent claimed.
+	if verifyCmd := attrs["verify_command"]; verifyCmd != "" {
+		workDir := config.WorkDir
+		vResult := runVerifyCommand(ctx, verifyCmd, workDir, defaultVerifyTimeout)
+
+		// Store verify output as artifact
+		if store != nil {
+			artifactID := node.ID + ".verify_output"
+			verifyOutput := fmt.Sprintf("exit_code=%d\nstdout:\n%s\nstderr:\n%s", vResult.ExitCode, vResult.Stdout, vResult.Stderr)
+			_, _ = store.Store(artifactID, "verify_output", []byte(verifyOutput))
+		}
+
+		if !vResult.Success {
+			return &Outcome{
+				Status:         StatusFail,
+				FailureReason:  fmt.Sprintf("verify_command failed (exit %d): %s", vResult.ExitCode, vResult.Stderr),
+				ContextUpdates: updates,
+			}, nil
+		}
+	}
+
 	return &Outcome{
 		Status:         StatusSuccess,
 		Notes:          fmt.Sprintf("Stage completed: %s (tools: %d, tokens: %d [in:%d out:%d])", label, result.ToolCalls, result.TokensUsed, result.Usage.InputTokens, result.Usage.OutputTokens),
