@@ -651,6 +651,184 @@ func TestConditionalHandlerOutcomeAffectsEdgeSelectionSuccess(t *testing.T) {
 	}
 }
 
+func TestConditionalHandlerVerifyCommandOverridesOnFailure(t *testing.T) {
+	backend := &fakeBackend{
+		runAgentFn: func(ctx context.Context, config AgentRunConfig) (*AgentRunResult, error) {
+			return &AgentRunResult{
+				Output:  "All tests pass!\nOUTCOME:PASS",
+				Success: true,
+			}, nil
+		},
+	}
+	h := &ConditionalHandler{Backend: backend}
+
+	node := &Node{
+		ID: "verify_with_cmd",
+		Attrs: map[string]string{
+			"shape":          "diamond",
+			"prompt":         "Run tests",
+			"verify_command": "exit 1", // independent verification fails
+		},
+	}
+	pctx := NewContext()
+	store := NewArtifactStore(t.TempDir())
+
+	outcome, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if outcome.Status != StatusFail {
+		t.Errorf("expected StatusFail when verify_command fails, got %v", outcome.Status)
+	}
+}
+
+func TestConditionalHandlerVerifyCommandPassesThrough(t *testing.T) {
+	backend := &fakeBackend{
+		runAgentFn: func(ctx context.Context, config AgentRunConfig) (*AgentRunResult, error) {
+			return &AgentRunResult{
+				Output:  "All tests pass!\nOUTCOME:PASS",
+				Success: true,
+			}, nil
+		},
+	}
+	h := &ConditionalHandler{Backend: backend}
+
+	node := &Node{
+		ID: "verify_cmd_pass",
+		Attrs: map[string]string{
+			"shape":          "diamond",
+			"prompt":         "Run tests",
+			"verify_command": "exit 0", // verification passes
+		},
+	}
+	pctx := NewContext()
+	store := NewArtifactStore(t.TempDir())
+
+	outcome, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if outcome.Status != StatusSuccess {
+		t.Errorf("expected StatusSuccess when verify_command passes, got %v", outcome.Status)
+	}
+}
+
+func TestConditionalHandlerVerifyCommandSkippedOnAgentFail(t *testing.T) {
+	backend := &fakeBackend{
+		runAgentFn: func(ctx context.Context, config AgentRunConfig) (*AgentRunResult, error) {
+			return &AgentRunResult{
+				Output:  "Tests failed\nOUTCOME:FAIL",
+				Success: true,
+			}, nil
+		},
+	}
+	h := &ConditionalHandler{Backend: backend}
+
+	node := &Node{
+		ID: "verify_skip_on_fail",
+		Attrs: map[string]string{
+			"shape":          "diamond",
+			"prompt":         "Run tests",
+			"verify_command": "exit 0", // would pass, but agent resolved to fail
+		},
+	}
+	pctx := NewContext()
+	store := NewArtifactStore(t.TempDir())
+
+	outcome, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Agent resolved to FAIL via outcome marker, so verify_command should NOT run
+	if outcome.Status != StatusFail {
+		t.Errorf("expected StatusFail from agent OUTCOME:FAIL marker, got %v", outcome.Status)
+	}
+
+	// Verify artifact should NOT exist since verify_command was not run
+	artifactID := "verify_skip_on_fail.verify_output"
+	_, retrieveErr := store.Retrieve(artifactID)
+	if retrieveErr == nil {
+		t.Error("expected verify artifact to NOT exist when agent resolves to fail")
+	}
+}
+
+func TestConditionalHandlerVerifyCommandStoresArtifact(t *testing.T) {
+	backend := &fakeBackend{
+		runAgentFn: func(ctx context.Context, config AgentRunConfig) (*AgentRunResult, error) {
+			return &AgentRunResult{
+				Output:  "All good\nOUTCOME:PASS",
+				Success: true,
+			}, nil
+		},
+	}
+	h := &ConditionalHandler{Backend: backend}
+
+	node := &Node{
+		ID: "verify_artifact",
+		Attrs: map[string]string{
+			"shape":          "diamond",
+			"prompt":         "Run tests",
+			"verify_command": "echo verify_ran",
+		},
+	}
+	pctx := NewContext()
+	store := NewArtifactStore(t.TempDir())
+
+	outcome, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if outcome.Status != StatusSuccess {
+		t.Errorf("expected StatusSuccess, got %v", outcome.Status)
+	}
+
+	// Verify the verify output was stored as an artifact
+	artifactID := "verify_artifact.verify_output"
+	data, retrieveErr := store.Retrieve(artifactID)
+	if retrieveErr != nil {
+		t.Fatalf("failed to retrieve verify artifact: %v", retrieveErr)
+	}
+	if !strings.Contains(string(data), "verify_ran") {
+		t.Errorf("verify artifact should contain command output, got %q", string(data))
+	}
+}
+
+func TestConditionalHandlerNoVerifyCommandIgnored(t *testing.T) {
+	backend := &fakeBackend{
+		runAgentFn: func(ctx context.Context, config AgentRunConfig) (*AgentRunResult, error) {
+			return &AgentRunResult{
+				Output:  "All good\nOUTCOME:PASS",
+				Success: true,
+			}, nil
+		},
+	}
+	h := &ConditionalHandler{Backend: backend}
+
+	node := &Node{
+		ID: "no_verify_cmd",
+		Attrs: map[string]string{
+			"shape":  "diamond",
+			"prompt": "Run tests",
+			// no verify_command
+		},
+	}
+	pctx := NewContext()
+	store := NewArtifactStore(t.TempDir())
+
+	outcome, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if outcome.Status != StatusSuccess {
+		t.Errorf("expected StatusSuccess without verify_command, got %v", outcome.Status)
+	}
+}
+
 func TestConditionalHandlerWithPromptUsesLabelFallback(t *testing.T) {
 	backend := &fakeBackend{}
 	h := &ConditionalHandler{Backend: backend}

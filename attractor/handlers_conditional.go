@@ -182,6 +182,34 @@ func (h *ConditionalHandler) executeWithAgent(ctx context.Context, node *Node, a
 	// Determine outcome: marker detection takes priority, then Success field
 	status := h.resolveOutcome(result)
 
+	// Post-execution verification: if verify_command is set, run it and
+	// override the outcome on failure regardless of what the agent claimed.
+	if verifyCmd := attrs["verify_command"]; verifyCmd != "" && status == StatusSuccess {
+		workDir := attrs["workdir"]
+		if workDir == "" && store != nil && store.BaseDir() != "" {
+			workDir = store.BaseDir()
+		}
+		vResult := runVerifyCommand(ctx, verifyCmd, workDir, defaultVerifyTimeout)
+
+		// Store verify output as artifact
+		if store != nil {
+			artifactID := node.ID + ".verify_output"
+			verifyOutput := fmt.Sprintf("exit_code=%d\nstdout:\n%s\nstderr:\n%s", vResult.ExitCode, vResult.Stdout, vResult.Stderr)
+			_, _ = store.Store(artifactID, "verify_output", []byte(verifyOutput))
+		}
+
+		if !vResult.Success {
+			return &Outcome{
+				Status:        StatusFail,
+				FailureReason: fmt.Sprintf("verify_command failed (exit %d): %s", vResult.ExitCode, vResult.Stderr),
+				ContextUpdates: map[string]any{
+					"outcome":    "fail",
+					"last_stage": node.ID,
+				},
+			}, nil
+		}
+	}
+
 	return &Outcome{
 		Status: status,
 		Notes:  fmt.Sprintf("Conditional agent evaluated: %s", node.ID),
