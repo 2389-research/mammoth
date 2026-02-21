@@ -4,6 +4,7 @@ package attractor
 
 import (
 	"context"
+	"fmt"
 )
 
 // FanInHandler handles parallel fan-in nodes (shape=tripleoctagon).
@@ -30,6 +31,35 @@ func (h *FanInHandler) Execute(ctx context.Context, node *Node, pctx *Context, s
 			Status:        StatusFail,
 			FailureReason: "No parallel results to evaluate for fan-in node: " + node.ID,
 		}, nil
+	}
+
+	// Post-merge verification
+	attrs := node.Attrs
+	if attrs == nil {
+		attrs = make(map[string]string)
+	}
+	if verifyCmd := attrs["verify_command"]; verifyCmd != "" {
+		workDir := ""
+		if store != nil && store.BaseDir() != "" {
+			workDir = store.BaseDir()
+		}
+		vResult := runVerifyCommand(ctx, verifyCmd, workDir, defaultVerifyTimeout)
+
+		if store != nil {
+			artifactID := node.ID + ".verify_output"
+			output := fmt.Sprintf("exit_code=%d\nstdout:\n%s\nstderr:\n%s", vResult.ExitCode, vResult.Stdout, vResult.Stderr)
+			_, _ = store.Store(artifactID, "verify_output", []byte(output))
+		}
+
+		if !vResult.Success {
+			return &Outcome{
+				Status:        StatusFail,
+				FailureReason: fmt.Sprintf("fan-in verify_command failed (exit %d): %s", vResult.ExitCode, vResult.Stderr),
+				ContextUpdates: map[string]any{
+					"last_stage": node.ID,
+				},
+			}, nil
+		}
 	}
 
 	// The results are present; record the merge
