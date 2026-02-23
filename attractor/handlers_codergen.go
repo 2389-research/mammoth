@@ -97,7 +97,11 @@ func (h *CodergenHandler) Execute(ctx context.Context, node *Node, pctx *Context
 	}
 
 	// Resolve working directory: explicit attr > artifact store base > temp dir (in backend)
+	// Accept both "workdir" and "working_dir" for consistency across node types.
 	workDir := attrs["workdir"]
+	if workDir == "" {
+		workDir = attrs["working_dir"]
+	}
 	if workDir == "" && store != nil && store.BaseDir() != "" {
 		workDir = store.BaseDir()
 	}
@@ -192,16 +196,19 @@ func (h *CodergenHandler) Execute(ctx context.Context, node *Node, pctx *Context
 	// override the outcome on failure regardless of what the agent claimed.
 	if verifyCmd := attrs["verify_command"]; verifyCmd != "" {
 		workDir := config.WorkDir
-		vResult := runVerifyCommand(ctx, verifyCmd, workDir, defaultVerifyTimeout)
+		vResult := runVerifyCommand(ctx, verifyCmd, workDir, resolveVerifyTimeout(attrs))
 
 		// Store verify output as artifact
 		if store != nil {
 			artifactID := node.ID + ".verify_output"
 			verifyOutput := fmt.Sprintf("exit_code=%d\nstdout:\n%s\nstderr:\n%s", vResult.ExitCode, vResult.Stdout, vResult.Stderr)
-			_, _ = store.Store(artifactID, "verify_output", []byte(verifyOutput))
+			if _, storeErr := store.Store(artifactID, "verify_output", []byte(verifyOutput)); storeErr != nil {
+				pctx.AppendLog(fmt.Sprintf("warning: failed to store verify artifact: %v", storeErr))
+			}
 		}
 
 		if !vResult.Success {
+			updates["outcome"] = "fail"
 			return &Outcome{
 				Status:         StatusFail,
 				FailureReason:  fmt.Sprintf("verify_command failed (exit %d): %s", vResult.ExitCode, vResult.Stderr),

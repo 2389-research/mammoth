@@ -119,7 +119,11 @@ func (h *ConditionalHandler) executeWithAgent(ctx context.Context, node *Node, a
 		}
 	}
 
+	// Accept both "workdir" and "working_dir" for consistency across node types.
 	workDir := attrs["workdir"]
+	if workDir == "" {
+		workDir = attrs["working_dir"]
+	}
 	if workDir == "" && store != nil && store.BaseDir() != "" {
 		workDir = store.BaseDir()
 	}
@@ -185,13 +189,15 @@ func (h *ConditionalHandler) executeWithAgent(ctx context.Context, node *Node, a
 	// Post-execution verification: if verify_command is set, run it and
 	// override the outcome on failure regardless of what the agent claimed.
 	if verifyCmd := attrs["verify_command"]; verifyCmd != "" && status == StatusSuccess {
-		vResult := runVerifyCommand(ctx, verifyCmd, config.WorkDir, defaultVerifyTimeout)
+		vResult := runVerifyCommand(ctx, verifyCmd, config.WorkDir, resolveVerifyTimeout(attrs))
 
 		// Store verify output as artifact
 		if store != nil {
 			artifactID := node.ID + ".verify_output"
 			verifyOutput := fmt.Sprintf("exit_code=%d\nstdout:\n%s\nstderr:\n%s", vResult.ExitCode, vResult.Stdout, vResult.Stderr)
-			_, _ = store.Store(artifactID, "verify_output", []byte(verifyOutput))
+			if _, storeErr := store.Store(artifactID, "verify_output", []byte(verifyOutput)); storeErr != nil {
+				pctx.AppendLog(fmt.Sprintf("warning: failed to store verify artifact: %v", storeErr))
+			}
 		}
 
 		if !vResult.Success {
@@ -221,10 +227,10 @@ func (h *ConditionalHandler) executeWithAgent(ctx context.Context, node *Node, a
 func (h *ConditionalHandler) resolveOutcome(result *AgentRunResult) StageStatus {
 	// Check for explicit outcome markers in agent output
 	if marker, found := DetectOutcomeMarker(result.Output); found {
-		if marker == "fail" {
-			return StatusFail
+		if marker == "success" {
+			return StatusSuccess
 		}
-		return StatusSuccess
+		return StatusFail
 	}
 
 	// Fall back to the Success field

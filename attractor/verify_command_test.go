@@ -115,6 +115,29 @@ func TestRunVerifyCommandDefaultTimeout(t *testing.T) {
 	}
 }
 
+func TestResolveVerifyTimeout(t *testing.T) {
+	tests := []struct {
+		name     string
+		attrs    map[string]string
+		expected time.Duration
+	}{
+		{"empty attrs", map[string]string{}, defaultVerifyTimeout},
+		{"nil attrs", nil, defaultVerifyTimeout},
+		{"valid duration", map[string]string{"verify_timeout": "30s"}, 30 * time.Second},
+		{"valid minutes", map[string]string{"verify_timeout": "5m"}, 5 * time.Minute},
+		{"invalid duration", map[string]string{"verify_timeout": "not-a-duration"}, defaultVerifyTimeout},
+		{"empty string", map[string]string{"verify_timeout": ""}, defaultVerifyTimeout},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveVerifyTimeout(tt.attrs)
+			if got != tt.expected {
+				t.Errorf("resolveVerifyTimeout(%v) = %v, want %v", tt.attrs, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestRunVerifyCommandCapturesBothStreams(t *testing.T) {
 	result := runVerifyCommand(context.Background(), "sh -c 'echo out; echo err >&2'", "", 10*time.Second)
 	if !result.Success {

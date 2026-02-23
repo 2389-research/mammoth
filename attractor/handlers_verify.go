@@ -63,7 +63,9 @@ func (h *VerifyHandler) Execute(ctx context.Context, node *Node, pctx *Context, 
 	if store != nil {
 		artifactID := node.ID + ".output"
 		output := fmt.Sprintf("exit_code=%d\nstdout:\n%s\nstderr:\n%s", result.ExitCode, result.Stdout, result.Stderr)
-		_, _ = store.Store(artifactID, "verify_output", []byte(output))
+		if _, storeErr := store.Store(artifactID, "verify_output", []byte(output)); storeErr != nil {
+			pctx.AppendLog(fmt.Sprintf("warning: failed to store verify artifact: %v", storeErr))
+		}
 	}
 
 	status := StatusSuccess

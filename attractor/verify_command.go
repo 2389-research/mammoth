@@ -22,8 +22,23 @@ type VerifyResult struct {
 // defaultVerifyTimeout is used when no timeout is specified.
 const defaultVerifyTimeout = 60 * time.Second
 
-// runVerifyCommand executes a shell command and returns the result.
+// resolveVerifyTimeout parses a timeout duration from node attributes.
+// It checks the "verify_timeout" key first, returning defaultVerifyTimeout
+// when absent or unparseable. Handlers that are purely verify-focused (like
+// VerifyHandler) use "timeout" directly instead.
+func resolveVerifyTimeout(attrs map[string]string) time.Duration {
+	if timeoutStr := attrs["verify_timeout"]; timeoutStr != "" {
+		if parsed, err := time.ParseDuration(timeoutStr); err == nil {
+			return parsed
+		}
+	}
+	return defaultVerifyTimeout
+}
+
+// runVerifyCommand executes a shell command via "sh -c" and returns the result.
 // It uses the same process-group management as ToolHandler for clean cleanup.
+// The command string is passed directly to the shell — DOT pipeline files are
+// treated as trusted input, similar to Makefiles or CI config.
 func runVerifyCommand(ctx context.Context, command, workDir string, timeout time.Duration) VerifyResult {
 	if timeout <= 0 {
 		timeout = defaultVerifyTimeout

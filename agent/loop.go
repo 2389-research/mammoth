@@ -18,6 +18,7 @@ import (
 // response, a limit is hit, or the context is cancelled.
 func ProcessInput(ctx context.Context, session *Session, profile ProviderProfile, env ExecutionEnvironment, client *llm.Client, userInput string) error {
 	session.SetState(StateProcessing)
+	session.HitTurnLimit = false // Reset for this input; stale true from prior inputs would cause false failures.
 	session.AppendTurn(UserTurn{Content: userInput, Timestamp: time.Now()})
 	session.Emit(EventUserInput, map[string]any{"content": userInput})
 

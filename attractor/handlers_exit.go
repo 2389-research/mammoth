@@ -31,16 +31,18 @@ func (h *ExitHandler) Execute(ctx context.Context, node *Node, pctx *Context, st
 
 	// Pre-exit verification
 	if verifyCmd := attrs["verify_command"]; verifyCmd != "" {
-		workDir := ""
-		if store != nil && store.BaseDir() != "" {
+		workDir := attrs["working_dir"]
+		if workDir == "" && store != nil && store.BaseDir() != "" {
 			workDir = store.BaseDir()
 		}
-		vResult := runVerifyCommand(ctx, verifyCmd, workDir, defaultVerifyTimeout)
+		vResult := runVerifyCommand(ctx, verifyCmd, workDir, resolveVerifyTimeout(attrs))
 
 		if store != nil {
 			artifactID := node.ID + ".verify_output"
 			output := fmt.Sprintf("exit_code=%d\nstdout:\n%s\nstderr:\n%s", vResult.ExitCode, vResult.Stdout, vResult.Stderr)
-			_, _ = store.Store(artifactID, "verify_output", []byte(output))
+			if _, storeErr := store.Store(artifactID, "verify_output", []byte(output)); storeErr != nil {
+				pctx.AppendLog(fmt.Sprintf("warning: failed to store verify artifact: %v", storeErr))
+			}
 		}
 
 		if !vResult.Success {
@@ -49,6 +51,7 @@ func (h *ExitHandler) Execute(ctx context.Context, node *Node, pctx *Context, st
 				FailureReason: fmt.Sprintf("exit verify_command failed (exit %d): %s", vResult.ExitCode, vResult.Stderr),
 				ContextUpdates: map[string]any{
 					"_finished_at": time.Now().Format(time.RFC3339Nano),
+					"last_stage":   node.ID,
 				},
 			}, nil
 		}
@@ -59,6 +62,7 @@ func (h *ExitHandler) Execute(ctx context.Context, node *Node, pctx *Context, st
 		Notes:  "Pipeline exited at node: " + node.ID,
 		ContextUpdates: map[string]any{
 			"_finished_at": time.Now().Format(time.RFC3339Nano),
+			"last_stage":   node.ID,
 		},
 	}, nil
 }
