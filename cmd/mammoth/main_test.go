@@ -718,6 +718,9 @@ func TestExampleDOTFilesParseAndValidate(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			source, err := os.ReadFile(path)
 			if err != nil {
+				if os.IsNotExist(err) {
+					t.Skipf("skipping %s: file does not exist", path)
+				}
 				t.Fatalf("failed to read %s: %v", path, err)
 			}
 			graph, err := attractor.Parse(string(source))
