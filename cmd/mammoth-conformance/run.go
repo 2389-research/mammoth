@@ -143,6 +143,14 @@ func cmdRun(dotfile string) int {
 
 	result, err := engine.RunGraph(ctx, graph)
 	if err != nil {
+		if result != nil {
+			output := translateRunResult(result, retries)
+			output.Context["error"] = err.Error()
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			_ = enc.Encode(output)
+			return 1
+		}
 		writeError(fmt.Sprintf("pipeline execution: %v", err))
 		return 1
 	}

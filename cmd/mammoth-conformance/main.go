@@ -21,26 +21,27 @@ func dispatch(args []string) int {
 	switch args[1] {
 	case "parse":
 		if len(args) < 3 {
-			writeError("parse requires a DOT file argument")
+			fmt.Fprintln(os.Stderr, "usage: mammoth-conformance parse <dotfile>")
 			return 1
 		}
 		return cmdParse(args[2])
 	case "validate":
 		if len(args) < 3 {
-			writeError("validate requires a DOT file argument")
+			fmt.Fprintln(os.Stderr, "usage: mammoth-conformance validate <dotfile>")
 			return 1
 		}
 		return cmdValidate(args[2])
 	case "run":
 		if len(args) < 3 {
-			writeError("run requires a DOT file argument")
+			fmt.Fprintln(os.Stderr, "usage: mammoth-conformance run <dotfile>")
 			return 1
 		}
 		return cmdRun(args[2])
 	case "list-handlers":
 		return cmdListHandlers()
 	default:
-		writeError(fmt.Sprintf("unknown command: %s", args[1]))
+		fmt.Fprintf(os.Stderr, "unknown command: %s\n", args[1])
+		printUsage()
 		return 1
 	}
 }

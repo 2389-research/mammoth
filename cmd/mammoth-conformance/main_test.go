@@ -8,15 +8,15 @@ import (
 )
 
 func TestDispatch_UnknownCommand(t *testing.T) {
-	// Capture stdout to prevent test output pollution
-	oldStdout := os.Stdout
+	// Capture stderr (unknown command writes usage to stderr)
+	oldStderr := os.Stderr
 	_, w, _ := os.Pipe()
-	os.Stdout = w
+	os.Stderr = w
 
 	exitCode := dispatch([]string{"mammoth-conformance", "bogus"})
 
 	w.Close()
-	os.Stdout = oldStdout
+	os.Stderr = oldStderr
 
 	if exitCode != 1 {
 		t.Errorf("exit code = %d, want 1 for unknown command", exitCode)
@@ -40,15 +40,15 @@ func TestDispatch_MissingArgs(t *testing.T) {
 }
 
 func TestDispatch_ParseMissingFile(t *testing.T) {
-	// Capture stdout
-	oldStdout := os.Stdout
+	// Capture stderr (missing arg writes usage to stderr)
+	oldStderr := os.Stderr
 	_, w, _ := os.Pipe()
-	os.Stdout = w
+	os.Stderr = w
 
 	exitCode := dispatch([]string{"mammoth-conformance", "parse"})
 
 	w.Close()
-	os.Stdout = oldStdout
+	os.Stderr = oldStderr
 
 	if exitCode != 1 {
 		t.Errorf("exit code = %d, want 1 for parse without file", exitCode)
@@ -56,15 +56,15 @@ func TestDispatch_ParseMissingFile(t *testing.T) {
 }
 
 func TestDispatch_ValidateMissingFile(t *testing.T) {
-	// Capture stdout
-	oldStdout := os.Stdout
+	// Capture stderr (missing arg writes usage to stderr)
+	oldStderr := os.Stderr
 	_, w, _ := os.Pipe()
-	os.Stdout = w
+	os.Stderr = w
 
 	exitCode := dispatch([]string{"mammoth-conformance", "validate"})
 
 	w.Close()
-	os.Stdout = oldStdout
+	os.Stderr = oldStderr
 
 	if exitCode != 1 {
 		t.Errorf("exit code = %d, want 1 for validate without file", exitCode)
@@ -72,15 +72,15 @@ func TestDispatch_ValidateMissingFile(t *testing.T) {
 }
 
 func TestDispatch_RunMissingFile(t *testing.T) {
-	// Capture stdout
-	oldStdout := os.Stdout
+	// Capture stderr (missing arg writes usage to stderr)
+	oldStderr := os.Stderr
 	_, w, _ := os.Pipe()
-	os.Stdout = w
+	os.Stderr = w
 
 	exitCode := dispatch([]string{"mammoth-conformance", "run"})
 
 	w.Close()
-	os.Stdout = oldStdout
+	os.Stderr = oldStderr
 
 	if exitCode != 1 {
 		t.Errorf("exit code = %d, want 1 for run without file", exitCode)
