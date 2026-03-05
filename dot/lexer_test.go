@@ -450,6 +450,60 @@ func TestLexTokenTypeString(t *testing.T) {
 	}
 }
 
+func TestLexDottedIdentifiers(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantTypes  []TokenType
+		wantValues []string
+	}{
+		{
+			name:       "simple dotted identifier",
+			input:      "human.default_choice",
+			wantTypes:  []TokenType{TokenIdentifier, TokenEOF},
+			wantValues: []string{"human.default_choice", ""},
+		},
+		{
+			name:       "dotted identifier in attribute",
+			input:      `human.default_choice="S"`,
+			wantTypes:  []TokenType{TokenIdentifier, TokenEquals, TokenString, TokenEOF},
+			wantValues: []string{"human.default_choice", "=", "S", ""},
+		},
+		{
+			name:       "multi-level dotted identifier",
+			input:      "context.internal.loop_restart_count",
+			wantTypes:  []TokenType{TokenIdentifier, TokenEOF},
+			wantValues: []string{"context.internal.loop_restart_count", ""},
+		},
+		{
+			name:       "dotted identifier in node attrs",
+			input:      `[human.default_choice="S", shape=hexagon]`,
+			wantTypes:  []TokenType{TokenLBracket, TokenIdentifier, TokenEquals, TokenString, TokenComma, TokenIdentifier, TokenEquals, TokenIdentifier, TokenRBracket, TokenEOF},
+			wantValues: []string{"[", "human.default_choice", "=", "S", ",", "shape", "=", "hexagon", "]", ""},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tokens, err := Lex(tt.input)
+			if err != nil {
+				t.Fatalf("Lex(%q) error: %v", tt.input, err)
+			}
+			if len(tokens) != len(tt.wantTypes) {
+				t.Fatalf("Lex(%q) produced %d tokens, want %d", tt.input, len(tokens), len(tt.wantTypes))
+			}
+			for i, wt := range tt.wantTypes {
+				if tokens[i].Type != wt {
+					t.Errorf("token[%d].Type = %v, want %v", i, tokens[i].Type, wt)
+				}
+				if tokens[i].Value != tt.wantValues[i] {
+					t.Errorf("token[%d].Value = %q, want %q", i, tokens[i].Value, tt.wantValues[i])
+				}
+			}
+		})
+	}
+}
+
 func TestLexWhitespaceOnly(t *testing.T) {
 	tokens, err := Lex("   \t\n\n  ")
 	if err != nil {

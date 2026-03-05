@@ -338,9 +338,21 @@ func (l *lexer) lexIdentifier() {
 	startCol := l.col
 	var sb strings.Builder
 
-	for l.pos < len(l.input) && (l.input[l.pos] == '_' || unicode.IsLetter(l.input[l.pos]) || unicode.IsDigit(l.input[l.pos])) {
-		sb.WriteRune(l.input[l.pos])
-		l.advance()
+	for l.pos < len(l.input) {
+		ch := l.input[l.pos]
+		if ch == '_' || unicode.IsLetter(ch) || unicode.IsDigit(ch) {
+			sb.WriteRune(ch)
+			l.advance()
+			continue
+		}
+		// Allow dots in identifiers for namespaced attribute keys (e.g., human.default_choice)
+		// only when followed by a valid identifier character
+		if ch == '.' && l.pos+1 < len(l.input) && (l.input[l.pos+1] == '_' || unicode.IsLetter(l.input[l.pos+1])) {
+			sb.WriteByte('.')
+			l.advance()
+			continue
+		}
+		break
 	}
 
 	word := sb.String()
