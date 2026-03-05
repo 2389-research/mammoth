@@ -5,6 +5,7 @@ package attractor
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -30,13 +31,35 @@ func NewCheckpoint(ctx *Context, currentNode string, completedNodes []string, no
 	}
 }
 
-// Save serializes the checkpoint to JSON and writes it to the given path.
+// Save serializes the checkpoint to JSON and writes it to the given path
+// using an atomic write: data is written to a temp file in the same directory,
+// then renamed into place. This prevents a partial file if the process crashes
+// mid-write.
 func (cp *Checkpoint) Save(path string) error {
 	data, err := json.MarshalIndent(cp, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".checkpoint-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+
+	_, err = tmp.Write(data)
+	tmp.Close()
+	if err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	return nil
 }
 
 // LoadCheckpoint deserializes a checkpoint from JSON at the given path.

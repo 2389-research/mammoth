@@ -5,7 +5,10 @@ package attractor
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestNewCheckpoint(t *testing.T) {
@@ -95,5 +98,106 @@ func TestLoadCheckpointFileNotFound(t *testing.T) {
 	_, err := LoadCheckpoint("/nonexistent/path/checkpoint.json")
 	if err == nil {
 		t.Error("expected error for missing file, got nil")
+	}
+}
+
+func TestCheckpointSaveUsesAtomicRename(t *testing.T) {
+	// Verify that Save uses write-to-temp + rename. We detect the transient temp
+	// file by polling the directory in a goroutine while Save runs.
+	// This test FAILS with os.WriteFile (no temp file ever appears) and PASSES
+	// with the atomic rename implementation.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	// Build a checkpoint large enough (~5MB) that the write takes several
+	// milliseconds, giving the watcher goroutine many polling windows to observe
+	// the temp file before rename completes.
+	logs := make([]string, 5000)
+	for i := range logs {
+		logs[i] = strings.Repeat("log entry padding ", 50)
+	}
+	cp := &Checkpoint{CurrentNode: "node_x", Logs: logs}
+
+	var tempFileSeen atomic.Bool
+	ready := make(chan struct{})
+	stop := make(chan struct{})
+
+	go func() {
+		defer close(stop)
+		close(ready) // signal: goroutine is now actively polling
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			entries, _ := os.ReadDir(dir)
+			for _, e := range entries {
+				if strings.HasPrefix(e.Name(), ".checkpoint-") && strings.HasSuffix(e.Name(), ".tmp") {
+					tempFileSeen.Store(true)
+					return
+				}
+			}
+			// No sleep: poll as fast as possible to maximise chances of
+			// observing the temp file during the write window.
+		}
+	}()
+
+	<-ready // ensure watcher goroutine is scheduled before Save starts
+	if err := cp.Save(path); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+	<-stop // wait for goroutine to exit
+
+	if !tempFileSeen.Load() {
+		t.Error("atomic write not detected: no temp file (.checkpoint-*.tmp) observed during Save; expected write-to-temp-then-rename pattern")
+	}
+}
+
+func TestCheckpointSaveNoTempFilesRemain(t *testing.T) {
+	// After a successful Save, no temp files must remain in the directory.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	cp := &Checkpoint{CurrentNode: "node_x"}
+	if err := cp.Save(path); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+	if len(entries) != 1 {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Errorf("expected exactly 1 file in dir after save, got %d: %v", len(entries), names)
+	}
+}
+
+func TestCheckpointSaveTempFileCleanedUpOnRenameError(t *testing.T) {
+	// When the atomic rename fails, the temp file must be cleaned up.
+	// We force the rename to fail by making the target path an existing directory.
+	dir := t.TempDir()
+	targetDir := filepath.Join(dir, "target")
+	if err := os.Mkdir(targetDir, 0755); err != nil {
+		t.Fatalf("Mkdir failed: %v", err)
+	}
+
+	cp := &Checkpoint{CurrentNode: "node_y"}
+	err := cp.Save(targetDir) // targetDir is an existing directory; rename will fail
+	if err == nil {
+		t.Fatal("expected Save to fail when target path is an existing directory")
+	}
+
+	// Only "target" should remain; no leftover temp files.
+	entries, err2 := os.ReadDir(dir)
+	if err2 != nil {
+		t.Fatalf("ReadDir failed: %v", err2)
+	}
+	if len(entries) != 1 || entries[0].Name() != "target" {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Errorf("expected only 'target' dir after failed save, got: %v", names)
 	}
 }
