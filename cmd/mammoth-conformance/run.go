@@ -138,7 +138,7 @@ func cmdRun(dotfile string) int {
 	}
 
 	// Run with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	result, err := engine.RunGraph(ctx, graph)
