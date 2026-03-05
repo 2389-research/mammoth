@@ -138,6 +138,9 @@ func (c *OpenAICompatClient) CreateMessageStream(ctx context.Context, req *muxll
 func convertCompatRequest(req *muxllm.Request) openai.ChatCompletionNewParams {
 	params := openai.ChatCompletionNewParams{
 		Model: req.Model,
+		StreamOptions: openai.ChatCompletionStreamOptionsParam{
+			IncludeUsage: openai.Bool(true),
+		},
 	}
 
 	if req.MaxTokens > 0 {
@@ -247,6 +250,10 @@ func convertCompatAssistantMessage(msg muxllm.Message) openai.ChatCompletionMess
 }
 
 // convertCompatResponse converts OpenAI ChatCompletion to a mux Response.
+// Note: resp.Usage.CompletionTokensDetails.ReasoningTokens is available from
+// the OpenAI API for reasoning model token tracking, but cannot be forwarded
+// through muxllm.Response, which only contains InputTokens and OutputTokens
+// in its Usage struct (no ReasoningTokens field).
 func convertCompatResponse(resp *openai.ChatCompletion) *muxllm.Response {
 	result := &muxllm.Response{
 		ID:    resp.ID,

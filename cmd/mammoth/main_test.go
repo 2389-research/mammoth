@@ -508,10 +508,11 @@ func TestRunRunMode(t *testing.T) {
 }
 
 func TestRunRejectsExecutionWithoutAPIKey(t *testing.T) {
-	// Ensure no API keys are set.
+	// Ensure no API keys are set and no env-based backend override.
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("MAMMOTH_BACKEND", "") // Prevent env override from bypassing key check
 
 	dotFile := writeTempDOT(t, validDOT)
 	cfg := config{
@@ -935,6 +936,7 @@ func TestDetectBackendEnvVar(t *testing.T) {
 func TestDetectBackendAgentDefault(t *testing.T) {
 	// With an API key and no explicit backend, should return AgentBackend
 	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	t.Setenv("MAMMOTH_BACKEND", "") // Clear env override so auto-detection runs
 
 	backend := detectBackend(false, "")
 	if backend == nil {
