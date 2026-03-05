@@ -77,6 +77,57 @@ func TestToolHandlerUsesPromptAsFallback(t *testing.T) {
 	}
 }
 
+func TestToolHandlerUsesToolCommandAttribute(t *testing.T) {
+	h := &ToolHandler{}
+	node := &Node{
+		ID: "run_tool_command",
+		Attrs: map[string]string{
+			"shape":        "parallelogram",
+			"tool_command": "echo from tool_command",
+		},
+	}
+	pctx := NewContext()
+	store := NewArtifactStore(t.TempDir())
+
+	outcome, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if outcome.Status != StatusSuccess {
+		t.Errorf("expected status success, got %v (reason: %s)", outcome.Status, outcome.FailureReason)
+	}
+	stdout, ok := outcome.ContextUpdates["tool.stdout"].(string)
+	if !ok {
+		t.Fatalf("expected tool.stdout to be a string, got %T", outcome.ContextUpdates["tool.stdout"])
+	}
+	if !strings.Contains(stdout, "from tool_command") {
+		t.Errorf("expected 'from tool_command' in tool.stdout, got %q", stdout)
+	}
+}
+
+func TestToolHandlerCommandPrecedesToolCommand(t *testing.T) {
+	h := &ToolHandler{}
+	node := &Node{
+		ID: "run_precedence",
+		Attrs: map[string]string{
+			"shape":        "parallelogram",
+			"command":      "echo from command",
+			"tool_command": "echo from tool_command",
+		},
+	}
+	pctx := NewContext()
+	store := NewArtifactStore(t.TempDir())
+
+	outcome, err := h.Execute(context.Background(), node, pctx, store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	stdout := outcome.ContextUpdates["tool.stdout"].(string)
+	if !strings.Contains(stdout, "from command") {
+		t.Errorf("expected 'from command' to take precedence, got %q", stdout)
+	}
+}
+
 func TestToolHandlerCommandPrecedesPrompt(t *testing.T) {
 	h := &ToolHandler{}
 	node := &Node{

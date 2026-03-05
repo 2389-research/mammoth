@@ -43,8 +43,11 @@ func (h *ToolHandler) Execute(ctx context.Context, node *Node, pctx *Context, st
 		attrs = make(map[string]string)
 	}
 
-	// Resolve command: "command" takes precedence, then "prompt"
+	// Resolve command: "command" takes precedence, then "tool_command", then "prompt"
 	command := attrs["command"]
+	if command == "" {
+		command = attrs["tool_command"]
+	}
 	if command == "" {
 		command = attrs["prompt"]
 	}
