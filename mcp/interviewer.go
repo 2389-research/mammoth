@@ -20,6 +20,13 @@ func (iv *mcpInterviewer) Ask(ctx context.Context, question string, options []st
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+
+	// Drain any stale answer from a previous question.
+	select {
+	case <-iv.run.answerCh:
+	default:
+	}
+
 	qid := randomHex(8)
 	iv.run.mu.Lock()
 	iv.run.Status = StatusPaused

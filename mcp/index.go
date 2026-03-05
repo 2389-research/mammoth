@@ -23,7 +23,7 @@ type IndexEntry struct {
 // RunIndex manages disk-backed run metadata.
 type RunIndex struct {
 	dir string
-	mu  sync.Mutex
+	mu  sync.RWMutex
 }
 
 // NewRunIndex creates a new index rooted at the given directory.
@@ -58,8 +58,8 @@ func (idx *RunIndex) Save(entry *IndexEntry) error {
 
 // Load reads an index entry from disk.
 func (idx *RunIndex) Load(runID string) (*IndexEntry, error) {
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 	runDir := filepath.Join(idx.dir, runID)
 	metaPath := filepath.Join(runDir, "meta.json")
 	data, err := os.ReadFile(metaPath)
@@ -81,8 +81,8 @@ func (idx *RunIndex) Load(runID string) (*IndexEntry, error) {
 
 // List returns all index entries.
 func (idx *RunIndex) List() ([]*IndexEntry, error) {
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 	entries, err := os.ReadDir(idx.dir)
 	if err != nil {
 		if os.IsNotExist(err) {

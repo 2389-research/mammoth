@@ -17,6 +17,7 @@ type GetRunStatusInput struct {
 
 // GetRunStatusOutput is the output of the get_run_status tool.
 type GetRunStatusOutput struct {
+	RunID           string           `json:"run_id"`
 	Status          string           `json:"status"`
 	CurrentNode     string           `json:"current_node,omitempty"`
 	CurrentActivity string           `json:"current_activity,omitempty"`
@@ -44,12 +45,25 @@ func (s *Server) handleGetRunStatus(_ context.Context, _ *mcpsdk.CallToolRequest
 	}
 
 	run.mu.RLock()
+	completedNodes := make([]string, len(run.CompletedNodes))
+	copy(completedNodes, run.CompletedNodes)
+	var pq *PendingQuestion
+	if run.PendingQuestion != nil {
+		pqCopy := *run.PendingQuestion
+		// Deep-copy the Options slice to avoid aliasing the original.
+		if run.PendingQuestion.Options != nil {
+			pqCopy.Options = make([]string, len(run.PendingQuestion.Options))
+			copy(pqCopy.Options, run.PendingQuestion.Options)
+		}
+		pq = &pqCopy
+	}
 	output := GetRunStatusOutput{
+		RunID:           run.ID,
 		Status:          string(run.Status),
 		CurrentNode:     run.CurrentNode,
 		CurrentActivity: run.CurrentActivity,
-		CompletedNodes:  run.CompletedNodes,
-		PendingQuestion: run.PendingQuestion,
+		CompletedNodes:  completedNodes,
+		PendingQuestion: pq,
 		Error:           run.Error,
 	}
 	run.mu.RUnlock()

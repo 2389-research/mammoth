@@ -63,6 +63,7 @@ func (s *Server) handleResumePipeline(_ context.Context, _ *mcpsdk.CallToolReque
 			IsError: true,
 		}, ResumePipelineOutput{}, nil
 	}
+	graph = attractor.ApplyTransforms(graph, attractor.DefaultTransforms()...)
 
 	// Create new run in registry.
 	run := s.registry.Create(entry.Source, entry.Config)
@@ -71,8 +72,18 @@ func (s *Server) handleResumePipeline(_ context.Context, _ *mcpsdk.CallToolReque
 	runDir := filepath.Join(s.dataDir, run.ID)
 	checkpointDir := filepath.Join(runDir, "checkpoints")
 	artifactDir := filepath.Join(runDir, "artifacts")
-	_ = os.MkdirAll(checkpointDir, 0755)
-	_ = os.MkdirAll(artifactDir, 0755)
+	if err := os.MkdirAll(checkpointDir, 0755); err != nil {
+		return &mcpsdk.CallToolResult{
+			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("create checkpoint dir: %v", err)}},
+			IsError: true,
+		}, ResumePipelineOutput{}, nil
+	}
+	if err := os.MkdirAll(artifactDir, 0755); err != nil {
+		return &mcpsdk.CallToolResult{
+			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("create artifact dir: %v", err)}},
+			IsError: true,
+		}, ResumePipelineOutput{}, nil
+	}
 
 	run.mu.Lock()
 	run.CheckpointDir = checkpointDir
@@ -161,7 +172,9 @@ func (s *Server) resumePipeline(run *ActiveRun, graph *attractor.Graph, checkpoi
 		CheckpointDir: run.CheckpointDir,
 		ArtifactDir:   run.ArtifactDir,
 	}
-	_ = s.index.Save(entry)
+	if err := s.index.Save(entry); err != nil {
+		fmt.Fprintf(os.Stderr, "[mcp] failed to save run index for %s: %v\n", run.ID, err)
+	}
 }
 
 // findLatestCheckpoint lists checkpoint*.json files in the given directory,

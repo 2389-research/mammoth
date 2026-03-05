@@ -76,8 +76,18 @@ func (s *Server) handleRunPipeline(_ context.Context, _ *mcpsdk.CallToolRequest,
 	runDir := filepath.Join(s.dataDir, run.ID)
 	checkpointDir := filepath.Join(runDir, "checkpoints")
 	artifactDir := filepath.Join(runDir, "artifacts")
-	_ = os.MkdirAll(checkpointDir, 0755)
-	_ = os.MkdirAll(artifactDir, 0755)
+	if err := os.MkdirAll(checkpointDir, 0755); err != nil {
+		return &mcpsdk.CallToolResult{
+			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("create checkpoint dir: %v", err)}},
+			IsError: true,
+		}, RunPipelineOutput{}, nil
+	}
+	if err := os.MkdirAll(artifactDir, 0755); err != nil {
+		return &mcpsdk.CallToolResult{
+			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("create artifact dir: %v", err)}},
+			IsError: true,
+		}, RunPipelineOutput{}, nil
+	}
 
 	run.mu.Lock()
 	run.CheckpointDir = checkpointDir
@@ -167,7 +177,9 @@ func (s *Server) executePipeline(run *ActiveRun, graph *attractor.Graph) {
 		CheckpointDir: run.CheckpointDir,
 		ArtifactDir:   run.ArtifactDir,
 	}
-	_ = s.index.Save(entry)
+	if err := s.index.Save(entry); err != nil {
+		fmt.Fprintf(os.Stderr, "[mcp] failed to save run index for %s: %v\n", run.ID, err)
+	}
 }
 
 // wrapRegistryWithInterviewer creates a new HandlerRegistry wrapping each

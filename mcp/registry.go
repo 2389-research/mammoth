@@ -3,8 +3,6 @@
 package mcp
 
 import (
-	"crypto/rand"
-	"fmt"
 	"sync"
 	"time"
 
@@ -26,7 +24,7 @@ func NewRunRegistry() *RunRegistry {
 
 // Create registers a new run with the given DOT source and config.
 func (r *RunRegistry) Create(source string, config RunConfig) *ActiveRun {
-	id := generateRunID()
+	id := randomHex(8)
 	run := &ActiveRun{
 		ID:             id,
 		Status:         StatusRunning,
@@ -60,10 +58,4 @@ func (r *RunRegistry) List() []*ActiveRun {
 		runs = append(runs, run)
 	}
 	return runs
-}
-
-func generateRunID() string {
-	b := make([]byte, 8)
-	_, _ = rand.Read(b)
-	return fmt.Sprintf("%x", b)
 }

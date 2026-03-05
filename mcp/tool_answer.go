@@ -41,23 +41,26 @@ func (s *Server) handleAnswerQuestion(_ context.Context, _ *mcpsdk.CallToolReque
 
 	run.mu.RLock()
 	status := run.Status
+	hasPending := run.PendingQuestion != nil
 	run.mu.RUnlock()
 
-	if status != StatusPaused {
+	if status != StatusPaused || !hasPending {
 		return &mcpsdk.CallToolResult{
-			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("run %q is not paused (status=%s)", input.RunID, status)}},
+			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("run %q is not waiting for input (status: %s)", input.RunID, status)}},
 			IsError: true,
 		}, AnswerQuestionOutput{}, nil
 	}
 
-	// Send the answer on the run's answer channel (non-blocking, buffered channel).
+	// Non-blocking send — if channel is full (stale answer), replace it.
 	select {
 	case run.answerCh <- input.Answer:
 	default:
-		return &mcpsdk.CallToolResult{
-			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: "answer channel full, previous answer may not have been consumed"}},
-			IsError: true,
-		}, AnswerQuestionOutput{}, nil
+		// Drain stale answer and send the replacement.
+		select {
+		case <-run.answerCh:
+		default:
+		}
+		run.answerCh <- input.Answer
 	}
 
 	output := AnswerQuestionOutput{Acknowledged: true}
