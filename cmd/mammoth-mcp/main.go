@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
+
+	mammothmcp "github.com/2389-research/mammoth/mcp"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func main() {
@@ -21,6 +25,31 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	// TODO: wire up MCP server
-	return fmt.Errorf("not implemented")
+	// Determine data directory.
+	dataDir := os.Getenv("MAMMOTH_DATA_DIR")
+	if dataDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("determine home directory: %w", err)
+		}
+		dataDir = filepath.Join(home, ".mammoth", "mcp-runs")
+	}
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return fmt.Errorf("create data directory: %w", err)
+	}
+
+	// Create mammoth server.
+	ms := mammothmcp.NewServer(dataDir)
+
+	// Create MCP protocol server.
+	srv := mcpsdk.NewServer(&mcpsdk.Implementation{
+		Name:    "mammoth-mcp",
+		Version: "v0.1.0",
+	}, nil)
+
+	// Register all tools.
+	ms.RegisterTools(srv)
+
+	// Serve over stdio.
+	return srv.Run(ctx, &mcpsdk.StdioTransport{})
 }
