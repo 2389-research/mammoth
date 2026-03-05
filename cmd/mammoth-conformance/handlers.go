@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"sort"
 
@@ -28,6 +29,9 @@ func cmdListHandlers() int {
 	types := getHandlerTypes()
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(types)
+	if err := enc.Encode(types); err != nil {
+		fmt.Fprintf(os.Stderr, "encoding JSON: %v\n", err)
+		return 1
+	}
 	return 0
 }

@@ -148,7 +148,9 @@ func cmdRun(dotfile string) int {
 			output.Context["error"] = err.Error()
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
-			_ = enc.Encode(output)
+			if encErr := enc.Encode(output); encErr != nil {
+				fmt.Fprintf(os.Stderr, "encoding partial result: %v\n", encErr)
+			}
 			return 1
 		}
 		writeError(fmt.Sprintf("pipeline execution: %v", err))

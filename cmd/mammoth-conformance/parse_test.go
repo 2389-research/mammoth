@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/2389-research/mammoth/dot"
@@ -307,20 +308,7 @@ func TestWriteError(t *testing.T) {
 		t.Error("expected error JSON output, got empty")
 	}
 	// Should contain the error message
-	if !contains(output, "something went wrong") {
+	if !strings.Contains(output, "something went wrong") {
 		t.Errorf("output %q does not contain error message", output)
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstring(s, substr))
-}
-
-func containsSubstring(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

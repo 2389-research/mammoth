@@ -104,8 +104,11 @@ func cmdParse(dotfile string) int {
 }
 
 // writeError writes a conformance error JSON object to stdout.
+// If encoding fails, the error is logged to stderr as a last resort.
 func writeError(msg string) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(ConformanceError{Error: msg})
+	if err := enc.Encode(ConformanceError{Error: msg}); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to write error JSON: %v (original error: %s)\n", err, msg)
+	}
 }
