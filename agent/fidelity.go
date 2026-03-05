@@ -45,17 +45,22 @@ func ApplyFidelity(history []Turn, mode string, contextWindow int) []Turn {
 		return copyTurns(history)
 	}
 
+	var filtered []Turn
 	switch {
 	case mode == fidelityTruncate:
-		return applyTruncate(history)
+		filtered = applyTruncate(history)
 	case mode == fidelityCompact:
-		return applyCompact(history)
+		filtered = applyCompact(history)
 	case strings.HasPrefix(mode, "summary:"):
-		return applySummary(history, mode)
+		filtered = applySummary(history, mode)
 	default:
 		// Unrecognized mode: preserve everything
 		return copyTurns(history)
 	}
+
+	// Repair any broken AssistantTurn↔ToolResultsTurn pairs caused by
+	// dropping turns at the boundary between kept and dropped sections.
+	return repairToolPairing(filtered)
 }
 
 // applyTruncate keeps system turns, the first user turn, and the most recent
@@ -230,6 +235,68 @@ func findHeadBoundary(history []Turn) int {
 		idx++ // assistant turn
 	}
 	return idx
+}
+
+// repairToolPairing ensures every ToolResultsTurn has a preceding AssistantTurn
+// with ToolCalls, and every AssistantTurn with ToolCalls has a following
+// ToolResultsTurn. Fidelity filtering can break these pairs by dropping turns
+// at the boundary between kept and dropped sections. Orphaned ToolResultsTurns
+// are removed; orphaned AssistantTurns have their ToolCalls stripped.
+func repairToolPairing(history []Turn) []Turn {
+	if len(history) == 0 {
+		return history
+	}
+
+	result := make([]Turn, 0, len(history))
+
+	for i := 0; i < len(history); i++ {
+		switch t := history[i].(type) {
+		case ToolResultsTurn:
+			// Must be preceded by an AssistantTurn with ToolCalls
+			if len(result) == 0 {
+				continue // orphaned, drop
+			}
+			if at, ok := result[len(result)-1].(AssistantTurn); ok && len(at.ToolCalls) > 0 {
+				result = append(result, history[i])
+			}
+			// else: orphaned, drop
+
+		case AssistantTurn:
+			if len(t.ToolCalls) > 0 {
+				// Must be followed by a ToolResultsTurn
+				if i+1 < len(history) {
+					if _, ok := history[i+1].(ToolResultsTurn); ok {
+						result = append(result, history[i])
+					} else {
+						// Strip tool calls, keep text content
+						result = append(result, AssistantTurn{
+							Content:    t.Content,
+							Reasoning:  t.Reasoning,
+							Usage:      t.Usage,
+							ResponseID: t.ResponseID,
+							Timestamp:  t.Timestamp,
+						})
+					}
+				} else {
+					// Last turn with tool calls but no results following
+					result = append(result, AssistantTurn{
+						Content:    t.Content,
+						Reasoning:  t.Reasoning,
+						Usage:      t.Usage,
+						ResponseID: t.ResponseID,
+						Timestamp:  t.Timestamp,
+					})
+				}
+			} else {
+				result = append(result, history[i])
+			}
+
+		default:
+			result = append(result, history[i])
+		}
+	}
+
+	return result
 }
 
 // copyTurns returns a shallow copy of the turns slice.
