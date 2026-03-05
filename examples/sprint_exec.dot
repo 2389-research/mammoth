@@ -21,6 +21,7 @@ digraph SprintExec {
     llm_provider="anthropic",
     llm_model="claude-sonnet-4-6",
     reasoning_effort="high",
+    max_turns=40,
     prompt="Identify the next non-completed sprint in .ai/ledger.tsv and summarize the target sprint ID and why it is next."
   ];
 
@@ -36,6 +37,7 @@ digraph SprintExec {
     llm_provider="anthropic",
     llm_model="claude-sonnet-4-6",
     reasoning_effort="high",
+    max_turns=40,
     prompt="Read the target sprint document under .ai/sprints/SPRINT-<id>.md and summarize requirements, DoD checklist status, and expected artifacts."
   ];
 
@@ -51,6 +53,7 @@ digraph SprintExec {
     llm_provider="anthropic",
     llm_model="claude-sonnet-4-6",
     reasoning_effort="high",
+    max_turns=40,
     fidelity="summary:high",
     prompt="Implement the sprint requirements end-to-end. If prior review/critique context exists, treat those findings as required fixes. Update the sprint doc checklist as work is completed, and provide a concrete summary of changes and validation evidence."
   ];
@@ -67,6 +70,7 @@ digraph SprintExec {
     llm_provider="openai",
     llm_model="gpt-5.4",
     reasoning_effort="high",
+    max_turns=40,
     prompt="Prepare and execute a clean commit for sprint implementation changes if there are staged/unstaged changes. If no changes are present, report that no commit was needed. Include commit hash in your summary."
   ];
 
@@ -112,7 +116,8 @@ digraph SprintExec {
     llm_provider="anthropic",
     llm_model="claude-opus-4-6",
     reasoning_effort="high",
-    prompt="Critique the Codex review for missing checks, weak evidence, or mistaken conclusions."
+    max_turns=40,
+    prompt="Critique the Codex review for missing checks, weak evidence, or mistaken conclusions. Focus on the review text in context, do not re-explore the codebase."
   ];
 
   CritiqueClaudeOnGemini [
@@ -121,7 +126,8 @@ digraph SprintExec {
     llm_provider="anthropic",
     llm_model="claude-opus-4-6",
     reasoning_effort="high",
-    prompt="Critique the Gemini review for missing checks, weak evidence, or mistaken conclusions."
+    max_turns=40,
+    prompt="Critique the Gemini review for missing checks, weak evidence, or mistaken conclusions. Focus on the review text in context, do not re-explore the codebase."
   ];
 
   CritiqueCodexOnClaude [
@@ -130,7 +136,8 @@ digraph SprintExec {
     llm_provider="openai",
     llm_model="gpt-5.4",
     reasoning_effort="high",
-    prompt="Critique the Claude review for missing checks, weak evidence, or mistaken conclusions."
+    max_turns=40,
+    prompt="Critique the Claude review for missing checks, weak evidence, or mistaken conclusions. Focus on the review text in context, do not re-explore the codebase."
   ];
 
   CritiqueCodexOnGemini [
@@ -139,7 +146,8 @@ digraph SprintExec {
     llm_provider="openai",
     llm_model="gpt-5.4",
     reasoning_effort="high",
-    prompt="Critique the Gemini review for missing checks, weak evidence, or mistaken conclusions."
+    max_turns=40,
+    prompt="Critique the Gemini review for missing checks, weak evidence, or mistaken conclusions. Focus on the review text in context, do not re-explore the codebase."
   ];
 
   CritiqueGeminiOnClaude [
@@ -148,7 +156,8 @@ digraph SprintExec {
     llm_provider="anthropic",
     llm_model="claude-sonnet-4-6",
     reasoning_effort="high",
-    prompt="Critique the Claude review for missing checks, weak evidence, or mistaken conclusions."
+    max_turns=40,
+    prompt="Critique the Claude review for missing checks, weak evidence, or mistaken conclusions. Focus on the review text in context, do not re-explore the codebase."
   ];
 
   CritiqueGeminiOnCodex [
@@ -157,7 +166,8 @@ digraph SprintExec {
     llm_provider="anthropic",
     llm_model="claude-sonnet-4-6",
     reasoning_effort="high",
-    prompt="Critique the Codex review for missing checks, weak evidence, or mistaken conclusions."
+    max_turns=40,
+    prompt="Critique the Codex review for missing checks, weak evidence, or mistaken conclusions. Focus on the review text in context, do not re-explore the codebase."
   ];
 
   CritiquesJoin [shape=tripleoctagon, label="Critiques Join"];
@@ -168,6 +178,7 @@ digraph SprintExec {
     llm_provider="anthropic",
     llm_model="claude-opus-4-6",
     reasoning_effort="high",
+    max_turns=40,
     goal_gate=true,
     retry_target="ImplementSprint",
     prompt="Synthesize all reviews and critiques into one verdict. Return success only if sprint is truly complete and checklist is satisfied. Return retry if rework is needed. Return fail if blocked."
@@ -185,6 +196,7 @@ digraph SprintExec {
     llm_provider="anthropic",
     llm_model="claude-sonnet-4-6",
     reasoning_effort="high",
+    max_turns=40,
     prompt="Summarize why sprint execution failed, what remains unresolved, and concrete next steps for recovery."
   ];
 
@@ -195,7 +207,8 @@ digraph SprintExec {
   ReadSprint -> MarkInProgress;
   MarkInProgress -> ImplementSprint;
 
-  ImplementSprint -> ValidateBuild;
+  ImplementSprint -> ValidateBuild [condition="outcome=success", label="implemented"];
+  ImplementSprint -> FailureSummary [condition="outcome=fail", label="impl_failed"];
   ValidateBuild -> CommitSprintWork [condition="outcome=success", label="validated"];
   ValidateBuild -> ImplementSprint [condition="outcome=fail", label="fix_validation"];
 
