@@ -102,13 +102,13 @@ func cmdRun(dotfile string) int {
 		return 1
 	}
 
-	// Create temp artifact directory
-	artifactDir, err := os.MkdirTemp("", "mammoth-conformance-*")
+	// Use the current working directory as the artifact/work directory so that
+	// tool nodes and codergen (LLM agent) nodes share the same filesystem.
+	artifactDir, err := os.Getwd()
 	if err != nil {
-		writeError(fmt.Sprintf("creating artifact dir: %v", err))
+		writeError(fmt.Sprintf("getting working dir: %v", err))
 		return 1
 	}
-	defer os.RemoveAll(artifactDir)
 
 	// Detect backend
 	backend := mcp.DetectBackend("")
