@@ -43,6 +43,15 @@ func (r *HandlerRegistry) Get(typeName string) NodeHandler {
 	return r.handlers[typeName]
 }
 
+// All returns a copy of all registered handlers keyed by type name.
+func (r *HandlerRegistry) All() map[string]NodeHandler {
+	result := make(map[string]NodeHandler, len(r.handlers))
+	for k, v := range r.handlers {
+		result[k] = v
+	}
+	return result
+}
+
 // Resolve finds the appropriate handler for a node using the resolution order:
 // 1. Explicit type attribute on the node
 // 2. Shape-based resolution using the shape-to-handler-type mapping

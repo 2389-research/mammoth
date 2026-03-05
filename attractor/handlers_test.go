@@ -61,6 +61,22 @@ func TestNewHandlerRegistry(t *testing.T) {
 	}
 }
 
+func TestHandlerRegistryAll(t *testing.T) {
+	reg := DefaultHandlerRegistry()
+	all := reg.All()
+	if len(all) == 0 {
+		t.Fatal("expected handlers in default registry")
+	}
+	// Should have all 10 built-in handlers.
+	if len(all) != 10 {
+		t.Errorf("expected 10 handlers, got %d", len(all))
+	}
+	// Check a known handler exists.
+	if _, ok := all["start"]; !ok {
+		t.Error("expected 'start' handler")
+	}
+}
+
 func TestHandlerRegistryRegisterAndGet(t *testing.T) {
 	reg := NewHandlerRegistry()
 	handler := &StartHandler{}
