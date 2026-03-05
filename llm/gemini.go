@@ -10,14 +10,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/2389-research/mammoth/llm/sse"
 )
 
+// defaultGeminiBaseURL is the base URL for Google's Gemini API.
+const defaultGeminiBaseURL = "https://generativelanguage.googleapis.com"
+
 // GeminiAdapter implements ProviderAdapter for Google's Gemini API.
-// It uses query-parameter authentication and translates between the unified
-// SDK types and Gemini's native generateContent request/response format.
+// When hitting the default Google endpoint, it uses query-parameter authentication.
+// When a custom base URL is set (e.g. Cloudflare AI Gateway), it uses
+// header-based authentication (x-goog-api-key) for proxy compatibility.
 type GeminiAdapter struct {
 	apiKey       string
 	base         *BaseAdapter
@@ -58,7 +63,7 @@ func WithGeminiTimeout(timeout AdapterTimeout) GeminiOption {
 func NewGeminiAdapter(apiKey string, opts ...GeminiOption) *GeminiAdapter {
 	adapter := &GeminiAdapter{
 		apiKey:       apiKey,
-		base:         NewBaseAdapter("", "https://generativelanguage.googleapis.com", DefaultAdapterTimeout()),
+		base:         NewBaseAdapter("", defaultGeminiBaseURL, DefaultAdapterTimeout()),
 		callIDToName: make(map[string]string),
 	}
 	for _, opt := range opts {
@@ -77,13 +82,42 @@ func (a *GeminiAdapter) Close() error {
 	return nil
 }
 
+// isProxied returns true when the adapter is configured with a custom base URL,
+// indicating the request goes through a proxy (e.g. Cloudflare AI Gateway)
+// that requires header-based auth instead of query-parameter auth.
+func (a *GeminiAdapter) isProxied() bool {
+	return a.base.BaseURL != defaultGeminiBaseURL
+}
+
+// authPath builds the request path with query-param auth for direct Google calls.
+// For proxied calls, the path omits the key (auth goes via header instead).
+func (a *GeminiAdapter) authPath(basePath string) string {
+	if a.isProxied() {
+		return basePath
+	}
+	if strings.Contains(basePath, "?") {
+		return basePath + "&key=" + a.apiKey
+	}
+	return basePath + "?key=" + a.apiKey
+}
+
+// authHeaders returns extra HTTP headers for authentication.
+// For proxied calls, the API key is sent via the x-goog-api-key header.
+// For direct Google calls, auth is handled via query parameter.
+func (a *GeminiAdapter) authHeaders() map[string]string {
+	if a.isProxied() {
+		return map[string]string{"x-goog-api-key": a.apiKey}
+	}
+	return nil
+}
+
 // Complete sends a non-streaming completion request to the Gemini API and returns
 // a unified Response.
 func (a *GeminiAdapter) Complete(ctx context.Context, req Request) (*Response, error) {
 	body := a.buildRequestBody(req)
-	path := fmt.Sprintf("/v1beta/models/%s:generateContent?key=%s", req.Model, a.apiKey)
+	path := a.authPath(fmt.Sprintf("/v1beta/models/%s:generateContent", req.Model))
 
-	httpResp, err := a.base.DoRequest(ctx, http.MethodPost, path, body, nil)
+	httpResp, err := a.base.DoRequest(ctx, http.MethodPost, path, body, a.authHeaders())
 	if err != nil {
 		return nil, err
 	}
@@ -104,9 +138,10 @@ func (a *GeminiAdapter) Complete(ctx context.Context, req Request) (*Response, e
 // Stream sends a streaming request to the Gemini API and returns a channel of StreamEvents.
 func (a *GeminiAdapter) Stream(ctx context.Context, req Request) (<-chan StreamEvent, error) {
 	body := a.buildRequestBody(req)
-	path := fmt.Sprintf("/v1beta/models/%s:streamGenerateContent?alt=sse&key=%s", req.Model, a.apiKey)
+	basePath := fmt.Sprintf("/v1beta/models/%s:streamGenerateContent?alt=sse", req.Model)
+	path := a.authPath(basePath)
 
-	httpResp, err := a.base.DoRequest(ctx, http.MethodPost, path, body, nil)
+	httpResp, err := a.base.DoRequest(ctx, http.MethodPost, path, body, a.authHeaders())
 	if err != nil {
 		return nil, err
 	}

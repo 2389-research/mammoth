@@ -741,15 +741,16 @@ func TestGeminiStreaming(t *testing.T) {
 	}
 }
 
-// TestGeminiQueryParamAuth verifies that the API key is passed as a query parameter
-// and NOT as a Bearer token in the Authorization header.
-func TestGeminiQueryParamAuth(t *testing.T) {
+// TestGeminiProxiedHeaderAuth verifies that when a custom base URL is set
+// (e.g. Cloudflare AI Gateway), the API key is sent via the x-goog-api-key
+// header instead of as a query parameter.
+func TestGeminiProxiedHeaderAuth(t *testing.T) {
 	var receivedQuery string
-	var receivedAuth string
+	var receivedGoogHeader string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.URL.Query().Get("key")
-		receivedAuth = r.Header.Get("Authorization")
+		receivedGoogHeader = r.Header.Get("x-goog-api-key")
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{
 			"candidates": [{
@@ -765,18 +766,60 @@ func TestGeminiQueryParamAuth(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := adapter.Complete(ctx, Request{
-		Model:    "gemini-3-pro-preview",
+		Model:    "gemini-2.5-flash",
 		Messages: []Message{UserMessage("test")},
 	})
 	if err != nil {
 		t.Fatalf("Complete() error: %v", err)
 	}
 
-	if receivedQuery != "my-secret-api-key" {
-		t.Errorf("query param key = %q, want my-secret-api-key", receivedQuery)
+	if receivedGoogHeader != "my-secret-api-key" {
+		t.Errorf("x-goog-api-key header = %q, want my-secret-api-key", receivedGoogHeader)
 	}
-	if receivedAuth != "" {
-		t.Errorf("Authorization header = %q, should be empty (Gemini uses query param auth)", receivedAuth)
+	if receivedQuery != "" {
+		t.Errorf("query param key = %q, should be empty for proxied requests", receivedQuery)
+	}
+}
+
+// TestGeminiDirectQueryParamAuth verifies that when using the default Google
+// base URL, the API key is passed as a query parameter.
+func TestGeminiDirectQueryParamAuth(t *testing.T) {
+	adapter := NewGeminiAdapter("my-secret-api-key")
+
+	// Verify isProxied returns false for default base URL
+	if adapter.isProxied() {
+		t.Error("isProxied() should be false for default Google base URL")
+	}
+
+	// Verify authPath includes the key as query param
+	path := adapter.authPath("/v1beta/models/gemini-2.5-flash:generateContent")
+	if path != "/v1beta/models/gemini-2.5-flash:generateContent?key=my-secret-api-key" {
+		t.Errorf("authPath = %q, want query param key appended", path)
+	}
+
+	// Verify authHeaders returns nil for direct calls
+	if headers := adapter.authHeaders(); headers != nil {
+		t.Errorf("authHeaders = %v, want nil for direct calls", headers)
+	}
+}
+
+// TestGeminiStreamProxiedAuth verifies that streaming requests also use
+// header auth when proxied, and correctly append the key param for direct.
+func TestGeminiStreamProxiedAuth(t *testing.T) {
+	adapter := NewGeminiAdapter("my-key", WithGeminiBaseURL("https://proxy.example.com"))
+
+	// Stream path has ?alt=sse already, key should NOT be appended for proxied
+	path := adapter.authPath("/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse")
+	if path != "/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse" {
+		t.Errorf("proxied stream path = %q, should not have key param", path)
+	}
+
+	// Direct: key should be appended with & since ?alt=sse already present
+	directAdapter := NewGeminiAdapter("my-key")
+	directPath := directAdapter.authPath("/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse")
+	expected := "/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=my-key"
+	if directPath != expected {
+		t.Errorf("direct stream path = %q, want %q", directPath, expected)
 	}
 }
 
