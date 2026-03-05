@@ -57,6 +57,9 @@ func translateRunResult(result *attractor.RunResult, retries map[string]int) Con
 		if outcome, ok := result.NodeOutcomes[nodeID]; ok {
 			nodeStatus = string(outcome.Status)
 			output = outcome.Notes
+			if output == "" && outcome.FailureReason != "" {
+				output = outcome.FailureReason
+			}
 		}
 
 		nodes = append(nodes, ConformanceNodeResult{
@@ -110,8 +113,9 @@ func cmdRun(dotfile string) int {
 		return 1
 	}
 
-	// Detect backend
-	backend := mcp.DetectBackend("")
+	// Detect backend from graph attribute or environment
+	backendType := graph.Attrs["backend"]
+	backend := mcp.DetectBackend(backendType)
 
 	// Track retries via event handler
 	retries := make(map[string]int)

@@ -2,6 +2,7 @@ digraph SprintExec {
   graph [
     goal="Execute the next incomplete sprint from .ai/ledger.tsv through implementation, validation, multi-model review, and completion.",
     rankdir=LR,
+    backend="claude-code",
     default_max_retry=0,
     default_fidelity="summary:medium"
   ];
