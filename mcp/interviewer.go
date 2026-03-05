@@ -39,6 +39,19 @@ func (iv *mcpInterviewer) Ask(ctx context.Context, question string, options []st
 	iv.run.mu.Unlock()
 	select {
 	case <-ctx.Done():
+		// Clean up pending question and restore running state on cancellation
+		// to avoid leaving the run stuck as paused with a stale question.
+		iv.run.mu.Lock()
+		if iv.run.PendingQuestion != nil && iv.run.PendingQuestion.ID == qid {
+			iv.run.PendingQuestion = nil
+			iv.run.Status = StatusRunning
+		}
+		iv.run.mu.Unlock()
+		// Drain any answer that arrived between cancellation and cleanup.
+		select {
+		case <-iv.run.answerCh:
+		default:
+		}
 		return "", ctx.Err()
 	case answer := <-iv.run.answerCh:
 		iv.run.mu.Lock()
@@ -51,6 +64,9 @@ func (iv *mcpInterviewer) Ask(ctx context.Context, question string, options []st
 
 func randomHex(n int) string {
 	b := make([]byte, n)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fall back to timestamp-based uniqueness if crypto/rand fails.
+		panic(fmt.Sprintf("crypto/rand.Read failed: %v", err))
+	}
 	return fmt.Sprintf("%x", b)
 }

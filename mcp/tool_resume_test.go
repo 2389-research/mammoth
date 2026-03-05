@@ -47,7 +47,7 @@ func TestResumePipeline_NotFound(t *testing.T) {
 
 	result, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
 		Name:      "resume_pipeline",
-		Arguments: map[string]any{"run_id": "nonexistent"},
+		Arguments: map[string]any{"run_id": "deadbeefdeadbeef"},
 	})
 	if err != nil {
 		t.Fatalf("CallTool error: %v", err)
@@ -62,10 +62,10 @@ func TestResumePipeline_NoCheckpoint(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a previous run in the disk index with an empty checkpoint dir.
-	checkpointDir := filepath.Join(ms.dataDir, "prev-run", "checkpoints")
+	checkpointDir := filepath.Join(ms.dataDir, "aabbccddee112233", "checkpoints")
 	_ = os.MkdirAll(checkpointDir, 0755)
 	entry := &IndexEntry{
-		RunID:         "prev-run",
+		RunID:         "aabbccddee112233",
 		Source:        simplePipeline,
 		Config:        RunConfig{},
 		Status:        string(StatusFailed),
@@ -77,7 +77,7 @@ func TestResumePipeline_NoCheckpoint(t *testing.T) {
 
 	result, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
 		Name:      "resume_pipeline",
-		Arguments: map[string]any{"run_id": "prev-run"},
+		Arguments: map[string]any{"run_id": "aabbccddee112233"},
 	})
 	if err != nil {
 		t.Fatalf("CallTool error: %v", err)
@@ -92,7 +92,7 @@ func TestResumePipeline_WithCheckpoint(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a previous run with a real checkpoint.
-	checkpointDir := filepath.Join(ms.dataDir, "prev-run", "checkpoints")
+	checkpointDir := filepath.Join(ms.dataDir, "aabbccddee112233", "checkpoints")
 	_ = os.MkdirAll(checkpointDir, 0755)
 
 	pctx := attractor.NewContext()
@@ -103,7 +103,7 @@ func TestResumePipeline_WithCheckpoint(t *testing.T) {
 	}
 
 	entry := &IndexEntry{
-		RunID:         "prev-run",
+		RunID:         "aabbccddee112233",
 		Source:        simplePipeline,
 		Config:        RunConfig{},
 		Status:        string(StatusFailed),
@@ -115,7 +115,7 @@ func TestResumePipeline_WithCheckpoint(t *testing.T) {
 
 	result, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
 		Name:      "resume_pipeline",
-		Arguments: map[string]any{"run_id": "prev-run"},
+		Arguments: map[string]any{"run_id": "aabbccddee112233"},
 	})
 	if err != nil {
 		t.Fatalf("CallTool error: %v", err)
@@ -133,7 +133,7 @@ func TestResumePipeline_WithCheckpoint(t *testing.T) {
 	if output.RunID == "" {
 		t.Error("expected non-empty run_id")
 	}
-	if output.RunID == "prev-run" {
+	if output.RunID == "aabbccddee112233" {
 		t.Error("expected new run_id, got same as previous")
 	}
 }

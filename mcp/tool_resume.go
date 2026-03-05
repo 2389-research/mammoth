@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/2389-research/mammoth/attractor"
@@ -177,29 +176,37 @@ func (s *Server) resumePipeline(run *ActiveRun, graph *attractor.Graph, checkpoi
 	}
 }
 
-// findLatestCheckpoint lists checkpoint*.json files in the given directory,
-// sorts them, and returns the last (most recent) one.
+// findLatestCheckpoint lists checkpoint*.json files in the given directory
+// and returns the one with the most recent modification time.
 func findLatestCheckpoint(dir string) (string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", fmt.Errorf("read checkpoint dir: %w", err)
 	}
 
-	var checkpoints []string
+	var latestName string
+	var latestTime int64
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
 		name := e.Name()
-		if strings.HasPrefix(name, "checkpoint") && strings.HasSuffix(name, ".json") {
-			checkpoints = append(checkpoints, name)
+		if !strings.HasPrefix(name, "checkpoint") || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		modTime := info.ModTime().UnixNano()
+		if latestName == "" || modTime > latestTime {
+			latestName = name
+			latestTime = modTime
 		}
 	}
 
-	if len(checkpoints) == 0 {
+	if latestName == "" {
 		return "", fmt.Errorf("no checkpoint files found in %s", dir)
 	}
-
-	sort.Strings(checkpoints)
-	return filepath.Join(dir, checkpoints[len(checkpoints)-1]), nil
+	return filepath.Join(dir, latestName), nil
 }

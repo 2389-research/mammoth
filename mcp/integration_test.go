@@ -43,15 +43,6 @@ func setupTestServer(t *testing.T) (*mcpsdk.ClientSession, *Server) {
 	return cs, ms
 }
 
-// mustJSON marshals v to json.RawMessage or panics.
-func mustJSON(v any) json.RawMessage {
-	data, err := json.Marshal(v)
-	if err != nil {
-		panic("mustJSON: " + err.Error())
-	}
-	return data
-}
-
 // extractTextContent extracts the text string from the first Content element
 // of a CallToolResult, assuming it is a TextContent.
 func extractTextContent(t *testing.T, result *mcpsdk.CallToolResult) string {

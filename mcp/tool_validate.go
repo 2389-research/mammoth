@@ -26,8 +26,11 @@ type ValidatePipelineOutput struct {
 }
 
 // resolveSource returns DOT source from either a direct string or a file path.
-// Returns an error if neither is provided or the file cannot be read.
+// Returns an error if neither is provided, both are provided, or the file cannot be read.
 func resolveSource(source, file string) (string, error) {
+	if source != "" && file != "" {
+		return "", fmt.Errorf("provide either 'source' or 'file', not both")
+	}
 	if source != "" {
 		return source, nil
 	}

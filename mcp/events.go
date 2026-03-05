@@ -65,6 +65,14 @@ func newEventHandler(run *ActiveRun) func(attractor.EngineEvent) {
 			run.CurrentActivity = fmt.Sprintf("pipeline failed%s", errMsg)
 		case attractor.EventCheckpointSaved:
 			run.CurrentActivity = "checkpoint saved"
+		case attractor.EventStageStalled:
+			run.CurrentActivity = fmt.Sprintf("node stalled: %s", evt.NodeID)
+		case attractor.EventAgentLoopDetected:
+			msg := ""
+			if m, ok := evt.Data["message"]; ok {
+				msg = fmt.Sprintf(": %v", m)
+			}
+			run.CurrentActivity = fmt.Sprintf("loop detected%s", msg)
 		}
 	}
 }

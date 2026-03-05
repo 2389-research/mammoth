@@ -44,23 +44,36 @@ func (s *Server) handleAnswerQuestion(_ context.Context, _ *mcpsdk.CallToolReque
 	hasPending := run.PendingQuestion != nil
 	run.mu.RUnlock()
 
-	if status != StatusPaused || !hasPending {
+	if status != StatusPaused {
 		return &mcpsdk.CallToolResult{
 			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("run %q is not waiting for input (status: %s)", input.RunID, status)}},
 			IsError: true,
 		}, AnswerQuestionOutput{}, nil
 	}
+	if !hasPending {
+		return &mcpsdk.CallToolResult{
+			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("run %q is paused but has no pending question", input.RunID)}},
+			IsError: true,
+		}, AnswerQuestionOutput{}, nil
+	}
 
-	// Non-blocking send — if channel is full (stale answer), replace it.
+	// Non-blocking send — if channel is full (stale answer), drain and retry.
 	select {
 	case run.answerCh <- input.Answer:
 	default:
-		// Drain stale answer and send the replacement.
+		// Drain stale answer and try again non-blocking.
 		select {
 		case <-run.answerCh:
 		default:
 		}
-		run.answerCh <- input.Answer
+		select {
+		case run.answerCh <- input.Answer:
+		default:
+			return &mcpsdk.CallToolResult{
+				Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("run %q answer channel full, try again", input.RunID)}},
+				IsError: true,
+			}, AnswerQuestionOutput{}, nil
+		}
 	}
 
 	output := AnswerQuestionOutput{Acknowledged: true}

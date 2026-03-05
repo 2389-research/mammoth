@@ -7,8 +7,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 )
+
+// validRunID matches hex run IDs produced by randomHex (lowercase hex, 8-64 chars).
+var validRunID = regexp.MustCompile(`^[0-9a-f]{8,64}$`)
+
+// validateRunID checks that a run ID is safe for use in filesystem paths.
+// Rejects empty strings, path separators, traversal sequences, and non-hex IDs.
+func validateRunID(id string) error {
+	if id == "" {
+		return fmt.Errorf("run ID must not be empty")
+	}
+	if !validRunID.MatchString(id) {
+		return fmt.Errorf("invalid run ID %q: must be lowercase hex, 8-64 chars", id)
+	}
+	return nil
+}
 
 // IndexEntry stores metadata for a single run on disk.
 type IndexEntry struct {
@@ -33,6 +49,9 @@ func NewRunIndex(dir string) *RunIndex {
 
 // Save persists an index entry to disk.
 func (idx *RunIndex) Save(entry *IndexEntry) error {
+	if err := validateRunID(entry.RunID); err != nil {
+		return fmt.Errorf("save: %w", err)
+	}
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 	runDir := filepath.Join(idx.dir, entry.RunID)
@@ -58,6 +77,9 @@ func (idx *RunIndex) Save(entry *IndexEntry) error {
 
 // Load reads an index entry from disk.
 func (idx *RunIndex) Load(runID string) (*IndexEntry, error) {
+	if err := validateRunID(runID); err != nil {
+		return nil, fmt.Errorf("load: %w", err)
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	runDir := filepath.Join(idx.dir, runID)
@@ -111,6 +133,10 @@ func (idx *RunIndex) List() ([]*IndexEntry, error) {
 }
 
 // RunDir returns the directory path for a given run ID.
-func (idx *RunIndex) RunDir(runID string) string {
-	return filepath.Join(idx.dir, runID)
+// Returns an error if the run ID is invalid.
+func (idx *RunIndex) RunDir(runID string) (string, error) {
+	if err := validateRunID(runID); err != nil {
+		return "", fmt.Errorf("run dir: %w", err)
+	}
+	return filepath.Join(idx.dir, runID), nil
 }

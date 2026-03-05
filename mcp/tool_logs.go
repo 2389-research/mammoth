@@ -34,6 +34,13 @@ func (s *Server) registerGetRunLogs(srv *mcpsdk.Server) {
 
 // handleGetRunLogs converts events to log lines and applies filters.
 func (s *Server) handleGetRunLogs(_ context.Context, _ *mcpsdk.CallToolRequest, input GetRunLogsInput) (*mcpsdk.CallToolResult, GetRunLogsOutput, error) {
+	if input.Tail < 0 {
+		return &mcpsdk.CallToolResult{
+			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: "tail must be non-negative"}},
+			IsError: true,
+		}, GetRunLogsOutput{}, nil
+	}
+
 	run, ok := s.registry.Get(input.RunID)
 	if !ok {
 		return &mcpsdk.CallToolResult{
