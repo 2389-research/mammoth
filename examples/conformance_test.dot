@@ -1,0 +1,163 @@
+// ABOUTME: Attractor-independent conformance test pipeline.
+// ABOUTME: Exercises core spec features: linear flow, branching, goal gates, retry, parallel, and context.
+digraph ConformanceTest {
+  graph [
+    goal="Verify attractor implementation handles core spec features correctly.",
+    label="Attractor Conformance Test",
+    rankdir=LR,
+    default_max_retry=2
+  ];
+
+  // --- Entry / Exit ---
+  Start [shape=Mdiamond, label="Start"];
+  Exit  [shape=Msquare,  label="Exit"];
+
+  // ---------------------------------------------------------------
+  // Phase 1 — Linear flow with variable expansion
+  // Validates: start node routing, prompt attribute, $goal expansion,
+  //            unconditional edges, chained edge syntax.
+  // ---------------------------------------------------------------
+  Analyze [
+    shape=box,
+    label="Analyze Goal",
+    prompt="You are a conformance test. The pipeline goal is: $goal. Acknowledge the goal and list the features it claims to verify. Return outcome=success."
+  ];
+
+  Start -> Analyze;
+
+  // ---------------------------------------------------------------
+  // Phase 2 — Conditional branching
+  // Validates: condition expressions (outcome=success, outcome=fail),
+  //            edge labels, deterministic edge selection.
+  // ---------------------------------------------------------------
+  Branch [
+    shape=box,
+    label="Branch Test",
+    prompt="Return outcome=success to proceed down the success path."
+  ];
+
+  BranchSuccessTarget [
+    shape=box,
+    label="Success Path",
+    prompt="You reached the success path. Confirm that conditional routing worked correctly."
+  ];
+
+  BranchFailTarget [
+    shape=box,
+    label="Fail Path",
+    prompt="You reached the fail path. This should only happen if Branch returned outcome=fail."
+  ];
+
+  Analyze -> Branch;
+  Branch -> BranchSuccessTarget [condition="outcome=success", label="pass"];
+  Branch -> BranchFailTarget   [condition="outcome=fail",    label="fail"];
+
+  // Both paths converge on the next phase.
+  BranchSuccessTarget -> GoalGateSetup;
+  BranchFailTarget    -> GoalGateSetup;
+
+  // ---------------------------------------------------------------
+  // Phase 3 — Goal gate with retry loop
+  // Validates: goal_gate=true enforcement, retry_target routing,
+  //            max_retries limit, outcome=retry edge.
+  // ---------------------------------------------------------------
+  GoalGateSetup [
+    shape=box,
+    label="Goal Gate Setup",
+    prompt="Prepare context for the goal gate test. Return outcome=success."
+  ];
+
+  GoalGate [
+    shape=box,
+    label="Goal Gate",
+    goal_gate=true,
+    max_retries=1,
+    retry_target="GoalGateSetup",
+    prompt="Evaluate whether all prior phases succeeded. If the pipeline has reached this point via normal flow, return outcome=success. If context indicates a retry, also return outcome=success."
+  ];
+
+  GoalGateSetup -> GoalGate;
+  GoalGate -> ParallelSetup      [condition="outcome=success", label="gate_pass"];
+  GoalGate -> GoalGateSetup      [condition="outcome=retry",   label="gate_retry"];
+
+  // ---------------------------------------------------------------
+  // Phase 4 — Parallel fan-out / fan-in
+  // Validates: component (fan-out) handler, tripleoctagon (fan-in)
+  //            handler, concurrent branch execution, result merging.
+  // ---------------------------------------------------------------
+  ParallelSetup [shape=component, label="Parallel Branches"];
+
+  BranchAlpha [
+    shape=box,
+    label="Branch Alpha",
+    prompt="You are branch Alpha of a parallel fan-out. Confirm you are running. Return outcome=success."
+  ];
+
+  BranchBeta [
+    shape=box,
+    label="Branch Beta",
+    prompt="You are branch Beta of a parallel fan-out. Confirm you are running. Return outcome=success."
+  ];
+
+  BranchGamma [
+    shape=box,
+    label="Branch Gamma",
+    prompt="You are branch Gamma of a parallel fan-out. Confirm you are running. Return outcome=success."
+  ];
+
+  ParallelJoin [shape=tripleoctagon, label="Parallel Join"];
+
+  ParallelSetup -> BranchAlpha;
+  ParallelSetup -> BranchBeta;
+  ParallelSetup -> BranchGamma;
+  BranchAlpha -> ParallelJoin;
+  BranchBeta  -> ParallelJoin;
+  BranchGamma -> ParallelJoin;
+
+  // ---------------------------------------------------------------
+  // Phase 5 — Context propagation and edge weight
+  // Validates: context values flow downstream, weight-based edge
+  //            selection among unconditional edges, max_retries
+  //            attribute on individual nodes.
+  // ---------------------------------------------------------------
+  ContextCheck [
+    shape=box,
+    label="Context Verification",
+    max_retries=0,
+    prompt="Verify that context from all three parallel branches (Alpha, Beta, Gamma) is available. Summarize what you can see in the context. Return outcome=success."
+  ];
+
+  WeightedA [
+    shape=box,
+    label="Low Weight Target",
+    prompt="You reached the low-weight edge target. Return outcome=success."
+  ];
+
+  WeightedB [
+    shape=box,
+    label="High Weight Target",
+    prompt="You reached the high-weight edge target. This is the expected path. Return outcome=success."
+  ];
+
+  ParallelJoin -> ContextCheck;
+
+  // Two unconditional edges with different weights. The engine should
+  // pick the higher weight edge (WeightedB).
+  ContextCheck -> WeightedA [weight=1];
+  ContextCheck -> WeightedB [weight=10];
+
+  // ---------------------------------------------------------------
+  // Phase 6 — Final summary
+  // Validates: multi-hop traversal, pipeline completion, exit node
+  //            reached cleanly.
+  // ---------------------------------------------------------------
+  Summary [
+    shape=box,
+    label="Conformance Summary",
+    prompt="Summarize the conformance test results. The pipeline exercised: linear flow, $goal expansion, conditional branching, goal gates with retry, parallel fan-out/fan-in, context propagation, and weighted edge selection. Return outcome=success."
+  ];
+
+  WeightedA -> Summary;
+  WeightedB -> Summary;
+  Summary   -> Exit;
+}
