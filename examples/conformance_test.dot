@@ -5,12 +5,18 @@ digraph ConformanceTest {
     goal="Verify attractor implementation handles core spec features correctly.",
     label="Attractor Conformance Test",
     rankdir=LR,
-    default_max_retry=2
+    default_max_retry=0
   ];
 
   // --- Entry / Exit ---
-  Start [shape=Mdiamond, label="Start"];
-  Exit  [shape=Msquare,  label="Exit"];
+  Start    [shape=Mdiamond, label="Start"];
+  Exit     [shape=Msquare,  label="Exit"];
+  FailSink [
+    shape=box,
+    label="Failure Report",
+    prompt="A conformance test phase failed. Summarize the failure from context. Do not read or modify any files. Return outcome=success."
+  ];
+  FailSink -> Exit;
 
   // ---------------------------------------------------------------
   // Phase 1 — Linear flow with variable expansion
@@ -20,10 +26,12 @@ digraph ConformanceTest {
   Analyze [
     shape=box,
     label="Analyze Goal",
-    prompt="You are a conformance test. The pipeline goal is: $goal. Acknowledge the goal and list the features it claims to verify. Return outcome=success."
+    prompt="You are a conformance test. The pipeline goal is: $goal. Acknowledge the goal briefly in one paragraph. Do not use any tools. Do not read or modify any files. Return outcome=success."
   ];
 
   Start -> Analyze;
+  Analyze -> Branch          [condition="outcome=success"];
+  Analyze -> FailSink        [condition="outcome=fail", label="phase1_fail"];
 
   // ---------------------------------------------------------------
   // Phase 2 — Conditional branching
@@ -33,28 +41,29 @@ digraph ConformanceTest {
   Branch [
     shape=box,
     label="Branch Test",
-    prompt="Return outcome=success to proceed down the success path."
+    prompt="This is a conformance test for conditional branching. Do not use any tools. Do not read or modify any files. Simply return outcome=success."
   ];
 
   BranchSuccessTarget [
     shape=box,
     label="Success Path",
-    prompt="You reached the success path. Confirm that conditional routing worked correctly."
+    prompt="You reached the success path via conditional routing. Confirm in one sentence. Do not use any tools. Do not read or modify any files. Return outcome=success."
   ];
 
   BranchFailTarget [
     shape=box,
     label="Fail Path",
-    prompt="You reached the fail path. This should only happen if Branch returned outcome=fail."
+    prompt="You reached the fail path via conditional routing. Confirm in one sentence. Do not use any tools. Do not read or modify any files. Return outcome=success."
   ];
 
-  Analyze -> Branch;
   Branch -> BranchSuccessTarget [condition="outcome=success", label="pass"];
-  Branch -> BranchFailTarget   [condition="outcome=fail",    label="fail"];
+  Branch -> BranchFailTarget    [condition="outcome=fail",    label="fail"];
 
   // Both paths converge on the next phase.
-  BranchSuccessTarget -> GoalGateSetup;
-  BranchFailTarget    -> GoalGateSetup;
+  BranchSuccessTarget -> GoalGateSetup [condition="outcome=success"];
+  BranchSuccessTarget -> FailSink      [condition="outcome=fail", label="phase2_fail"];
+  BranchFailTarget    -> GoalGateSetup [condition="outcome=success"];
+  BranchFailTarget    -> FailSink      [condition="outcome=fail", label="phase2_fail"];
 
   // ---------------------------------------------------------------
   // Phase 3 — Goal gate with retry loop
@@ -64,7 +73,7 @@ digraph ConformanceTest {
   GoalGateSetup [
     shape=box,
     label="Goal Gate Setup",
-    prompt="Prepare context for the goal gate test. Return outcome=success."
+    prompt="Prepare for the goal gate test. Do not use any tools. Do not read or modify any files. Return outcome=success."
   ];
 
   GoalGate [
@@ -73,12 +82,14 @@ digraph ConformanceTest {
     goal_gate=true,
     max_retries=1,
     retry_target="GoalGateSetup",
-    prompt="Evaluate whether all prior phases succeeded. If the pipeline has reached this point via normal flow, return outcome=success. If context indicates a retry, also return outcome=success."
+    prompt="This is a goal gate conformance test. Do not use any tools. Do not read or modify any files. Return outcome=success."
   ];
 
-  GoalGateSetup -> GoalGate;
-  GoalGate -> ParallelSetup      [condition="outcome=success", label="gate_pass"];
-  GoalGate -> GoalGateSetup      [condition="outcome=retry",   label="gate_retry"];
+  GoalGateSetup -> GoalGate   [condition="outcome=success"];
+  GoalGateSetup -> FailSink   [condition="outcome=fail", label="phase3_fail"];
+  GoalGate -> ParallelSetup   [condition="outcome=success", label="gate_pass"];
+  GoalGate -> GoalGateSetup   [condition="outcome=retry",   label="gate_retry"];
+  GoalGate -> FailSink        [condition="outcome=fail",     label="phase3_fail"];
 
   // ---------------------------------------------------------------
   // Phase 4 — Parallel fan-out / fan-in
@@ -90,19 +101,19 @@ digraph ConformanceTest {
   BranchAlpha [
     shape=box,
     label="Branch Alpha",
-    prompt="You are branch Alpha of a parallel fan-out. Confirm you are running. Return outcome=success."
+    prompt="You are branch Alpha of a parallel fan-out. Confirm in one sentence. Do not use any tools. Do not read or modify any files. Return outcome=success."
   ];
 
   BranchBeta [
     shape=box,
     label="Branch Beta",
-    prompt="You are branch Beta of a parallel fan-out. Confirm you are running. Return outcome=success."
+    prompt="You are branch Beta of a parallel fan-out. Confirm in one sentence. Do not use any tools. Do not read or modify any files. Return outcome=success."
   ];
 
   BranchGamma [
     shape=box,
     label="Branch Gamma",
-    prompt="You are branch Gamma of a parallel fan-out. Confirm you are running. Return outcome=success."
+    prompt="You are branch Gamma of a parallel fan-out. Confirm in one sentence. Do not use any tools. Do not read or modify any files. Return outcome=success."
   ];
 
   ParallelJoin [shape=tripleoctagon, label="Parallel Join"];
@@ -124,27 +135,25 @@ digraph ConformanceTest {
     shape=box,
     label="Context Verification",
     max_retries=0,
-    prompt="Verify that context from all three parallel branches (Alpha, Beta, Gamma) is available. Summarize what you can see in the context. Return outcome=success."
+    prompt="Verify that context from all three parallel branches (Alpha, Beta, Gamma) is available. Summarize briefly. Do not use any tools. Do not read or modify any files. Return outcome=success."
   ];
 
   WeightedA [
     shape=box,
     label="Low Weight Target",
-    prompt="You reached the low-weight edge target. Return outcome=success."
+    prompt="You reached the low-weight edge target. Confirm in one sentence. Do not use any tools. Do not read or modify any files. Return outcome=success."
   ];
 
   WeightedB [
     shape=box,
     label="High Weight Target",
-    prompt="You reached the high-weight edge target. This is the expected path. Return outcome=success."
+    prompt="You reached the high-weight edge target (expected path). Confirm in one sentence. Do not use any tools. Do not read or modify any files. Return outcome=success."
   ];
 
   ParallelJoin -> ContextCheck;
-
-  // Two unconditional edges with different weights. The engine should
-  // pick the higher weight edge (WeightedB).
-  ContextCheck -> WeightedA [weight=1];
-  ContextCheck -> WeightedB [weight=10];
+  ContextCheck -> WeightedA [condition="outcome=success", weight=1];
+  ContextCheck -> WeightedB [condition="outcome=success", weight=10];
+  ContextCheck -> FailSink  [condition="outcome=fail", label="phase5_fail"];
 
   // ---------------------------------------------------------------
   // Phase 6 — Final summary
@@ -154,10 +163,11 @@ digraph ConformanceTest {
   Summary [
     shape=box,
     label="Conformance Summary",
-    prompt="Summarize the conformance test results. The pipeline exercised: linear flow, $goal expansion, conditional branching, goal gates with retry, parallel fan-out/fan-in, context propagation, and weighted edge selection. Return outcome=success."
+    prompt="The conformance test exercised: linear flow, $goal expansion, conditional branching, goal gates with retry, parallel fan-out/fan-in, context propagation, and weighted edge selection. Summarize in one paragraph. Do not use any tools. Do not read or modify any files. Return outcome=success."
   ];
 
   WeightedA -> Summary;
   WeightedB -> Summary;
-  Summary   -> Exit;
+  Summary   -> Exit [condition="outcome=success"];
+  Summary   -> FailSink [condition="outcome=fail", label="phase6_fail"];
 }

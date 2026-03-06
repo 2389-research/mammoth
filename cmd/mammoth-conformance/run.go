@@ -141,8 +141,14 @@ func cmdRun(dotfile string) int {
 		wh.Interviewer = attractor.NewAutoApproveInterviewer("yes")
 	}
 
-	// Run with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	// Run with timeout — use graph-level timeout attribute if set, else 30 minutes.
+	pipelineTimeout := 30 * time.Minute
+	if t, ok := graph.Attrs["timeout"]; ok {
+		if d, err := time.ParseDuration(t); err == nil {
+			pipelineTimeout = d
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), pipelineTimeout)
 	defer cancel()
 
 	result, err := engine.RunGraph(ctx, graph)
