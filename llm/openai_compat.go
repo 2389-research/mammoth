@@ -48,7 +48,7 @@ func (c *OpenAICompatClient) CreateMessage(ctx context.Context, req *muxllm.Requ
 		req.MaxTokens = 4096
 	}
 
-	params := convertCompatRequest(req)
+	params := convertCompatRequest(req, false)
 	resp, err := c.client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func (c *OpenAICompatClient) CreateMessageStream(ctx context.Context, req *muxll
 		req.MaxTokens = 4096
 	}
 
-	params := convertCompatRequest(req)
+	params := convertCompatRequest(req, true)
 	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
 
 	eventChan := make(chan muxllm.StreamEvent, 100)
@@ -135,12 +135,16 @@ func (c *OpenAICompatClient) CreateMessageStream(ctx context.Context, req *muxll
 }
 
 // convertCompatRequest converts a mux Request to OpenAI ChatCompletionNewParams.
-func convertCompatRequest(req *muxllm.Request) openai.ChatCompletionNewParams {
+// The stream parameter controls whether StreamOptions.IncludeUsage is set;
+// stream_options is only valid on streaming requests per the OpenAI spec.
+func convertCompatRequest(req *muxllm.Request, stream bool) openai.ChatCompletionNewParams {
 	params := openai.ChatCompletionNewParams{
 		Model: req.Model,
-		StreamOptions: openai.ChatCompletionStreamOptionsParam{
+	}
+	if stream {
+		params.StreamOptions = openai.ChatCompletionStreamOptionsParam{
 			IncludeUsage: openai.Bool(true),
-		},
+		}
 	}
 
 	if req.MaxTokens > 0 {

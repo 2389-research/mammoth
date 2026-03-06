@@ -48,9 +48,18 @@ func (cp *Checkpoint) Save(path string) error {
 	}
 	tmpPath := tmp.Name()
 
-	_, err = tmp.Write(data)
-	tmp.Close()
-	if err != nil {
+	if _, err = tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+
+	// Restore 0644 permissions (CreateTemp uses 0600)
+	if err := os.Chmod(tmpPath, 0644); err != nil {
 		os.Remove(tmpPath)
 		return err
 	}

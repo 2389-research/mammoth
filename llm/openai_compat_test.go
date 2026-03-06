@@ -10,22 +10,27 @@ import (
 	"github.com/openai/openai-go"
 )
 
-// TestConvertCompatRequest_StreamOptions verifies that convertCompatRequest
-// always sets StreamOptions.IncludeUsage = true so token counts are returned
-// in streaming responses.
-func TestConvertCompatRequest_StreamOptions(t *testing.T) {
+// TestConvertCompatRequest_StreamOptionsOnlyWhenStreaming verifies that
+// StreamOptions.IncludeUsage is set only when stream=true.
+func TestConvertCompatRequest_StreamOptionsOnlyWhenStreaming(t *testing.T) {
 	req := &muxllm.Request{
 		Model:    "gpt-4o",
 		Messages: []muxllm.Message{muxllm.NewUserMessage("hello")},
 	}
 
-	params := convertCompatRequest(req)
-
-	if !params.StreamOptions.IncludeUsage.Valid() {
-		t.Fatal("StreamOptions.IncludeUsage is not set (not valid)")
+	// Streaming: should have StreamOptions
+	streamParams := convertCompatRequest(req, true)
+	if !streamParams.StreamOptions.IncludeUsage.Valid() {
+		t.Fatal("StreamOptions.IncludeUsage is not set for stream=true")
 	}
-	if !params.StreamOptions.IncludeUsage.Value {
-		t.Errorf("StreamOptions.IncludeUsage.Value = false, want true")
+	if !streamParams.StreamOptions.IncludeUsage.Value {
+		t.Errorf("StreamOptions.IncludeUsage.Value = false, want true (stream=true)")
+	}
+
+	// Non-streaming: should NOT have StreamOptions
+	syncParams := convertCompatRequest(req, false)
+	if syncParams.StreamOptions.IncludeUsage.Valid() {
+		t.Errorf("StreamOptions.IncludeUsage should not be set for stream=false")
 	}
 }
 
@@ -114,7 +119,7 @@ func TestConvertCompatRequest_ModelSet(t *testing.T) {
 				Messages: []muxllm.Message{muxllm.NewUserMessage("hello")},
 			}
 
-			params := convertCompatRequest(req)
+			params := convertCompatRequest(req, false)
 
 			if params.Model != tt.wantModel {
 				t.Errorf("Model = %q, want %q", params.Model, tt.wantModel)

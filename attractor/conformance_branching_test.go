@@ -124,21 +124,55 @@ func TestConformanceTestDOT_HasRequiredStructure(t *testing.T) {
 		}
 	}
 
-	// Verify conditional edges exist from Branch
+	// Verify conditional edges exist from Branch with correct targets
 	var hasSuccessEdge, hasFailEdge bool
 	for _, e := range graph.Edges {
-		if e.From == "Branch" && e.Attrs["condition"] == "outcome=success" {
+		if e.From == "Branch" && e.Attrs["condition"] == "outcome=success" && e.To == "BranchSuccessTarget" {
 			hasSuccessEdge = true
 		}
-		if e.From == "Branch" && e.Attrs["condition"] == "outcome=fail" {
+		if e.From == "Branch" && e.Attrs["condition"] == "outcome=fail" && e.To == "BranchFailTarget" {
 			hasFailEdge = true
 		}
 	}
 	if !hasSuccessEdge {
-		t.Error("missing conditional success edge from Branch")
+		t.Error("missing conditional success edge: Branch -> BranchSuccessTarget [condition=outcome=success]")
 	}
 	if !hasFailEdge {
-		t.Error("missing conditional fail edge from Branch")
+		t.Error("missing conditional fail edge: Branch -> BranchFailTarget [condition=outcome=fail]")
+	}
+
+	// Verify Phase 3 goal-gate wiring
+	edgeExists := func(from, to string) bool {
+		for _, e := range graph.Edges {
+			if e.From == from && e.To == to {
+				return true
+			}
+		}
+		return false
+	}
+	if !edgeExists("GoalGateSetup", "GoalGate") {
+		t.Error("missing edge: GoalGateSetup -> GoalGate")
+	}
+	if !edgeExists("GoalGate", "ParallelSetup") {
+		t.Error("missing edge: GoalGate -> ParallelSetup")
+	}
+	if !edgeExists("GoalGate", "GoalGateSetup") {
+		t.Error("missing retry edge: GoalGate -> GoalGateSetup")
+	}
+
+	// Verify Phase 4 parallel fan-out/fan-in wiring
+	for _, branch := range []string{"BranchAlpha", "BranchBeta", "BranchGamma"} {
+		if !edgeExists("ParallelSetup", branch) {
+			t.Errorf("missing fan-out edge: ParallelSetup -> %s", branch)
+		}
+		if !edgeExists(branch, "ParallelJoin") {
+			t.Errorf("missing fan-in edge: %s -> ParallelJoin", branch)
+		}
+	}
+
+	// Verify completion path
+	if !edgeExists("Summary", "Exit") {
+		t.Error("missing completion edge: Summary -> Exit")
 	}
 
 	// Verify weighted edges from ContextCheck

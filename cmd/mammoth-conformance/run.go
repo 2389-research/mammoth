@@ -113,8 +113,16 @@ func cmdRun(dotfile string) int {
 		return 1
 	}
 
-	// Detect backend from graph attribute or environment
+	// Detect backend from graph attribute or environment.
+	// Validate against known values to catch typos early.
 	backendType := graph.Attrs["backend"]
+	switch backendType {
+	case "", "agent", "claude-code":
+		// Valid values
+	default:
+		fmt.Fprintf(os.Stderr, "warning: unknown backend %q in graph attributes, falling back to auto-detection\n", backendType)
+		backendType = ""
+	}
 	backend := mcp.DetectBackend(backendType)
 
 	// Track retries via event handler
@@ -144,8 +152,10 @@ func cmdRun(dotfile string) int {
 	// Run with timeout — use graph-level timeout attribute if set, else 30 minutes.
 	pipelineTimeout := 30 * time.Minute
 	if t, ok := graph.Attrs["timeout"]; ok {
-		if d, err := time.ParseDuration(t); err == nil {
+		if d, err := time.ParseDuration(t); err == nil && d > 0 {
 			pipelineTimeout = d
+		} else if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: invalid timeout %q, using default %v\n", t, pipelineTimeout)
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), pipelineTimeout)
