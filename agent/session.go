@@ -244,7 +244,7 @@ func ConvertHistoryToMessages(history []Turn) []llm.Message {
 				parts = append(parts, llm.TextPart(t.Content))
 			}
 			for _, tc := range t.ToolCalls {
-				parts = append(parts, llm.ToolCallPart(tc.ID, tc.Name, tc.Arguments))
+				parts = append(parts, llm.ToolCallPartWithSignature(tc.ID, tc.Name, tc.Arguments, tc.Signature))
 			}
 			messages = append(messages, llm.Message{
 				Role:    llm.RoleAssistant,

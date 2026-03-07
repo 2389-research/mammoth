@@ -26,6 +26,7 @@ type streamAccumulator struct {
 	currentToolID   string
 	currentToolName string
 	currentToolArgs string
+	currentToolSig  string
 
 	finishReason *llm.FinishReason
 	usage        *llm.Usage
@@ -140,23 +141,49 @@ func consumeStream(ctx context.Context, session *Session, stream <-chan llm.Stre
 				if ev.ToolCall != nil {
 					acc.currentToolID = ev.ToolCall.ID
 					acc.currentToolName = ev.ToolCall.Name
-					acc.currentToolArgs = ""
+					acc.currentToolSig = ev.ToolCall.Signature
+					if len(ev.ToolCall.Arguments) > 0 {
+						acc.currentToolArgs = string(ev.ToolCall.Arguments)
+					} else {
+						acc.currentToolArgs = ev.ToolCall.RawArguments
+					}
 				}
 
 			case llm.StreamToolDelta:
 				acc.currentToolArgs += ev.Delta
 
 			case llm.StreamToolEnd:
+				if ev.ToolCall != nil {
+					if acc.currentToolID == "" {
+						acc.currentToolID = ev.ToolCall.ID
+					}
+					if acc.currentToolName == "" {
+						acc.currentToolName = ev.ToolCall.Name
+					}
+					if acc.currentToolSig == "" {
+						acc.currentToolSig = ev.ToolCall.Signature
+					}
+					if acc.currentToolArgs == "" {
+						if len(ev.ToolCall.Arguments) > 0 {
+							acc.currentToolArgs = string(ev.ToolCall.Arguments)
+						} else {
+							acc.currentToolArgs = ev.ToolCall.RawArguments
+						}
+					}
+				}
+
 				// Finalize the current tool call
 				tc := llm.ToolCallData{
 					ID:        acc.currentToolID,
 					Name:      acc.currentToolName,
 					Arguments: json.RawMessage(acc.currentToolArgs),
+					Signature: acc.currentToolSig,
 				}
 				acc.toolCalls = append(acc.toolCalls, tc)
 				acc.currentToolID = ""
 				acc.currentToolName = ""
 				acc.currentToolArgs = ""
+				acc.currentToolSig = ""
 
 			case llm.StreamFinish:
 				flushDelta()
@@ -208,7 +235,7 @@ func buildResponseFromStream(acc *streamAccumulator) *llm.Response {
 
 	// Add tool calls
 	for _, tc := range acc.toolCalls {
-		parts = append(parts, llm.ToolCallPart(tc.ID, tc.Name, tc.Arguments))
+		parts = append(parts, llm.ToolCallPartWithSignature(tc.ID, tc.Name, tc.Arguments, tc.Signature))
 	}
 
 	// Build finish reason

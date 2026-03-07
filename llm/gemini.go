@@ -338,12 +338,16 @@ func (a *GeminiAdapter) translateContentPart(role Role, cp ContentPart) map[stri
 		if cp.ToolCall.Arguments != nil {
 			_ = json.Unmarshal(cp.ToolCall.Arguments, &args)
 		}
-		return map[string]any{
+		part := map[string]any{
 			"functionCall": map[string]any{
 				"name": cp.ToolCall.Name,
 				"args": args,
 			},
 		}
+		if cp.ToolCall.Signature != "" {
+			part["thoughtSignature"] = cp.ToolCall.Signature
+		}
+		return part
 
 	case ContentToolResult:
 		if cp.ToolResult == nil {
@@ -421,7 +425,7 @@ func (a *GeminiAdapter) parseResponse(model string, respBody []byte) (*Response,
 				a.callIDToName[callID] = part.FunctionCall.Name
 				a.mu.Unlock()
 
-				resp.Message.Content = append(resp.Message.Content, ToolCallPart(callID, part.FunctionCall.Name, argsJSON))
+				resp.Message.Content = append(resp.Message.Content, ToolCallPartWithSignature(callID, part.FunctionCall.Name, argsJSON, part.ThoughtSignature))
 			}
 		}
 
@@ -575,17 +579,21 @@ func (a *GeminiAdapter) processSSEStream(ctx context.Context, body io.ReadCloser
 					ch <- StreamEvent{
 						Type: StreamToolStart,
 						ToolCall: &ToolCall{
-							ID:        callID,
-							Name:      part.FunctionCall.Name,
-							Arguments: argsJSON,
+							ID:           callID,
+							Name:         part.FunctionCall.Name,
+							Arguments:    argsJSON,
+							Signature:    part.ThoughtSignature,
+							RawArguments: string(argsJSON),
 						},
 					}
 					ch <- StreamEvent{
 						Type: StreamToolEnd,
 						ToolCall: &ToolCall{
-							ID:        callID,
-							Name:      part.FunctionCall.Name,
-							Arguments: argsJSON,
+							ID:           callID,
+							Name:         part.FunctionCall.Name,
+							Arguments:    argsJSON,
+							Signature:    part.ThoughtSignature,
+							RawArguments: string(argsJSON),
 						},
 					}
 				}
@@ -641,8 +649,9 @@ type geminiContent struct {
 
 // geminiPart represents a single part in a Gemini content block.
 type geminiPart struct {
-	Text         string              `json:"text,omitempty"`
-	FunctionCall *geminiFunctionCall `json:"functionCall,omitempty"`
+	Text             string              `json:"text,omitempty"`
+	FunctionCall     *geminiFunctionCall `json:"functionCall,omitempty"`
+	ThoughtSignature string              `json:"thoughtSignature,omitempty"`
 }
 
 // geminiFunctionCall represents a function call in a Gemini response.

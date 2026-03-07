@@ -61,6 +61,7 @@ type ToolCallData struct {
 	ID        string          `json:"id"`
 	Name      string          `json:"name"`
 	Arguments json.RawMessage `json:"arguments"`
+	Signature string          `json:"signature,omitempty"`
 	Type      string          `json:"type,omitempty"` // "function" (default) or "custom"
 }
 
@@ -119,12 +120,18 @@ func ImageDataPart(data []byte, mediaType string) ContentPart {
 
 // ToolCallPart creates a tool call ContentPart.
 func ToolCallPart(id, name string, args json.RawMessage) ContentPart {
+	return ToolCallPartWithSignature(id, name, args, "")
+}
+
+// ToolCallPartWithSignature creates a tool call ContentPart with an optional provider signature.
+func ToolCallPartWithSignature(id, name string, args json.RawMessage, signature string) ContentPart {
 	return ContentPart{
 		Kind: ContentToolCall,
 		ToolCall: &ToolCallData{
 			ID:        id,
 			Name:      name,
 			Arguments: args,
+			Signature: signature,
 			Type:      "function",
 		},
 	}
@@ -359,6 +366,7 @@ type ToolCall struct {
 	ID           string          `json:"id"`
 	Name         string          `json:"name"`
 	Arguments    json.RawMessage `json:"arguments"`
+	Signature    string          `json:"signature,omitempty"`
 	RawArguments string          `json:"raw_arguments,omitempty"`
 }
 

@@ -588,6 +588,69 @@ func TestGeminiFinishReasonInference(t *testing.T) {
 	}
 }
 
+func TestGeminiThoughtSignatureRoundTrip(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{
+			"candidates": [{
+				"content": {
+					"parts": [{
+						"functionCall": {"name": "read_file", "args": {"file_path": "/tmp/test.go"}},
+						"thoughtSignature": "sig-123"
+					}],
+					"role": "model"
+				},
+				"finishReason": "STOP"
+			}],
+			"usageMetadata": {"promptTokenCount": 5, "candidatesTokenCount": 5, "totalTokenCount": 10}
+		}`)
+	}))
+	defer server.Close()
+
+	adapter := NewGeminiAdapter("test-key", WithGeminiBaseURL(server.URL))
+	ctx := context.Background()
+
+	resp, err := adapter.Complete(ctx, Request{
+		Model:    "gemini-3-pro-preview",
+		Messages: []Message{UserMessage("read the file")},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error: %v", err)
+	}
+
+	toolCalls := resp.ToolCalls()
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(toolCalls))
+	}
+	if toolCalls[0].Signature != "sig-123" {
+		t.Fatalf("Signature = %q, want sig-123", toolCalls[0].Signature)
+	}
+
+	body := adapter.buildRequestBody(Request{
+		Model: "gemini-3-pro-preview",
+		Messages: []Message{
+			{
+				Role: RoleAssistant,
+				Content: []ContentPart{
+					ToolCallPartWithSignature("call-1", "read_file", json.RawMessage(`{"file_path":"/tmp/test.go"}`), "sig-123"),
+				},
+			},
+		},
+	})
+
+	contents, ok := body["contents"].([]map[string]any)
+	if !ok || len(contents) != 1 {
+		t.Fatalf("expected one translated message, got %#v", body["contents"])
+	}
+	parts, ok := contents[0]["parts"].([]map[string]any)
+	if !ok || len(parts) != 1 {
+		t.Fatalf("expected one translated part, got %#v", contents[0]["parts"])
+	}
+	if parts[0]["thoughtSignature"] != "sig-123" {
+		t.Fatalf("thoughtSignature = %#v, want sig-123", parts[0]["thoughtSignature"])
+	}
+}
+
 // TestGeminiErrorHandling verifies that error responses from Gemini are parsed
 // into the appropriate error types.
 func TestGeminiErrorHandling(t *testing.T) {

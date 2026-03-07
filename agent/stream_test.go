@@ -137,6 +137,50 @@ func TestConsumeStream_WithToolCalls(t *testing.T) {
 	}
 }
 
+func TestConsumeStream_WithToolCallsFromStartEvent(t *testing.T) {
+	session := NewSession(DefaultSessionConfig())
+	defer session.Close()
+
+	events := []llm.StreamEvent{
+		{Type: llm.StreamStart},
+		{Type: llm.StreamToolStart, ToolCall: &llm.ToolCall{
+			ID:           "call-1",
+			Name:         "read_file",
+			Arguments:    json.RawMessage(`{"file_path":"/tmp/test.go"}`),
+			RawArguments: `{"file_path":"/tmp/test.go"}`,
+		}},
+		{Type: llm.StreamToolEnd, ToolCall: &llm.ToolCall{
+			ID:           "call-1",
+			Name:         "read_file",
+			Arguments:    json.RawMessage(`{"file_path":"/tmp/test.go"}`),
+			RawArguments: `{"file_path":"/tmp/test.go"}`,
+		}},
+		{Type: llm.StreamFinish, FinishReason: &llm.FinishReason{Reason: llm.FinishToolCalls}, Usage: &llm.Usage{
+			InputTokens:  10,
+			OutputTokens: 5,
+			TotalTokens:  15,
+		}},
+	}
+
+	resp, err := consumeStream(context.Background(), session, sendEvents(events))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	toolCalls := resp.ToolCalls()
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(toolCalls))
+	}
+
+	var args map[string]any
+	if err := json.Unmarshal(toolCalls[0].Arguments, &args); err != nil {
+		t.Fatalf("failed to parse tool call arguments: %v", err)
+	}
+	if args["file_path"] != "/tmp/test.go" {
+		t.Fatalf("expected file_path /tmp/test.go, got %v", args["file_path"])
+	}
+}
+
 func TestConsumeStream_MultipleToolCalls(t *testing.T) {
 	session := NewSession(DefaultSessionConfig())
 	defer session.Close()

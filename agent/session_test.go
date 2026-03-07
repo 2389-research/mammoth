@@ -375,6 +375,36 @@ func TestConvertHistoryToMessages(t *testing.T) {
 	}
 }
 
+func TestConvertHistoryToMessages_PreservesToolCallSignature(t *testing.T) {
+	args := json.RawMessage(`{"file_path": "/tmp/test.go"}`)
+	history := []Turn{
+		AssistantTurn{
+			ToolCalls: []llm.ToolCallData{
+				{
+					ID:        "call-1",
+					Name:      "read_file",
+					Arguments: args,
+					Signature: "sig-123",
+				},
+			},
+			Timestamp: time.Now(),
+		},
+	}
+
+	messages := ConvertHistoryToMessages(history)
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(messages))
+	}
+
+	toolCalls := messages[0].ToolCalls()
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(toolCalls))
+	}
+	if toolCalls[0].Signature != "sig-123" {
+		t.Fatalf("expected signature sig-123, got %q", toolCalls[0].Signature)
+	}
+}
+
 func TestDetectLoopRepeatingPattern(t *testing.T) {
 	// Pattern of length 1: same tool call repeated 10 times
 	t.Run("pattern_length_1", func(t *testing.T) {
