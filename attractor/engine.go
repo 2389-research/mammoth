@@ -835,7 +835,7 @@ func applyAutoStatus(node *Node, outcome *Outcome) *Outcome {
 		if outcome.Notes != "" {
 			outcome.Notes += "; "
 		}
-		outcome.Notes += "auto_status: generated SUCCESS"
+		outcome.Notes += "auto_status: generated SUCCESS for node " + node.ID
 	}
 	return outcome
 }
