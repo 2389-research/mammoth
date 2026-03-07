@@ -3,7 +3,9 @@
 package attractor
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"time"
@@ -29,6 +31,7 @@ type ToolCallResult struct {
 type PreHookResult struct {
 	Skip   bool
 	Reason string
+	Error  string // non-empty if the hook failed; callers should log this
 }
 
 // ToolCallHooks holds the pre and post hook shell commands for tool calls.
@@ -50,23 +53,42 @@ func (h *ToolCallHooks) RunPre(ctx context.Context, meta ToolCallMeta) PreHookRe
 	cmd := exec.CommandContext(cmdCtx, "sh", "-c", h.PreCommand)
 	cmd.Env = buildHookEnv(meta, nil)
 
+	// Pipe tool call metadata as JSON to stdin per spec.
+	stdinJSON, _ := json.Marshal(meta)
+	cmd.Stdin = bytes.NewReader(stdinJSON)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
 	err := cmd.Run()
 	if err != nil {
 		exitCode := extractExitCode(err)
+		errMsg := stderr.String()
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
 		return PreHookResult{
 			Skip:   true,
 			Reason: fmt.Sprintf("pre-hook exited with code %d", exitCode),
+			Error:  errMsg,
 		}
 	}
 
 	return PreHookResult{Skip: false}
 }
 
-// RunPost executes the post-hook command for logging/auditing. Failures are
-// swallowed and do not affect the pipeline. An empty PostCommand is a no-op.
-func (h *ToolCallHooks) RunPost(ctx context.Context, meta ToolCallMeta, result ToolCallResult) {
+// postHookInput is the combined payload piped to post-hook stdin as JSON.
+type postHookInput struct {
+	Meta   ToolCallMeta   `json:"meta"`
+	Result ToolCallResult `json:"result"`
+}
+
+// RunPost executes the post-hook command for logging/auditing. Failures do not
+// affect the pipeline but are returned as an error string for stage-log recording.
+// An empty PostCommand is a no-op that returns "".
+func (h *ToolCallHooks) RunPost(ctx context.Context, meta ToolCallMeta, result ToolCallResult) string {
 	if h.PostCommand == "" {
-		return
+		return ""
 	}
 
 	cmdCtx, cancel := context.WithTimeout(ctx, hookTimeout)
@@ -75,8 +97,21 @@ func (h *ToolCallHooks) RunPost(ctx context.Context, meta ToolCallMeta, result T
 	cmd := exec.CommandContext(cmdCtx, "sh", "-c", h.PostCommand)
 	cmd.Env = buildHookEnv(meta, &result)
 
-	// Fire-and-forget: errors are swallowed
-	_ = cmd.Run()
+	// Pipe tool call metadata + result as JSON to stdin per spec.
+	stdinJSON, _ := json.Marshal(postHookInput{Meta: meta, Result: result})
+	cmd.Stdin = bytes.NewReader(stdinJSON)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		errMsg := stderr.String()
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
+		return errMsg
+	}
+	return ""
 }
 
 // buildHookEnv constructs an isolated environment with only ATTRACTOR_* vars.

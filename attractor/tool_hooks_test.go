@@ -4,6 +4,7 @@ package attractor
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -180,6 +181,115 @@ func TestPostHookReceivesEnvVars(t *testing.T) {
 	want := "hello_world\n"
 	if got != want {
 		t.Errorf("env var content = %q, want %q", got, want)
+	}
+}
+
+func TestPreHookReceivesStdinJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	stdinFile := filepath.Join(tmpDir, "stdin_data")
+
+	// The hook command reads all of stdin and writes it to a file.
+	hooks := ToolCallHooks{
+		PreCommand: "cat > " + stdinFile,
+	}
+	meta := ToolCallMeta{
+		ToolName: "grep_tool",
+		NodeID:   "nodeA",
+		Input:    `{"pattern":"foo"}`,
+	}
+
+	result := hooks.RunPre(context.Background(), meta)
+	if result.Skip {
+		t.Fatal("expected Skip=false")
+	}
+
+	content, err := os.ReadFile(stdinFile)
+	if err != nil {
+		t.Fatalf("failed to read stdin file: %v", err)
+	}
+
+	var got ToolCallMeta
+	if err := json.Unmarshal(content, &got); err != nil {
+		t.Fatalf("failed to unmarshal stdin JSON: %v (raw: %s)", err, content)
+	}
+	if got.ToolName != meta.ToolName || got.NodeID != meta.NodeID || got.Input != meta.Input {
+		t.Errorf("stdin JSON mismatch: got %+v, want %+v", got, meta)
+	}
+}
+
+func TestPostHookReceivesStdinJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	stdinFile := filepath.Join(tmpDir, "post_stdin_data")
+
+	hooks := ToolCallHooks{
+		PostCommand: "cat > " + stdinFile,
+	}
+	meta := ToolCallMeta{
+		ToolName: "write_tool",
+		NodeID:   "nodeB",
+		Input:    `{"path":"out.txt"}`,
+	}
+	result := ToolCallResult{
+		Output:   "wrote 42 bytes",
+		ExitCode: 0,
+	}
+
+	errMsg := hooks.RunPost(context.Background(), meta, result)
+	if errMsg != "" {
+		t.Fatalf("unexpected error: %s", errMsg)
+	}
+
+	content, err := os.ReadFile(stdinFile)
+	if err != nil {
+		t.Fatalf("failed to read stdin file: %v", err)
+	}
+
+	var got postHookInput
+	if err := json.Unmarshal(content, &got); err != nil {
+		t.Fatalf("failed to unmarshal stdin JSON: %v (raw: %s)", err, content)
+	}
+	if got.Meta.ToolName != meta.ToolName || got.Meta.NodeID != meta.NodeID {
+		t.Errorf("meta mismatch: got %+v, want %+v", got.Meta, meta)
+	}
+	if got.Result.Output != result.Output || got.Result.ExitCode != result.ExitCode {
+		t.Errorf("result mismatch: got %+v, want %+v", got.Result, result)
+	}
+}
+
+func TestPreHookErrorRecording(t *testing.T) {
+	hooks := ToolCallHooks{
+		PreCommand: "echo 'something went wrong' >&2; exit 1",
+	}
+	meta := ToolCallMeta{
+		ToolName: "fail_tool",
+		NodeID:   "nodeErr",
+	}
+
+	result := hooks.RunPre(context.Background(), meta)
+	if !result.Skip {
+		t.Fatal("expected Skip=true on failure")
+	}
+	if result.Error == "" {
+		t.Fatal("expected non-empty Error on failure")
+	}
+	if result.Reason == "" {
+		t.Fatal("expected non-empty Reason on failure")
+	}
+}
+
+func TestPostHookReturnsErrorOnFailure(t *testing.T) {
+	hooks := ToolCallHooks{
+		PostCommand: "echo 'post failed' >&2; exit 1",
+	}
+	meta := ToolCallMeta{
+		ToolName: "some_tool",
+		NodeID:   "nodePost",
+	}
+	result := ToolCallResult{Output: "ok", ExitCode: 0}
+
+	errMsg := hooks.RunPost(context.Background(), meta, result)
+	if errMsg == "" {
+		t.Fatal("expected non-empty error message on post-hook failure")
 	}
 }
 
