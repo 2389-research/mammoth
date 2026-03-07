@@ -45,3 +45,6 @@ temp/
 
 # Local imported spec corpus (nested git repo)
 _specs/
+
+# Vuln scan target repos (nested git repos)
+.ai/vuln/target/

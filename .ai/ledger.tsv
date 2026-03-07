@@ -1,3 +1,4 @@
 sprint_id	title	status	created_at	updated_at
 001	Bootstrap sprint	completed	2026-03-05T21:00:47Z	2026-03-05T22:10:00Z
 002	Fix OpenAI token tracking	completed	2026-03-05T23:12:39Z	2026-03-05T23:30:00Z
+003	Fix non-atomic checkpoint writes	completed	2026-03-06T00:00:00Z	2026-03-05T23:53:00Z
