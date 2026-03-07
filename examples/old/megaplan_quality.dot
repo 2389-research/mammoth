@@ -1,6 +1,6 @@
 digraph Megaplan {
   graph [
-    goal="Create a high-quality sprint plan using multi-model orientation, drafting, critique, and merge stages.",
+    goal="Create a high-quality sprint plan using multi-model orientation, drafting, critique, merge, and a quality gate before publishing.",
     rankdir=LR,
     default_max_retry=5,
     default_fidelity="summary:medium"
@@ -166,7 +166,7 @@ digraph Megaplan {
   InterviewGate [
     shape=hexagon,
     label="Interview Decision",
-    human.default_choice="S",
+    default_choice="S",
     prompt="Choose whether to answer interview questions now or skip interview and continue deterministically."
   ];
 
@@ -326,6 +326,18 @@ digraph Megaplan {
     prompt="Write the final production-ready sprint plan with explicit milestones, DoD, verification checklist, risks, and fallback strategies."
   ];
 
+  FinalQualityGate [
+    shape=box,
+    label="Final Quality Gate",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    goal_gate=true,
+    max_retries=1,
+    retry_target="RevisedDraftParallel",
+    prompt="Assess whether the final sprint is execution-ready. Return success if quality is high and actionable, retry if rework is required, fail if blocked."
+  ];
+
   PersistSprintPlaceholder [
     shape=parallelogram,
     label="Persist Sprint Placeholder",
@@ -415,7 +427,10 @@ digraph Megaplan {
 
   MergeAnalysisJoin -> WriteMergeNotes;
   WriteMergeNotes -> WriteFinalSprint;
-  WriteFinalSprint -> PersistSprintPlaceholder;
+  WriteFinalSprint -> FinalQualityGate;
+  FinalQualityGate -> PersistSprintPlaceholder [condition="outcome=success", label="pass"];
+  FinalQualityGate -> RevisedDraftParallel [condition="outcome=retry", label="rework"];
+  FinalQualityGate -> Exit [condition="outcome=fail", label="blocked"];
   PersistSprintPlaceholder -> SyncLedger;
   SyncLedger -> Exit;
 }

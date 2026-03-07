@@ -166,7 +166,7 @@ digraph Megaplan {
   InterviewGate [
     shape=hexagon,
     label="Interview Decision",
-    default_choice="S",
+    human.default_choice="S",
     prompt="Choose whether to answer interview questions now or skip interview and continue deterministically."
   ];
 
