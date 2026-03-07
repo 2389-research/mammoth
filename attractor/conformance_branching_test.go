@@ -96,6 +96,7 @@ func TestConformanceTestDOT_HasRequiredStructure(t *testing.T) {
 		{"WeightedA", "Phase 5: low-weight target"},
 		{"WeightedB", "Phase 5: high-weight target"},
 		{"Summary", "Phase 6: final summary"},
+		{"AutoStatusNode", "Phase 7: auto_status"},
 		{"FailSink", "failure reporting"},
 	}
 
@@ -170,9 +171,19 @@ func TestConformanceTestDOT_HasRequiredStructure(t *testing.T) {
 		}
 	}
 
+	// Verify AutoStatusNode has auto_status=true
+	if asn, ok := nodesByID["AutoStatusNode"]; ok {
+		if asn.Attrs["auto_status"] != "true" {
+			t.Error("AutoStatusNode missing auto_status=true attribute")
+		}
+	}
+
 	// Verify completion path
-	if !edgeExists("Summary", "Exit") {
-		t.Error("missing completion edge: Summary -> Exit")
+	if !edgeExists("Summary", "AutoStatusNode") {
+		t.Error("missing edge: Summary -> AutoStatusNode")
+	}
+	if !edgeExists("AutoStatusNode", "Exit") {
+		t.Error("missing completion edge: AutoStatusNode -> Exit")
 	}
 
 	// Verify weighted edges from ContextCheck

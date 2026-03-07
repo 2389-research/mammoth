@@ -168,6 +168,21 @@ digraph ConformanceTest {
 
   WeightedA -> Summary;
   WeightedB -> Summary;
-  Summary   -> Exit [condition="outcome=success"];
+  Summary   -> AutoStatusNode [condition="outcome=success"];
   Summary   -> FailSink [condition="outcome=fail", label="phase6_fail"];
+
+  // ---------------------------------------------------------------
+  // Phase 7 — Auto-status
+  // Validates: auto_status=true generates SUCCESS when handler
+  //            writes no explicit status.
+  // ---------------------------------------------------------------
+  AutoStatusNode [
+    shape=box,
+    label="Auto Status Test",
+    auto_status=true,
+    prompt="This node tests auto_status behavior. Acknowledge you received this prompt. Do not use any tools. Do not read or modify any files. Return outcome=success."
+  ];
+
+  AutoStatusNode -> Exit [condition="outcome=success"];
+  AutoStatusNode -> FailSink [condition="outcome=fail", label="phase7_fail"];
 }
