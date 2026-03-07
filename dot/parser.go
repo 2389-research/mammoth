@@ -576,6 +576,10 @@ func (p *parser) parseValue() (string, error) {
 		p.advance()
 		return tok.Value, nil
 
+	case TokenDuration:
+		p.advance()
+		return tok.Value, nil
+
 	case TokenIdentifier:
 		// Bare identifiers as values (e.g., shape=box, rankdir=LR)
 		p.advance()

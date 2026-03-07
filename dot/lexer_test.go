@@ -437,6 +437,7 @@ func TestLexTokenTypeString(t *testing.T) {
 		{TokenNumber, "NUMBER"},
 		{TokenBoolean, "BOOLEAN"},
 		{TokenMinus, "MINUS"},
+		{TokenDuration, "DURATION"},
 		{TokenType(999), "UNKNOWN(999)"},
 	}
 
@@ -501,6 +502,67 @@ func TestLexDottedIdentifiers(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestLexDurationValues(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantType  TokenType
+		wantValue string
+	}{
+		{"milliseconds", "250ms", TokenDuration, "250ms"},
+		{"seconds", "900s", TokenDuration, "900s"},
+		{"minutes", "15m", TokenDuration, "15m"},
+		{"hours", "2h", TokenDuration, "2h"},
+		{"days", "1d", TokenDuration, "1d"},
+		{"large", "86400s", TokenDuration, "86400s"},
+		{"negative seconds", "-5s", TokenDuration, "-5s"},
+		{"negative minutes", "-10m", TokenDuration, "-10m"},
+		{"plain number unchanged", "42", TokenNumber, "42"},
+		{"float unchanged", "3.14", TokenNumber, "3.14"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tokens, err := Lex(tt.input)
+			if err != nil {
+				t.Fatalf("Lex(%q) error: %v", tt.input, err)
+			}
+			if len(tokens) < 2 {
+				t.Fatalf("Lex(%q) produced %d tokens, want at least 2", tt.input, len(tokens))
+			}
+			if tokens[0].Type != tt.wantType {
+				t.Errorf("Lex(%q)[0].Type = %v, want %v", tt.input, tokens[0].Type, tt.wantType)
+			}
+			if tokens[0].Value != tt.wantValue {
+				t.Errorf("Lex(%q)[0].Value = %q, want %q", tt.input, tokens[0].Value, tt.wantValue)
+			}
+		})
+	}
+}
+
+func TestLexDurationInAttribute(t *testing.T) {
+	input := `timeout=900s`
+	tokens, err := Lex(input)
+	if err != nil {
+		t.Fatalf("Lex(%q) error: %v", input, err)
+	}
+
+	wantTypes := []TokenType{TokenIdentifier, TokenEquals, TokenDuration, TokenEOF}
+	wantValues := []string{"timeout", "=", "900s", ""}
+
+	if len(tokens) != len(wantTypes) {
+		t.Fatalf("Lex(%q) produced %d tokens, want %d", input, len(tokens), len(wantTypes))
+	}
+	for i, wt := range wantTypes {
+		if tokens[i].Type != wt {
+			t.Errorf("token[%d].Type = %v, want %v", i, tokens[i].Type, wt)
+		}
+		if tokens[i].Value != wantValues[i] {
+			t.Errorf("token[%d].Value = %q, want %q", i, tokens[i].Value, wantValues[i])
+		}
 	}
 }
 

@@ -450,3 +450,48 @@ func TestParseSubgraphDerivedClass(t *testing.T) {
 		t.Errorf("node 'x' class = %q, want %q", g.Nodes["x"].Attrs["class"], "loop-alpha")
 	}
 }
+
+func TestParserAcceptsUnquotedDurationAttribute(t *testing.T) {
+	input := `digraph G { node_a [timeout=900s]; }`
+	graph, err := Parse(input)
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+	if graph.Nodes["node_a"] == nil {
+		t.Fatal("node_a not found in graph")
+	}
+	if graph.Nodes["node_a"].Attrs["timeout"] != "900s" {
+		t.Errorf("timeout = %q, want %q", graph.Nodes["node_a"].Attrs["timeout"], "900s")
+	}
+}
+
+func TestParserAcceptsDurationVariants(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		key   string
+		want  string
+	}{
+		{"milliseconds", `digraph G { n [delay=250ms]; }`, "delay", "250ms"},
+		{"seconds", `digraph G { n [timeout=30s]; }`, "timeout", "30s"},
+		{"minutes", `digraph G { n [interval=15m]; }`, "interval", "15m"},
+		{"hours", `digraph G { n [ttl=2h]; }`, "ttl", "2h"},
+		{"days", `digraph G { n [retention=1d]; }`, "retention", "1d"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			graph, err := Parse(tt.input)
+			if err != nil {
+				t.Fatalf("Parse() error: %v", err)
+			}
+			if graph.Nodes["n"] == nil {
+				t.Fatal("node 'n' not found")
+			}
+			got := graph.Nodes["n"].Attrs[tt.key]
+			if got != tt.want {
+				t.Errorf("%s = %q, want %q", tt.key, got, tt.want)
+			}
+		})
+	}
+}

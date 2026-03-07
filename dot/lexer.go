@@ -31,6 +31,7 @@ const (
 	TokenNumber               // integer or float literal
 	TokenBoolean              // true or false
 	TokenMinus                // - (standalone, not part of -> or number)
+	TokenDuration             // duration literal (e.g. 900s, 15m, 2h, 250ms, 1d)
 )
 
 // String returns a human-readable name for the token type.
@@ -74,6 +75,8 @@ func (t TokenType) String() string {
 		return "BOOLEAN"
 	case TokenMinus:
 		return "MINUS"
+	case TokenDuration:
+		return "DURATION"
 	default:
 		return fmt.Sprintf("UNKNOWN(%d)", int(t))
 	}
@@ -320,12 +323,36 @@ func (l *lexer) lexNumber() {
 	}
 
 	// Decimal point and fractional part
+	hasDecimal := false
 	if l.pos < len(l.input) && l.input[l.pos] == '.' {
+		hasDecimal = true
 		sb.WriteByte('.')
 		l.advance()
 		for l.pos < len(l.input) && unicode.IsDigit(l.input[l.pos]) {
 			sb.WriteRune(l.input[l.pos])
 			l.advance()
+		}
+	}
+
+	// Check for duration suffix on integer values (no decimal point)
+	if !hasDecimal && l.pos < len(l.input) {
+		ch := l.input[l.pos]
+		if ch == 's' || ch == 'h' || ch == 'd' {
+			sb.WriteRune(ch)
+			l.advance()
+			l.tokens = append(l.tokens, Token{Type: TokenDuration, Value: sb.String(), Line: startLine, Col: startCol})
+			return
+		}
+		if ch == 'm' {
+			sb.WriteRune(ch)
+			l.advance()
+			// Check for "ms" (milliseconds)
+			if l.pos < len(l.input) && l.input[l.pos] == 's' {
+				sb.WriteRune('s')
+				l.advance()
+			}
+			l.tokens = append(l.tokens, Token{Type: TokenDuration, Value: sb.String(), Line: startLine, Col: startCol})
+			return
 		}
 	}
 
