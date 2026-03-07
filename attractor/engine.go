@@ -752,6 +752,11 @@ func executeWithRetry(
 
 		outcome, err := safeExecute(ctx, handler, node, pctx, store)
 
+		// Apply auto_status before evaluating the outcome status.
+		if err == nil && outcome != nil {
+			outcome = applyAutoStatus(node, outcome)
+		}
+
 		if err != nil {
 			lastErr = err
 			if attempt < policy.MaxAttempts && shouldRetry(err) {
@@ -820,6 +825,19 @@ func executeWithRetry(
 		return lastOutcome, nil
 	}
 	return nil, lastErr
+}
+
+// applyAutoStatus checks the node's auto_status attribute and, if the handler
+// produced no explicit status, auto-generates a SUCCESS outcome.
+func applyAutoStatus(node *Node, outcome *Outcome) *Outcome {
+	if node.Attrs != nil && node.Attrs["auto_status"] == "true" && outcome.Status == "" {
+		outcome.Status = StatusSuccess
+		if outcome.Notes != "" {
+			outcome.Notes += "; "
+		}
+		outcome.Notes += "auto_status: generated SUCCESS"
+	}
+	return outcome
 }
 
 // sleepWithContext sleeps for the given duration, but returns early if the context is cancelled.
