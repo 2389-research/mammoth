@@ -11,6 +11,28 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// waitForRunCompletion polls the registry until the given run reaches a
+// terminal status or the deadline expires. This prevents TempDir cleanup
+// from racing with the async executePipeline goroutine.
+func waitForRunCompletion(t *testing.T, ms *Server, runID string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		run, ok := ms.registry.Get(runID)
+		if !ok {
+			t.Fatal("run not found in registry")
+		}
+		run.mu.RLock()
+		status := run.Status
+		run.mu.RUnlock()
+		if status == StatusCompleted || status == StatusFailed {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Error("pipeline did not complete within timeout")
+}
+
 // simplePipeline is a minimal DOT pipeline with start and exit nodes.
 const simplePipeline = `digraph pipeline {
 	start [shape=Mdiamond]
@@ -49,7 +71,7 @@ func connectTestServerWithTools(t *testing.T) (*mcpsdk.ClientSession, *Server) {
 }
 
 func TestRunPipeline_ReturnsRunID(t *testing.T) {
-	cs, _ := connectTestServerWithTools(t)
+	cs, ms := connectTestServerWithTools(t)
 	ctx := context.Background()
 
 	result, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
@@ -75,6 +97,10 @@ func TestRunPipeline_ReturnsRunID(t *testing.T) {
 	if output.Status != string(StatusRunning) {
 		t.Errorf("expected status=%q, got %q", StatusRunning, output.Status)
 	}
+
+	// Wait for the async pipeline goroutine to finish so TempDir cleanup
+	// doesn't race with in-flight writes.
+	waitForRunCompletion(t, ms, output.RunID)
 }
 
 func TestRunPipeline_InvalidDOT(t *testing.T) {
@@ -112,27 +138,5 @@ func TestRunPipeline_CompletesAsync(t *testing.T) {
 	}
 
 	// Wait for the pipeline to complete (simple start->end should be fast).
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		run, ok := ms.registry.Get(output.RunID)
-		if !ok {
-			t.Fatal("run not found in registry")
-		}
-		run.mu.RLock()
-		status := run.Status
-		run.mu.RUnlock()
-		if status == StatusCompleted || status == StatusFailed {
-			if status == StatusFailed {
-				run.mu.RLock()
-				errMsg := run.Error
-				run.mu.RUnlock()
-				// start->end pipeline may fail if no backend is configured; that's OK
-				// as long as the async execution happened.
-				t.Logf("pipeline completed with status=%s error=%s", status, errMsg)
-			}
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	t.Error("pipeline did not complete within timeout")
+	waitForRunCompletion(t, ms, output.RunID)
 }
