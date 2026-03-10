@@ -30,6 +30,10 @@ func (s *Server) handleProjectEditorEntry(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Stop spec agents when navigating away from the spec tab to avoid
+	// unnecessary LLM spend while the user works in the editor.
+	s.stopProjectSpecSwarm(p)
+
 	sessionID, err := s.ensureProjectEditorSession(projectID, p)
 	if err != nil {
 		http.Error(w, "failed to initialize editor", http.StatusInternalServerError)

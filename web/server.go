@@ -496,6 +496,10 @@ func (s *Server) handleProjectOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Stop spec agents when navigating away from the spec tab to avoid
+	// unnecessary LLM spend.
+	s.stopProjectSpecSwarm(p)
+
 	// Support JSON for API clients that set Accept: application/json or send no Accept header.
 	if wantsJSON(r) {
 		w.Header().Set("Content-Type", "application/json")
@@ -774,6 +778,11 @@ func (s *Server) handleBuildView(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "project not found", http.StatusNotFound)
 		return
 	}
+
+	// Stop spec agents when navigating away from the spec tab to avoid
+	// unnecessary LLM spend while the user views the build.
+	s.stopProjectSpecSwarm(p)
+
 	s.maybeResumeBuild(projectID, p)
 
 	data := PageData{
