@@ -835,6 +835,10 @@ func TestLocalModeProjectRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	t.Cleanup(func() {
+		srv.specState.StopAllEventPersisters()
+		srv.specState.StopAllSwarms()
+	})
 
 	// Verify .mammoth was created
 	mammothDir := filepath.Join(tmpDir, ".mammoth")
@@ -902,5 +906,9 @@ func newTestServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatalf("unexpected error creating server: %v", err)
 	}
+	t.Cleanup(func() {
+		srv.specState.StopAllEventPersisters()
+		srv.specState.StopAllSwarms()
+	})
 	return srv
 }
