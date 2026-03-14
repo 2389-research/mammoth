@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
 	"github.com/2389-research/mammoth/dot"
 	"github.com/2389-research/mammoth/dot/validator"
 	"github.com/2389-research/mammoth/llm"
@@ -1048,8 +1047,6 @@ func parseAuditArgs(args []string) (auditConfig, bool) {
 }
 
 // runAudit loads a pipeline run and generates an LLM-powered audit narrative.
-// NOTE: This function still uses the attractor package for GenerateAudit until
-// the audit functionality is migrated to its own package.
 func runAudit(cfg auditConfig) int {
 	// Resolve data directory.
 	dataDir := cfg.dataDir
@@ -1115,18 +1112,7 @@ func runAudit(cfg auditConfig) int {
 		return 1
 	}
 
-	// Bridge runstate.RunState to attractor.RunState for the audit API.
-	// The attractor audit will be migrated to a standalone package in the future.
-	attractorState := bridgeRunStateForAudit(state)
-
-	req := attractor.AuditRequest{
-		State:   attractorState,
-		Events:  attractorState.Events,
-		Graph:   graph,
-		Verbose: cfg.verbose,
-	}
-
-	report, err := attractor.GenerateAudit(context.Background(), req, client)
+	report, err := generateAudit(context.Background(), state, state.Events, graph, cfg.verbose, client)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
@@ -1134,41 +1120,5 @@ func runAudit(cfg auditConfig) int {
 
 	fmt.Println(report.Narrative)
 	return 0
-}
-
-// bridgeRunStateForAudit converts a runstate.RunState to an attractor.RunState
-// for use with the attractor.GenerateAudit function.
-func bridgeRunStateForAudit(rs *runstate.RunState) *attractor.RunState {
-	// Convert Context from map[string]string to map[string]any
-	ctx := make(map[string]any, len(rs.Context))
-	for k, v := range rs.Context {
-		ctx[k] = v
-	}
-
-	// Convert Events from runstate.RunEvent to attractor.EngineEvent
-	events := make([]attractor.EngineEvent, len(rs.Events))
-	for i, e := range rs.Events {
-		events[i] = attractor.EngineEvent{
-			Type:      attractor.EngineEventType(e.Type),
-			NodeID:    e.NodeID,
-			Data:      e.Data,
-			Timestamp: e.Timestamp,
-		}
-	}
-
-	return &attractor.RunState{
-		ID:             rs.ID,
-		PipelineFile:   rs.PipelineFile,
-		Status:         rs.Status,
-		Source:         rs.Source,
-		SourceHash:     rs.SourceHash,
-		StartedAt:      rs.StartedAt,
-		CompletedAt:    rs.CompletedAt,
-		CurrentNode:    rs.CurrentNode,
-		CompletedNodes: rs.CompletedNodes,
-		Context:        ctx,
-		Events:         events,
-		Error:          rs.Error,
-	}
 }
 
