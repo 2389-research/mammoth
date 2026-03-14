@@ -1,5 +1,5 @@
 // ABOUTME: HTTP handler that auto-fixes DOT graph validation errors using an LLM.
-// ABOUTME: Parses, validates, and rewrites the project DOT via the configured backend.
+// ABOUTME: Parses, validates, and rewrites the project DOT via a direct LLM call.
 package web
 
 import (
@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
 	"github.com/2389-research/mammoth/dot"
+	"github.com/2389-research/mammoth/llm"
 	"github.com/2389-research/mammoth/dot/validator"
 	"github.com/go-chi/chi/v5"
 )
@@ -92,29 +92,38 @@ func (s *Server) handleDOTFix(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) fixDOTWithAgent(ctx context.Context, p *Project) (string, error) {
-	backend := detectBackendFromEnv(false)
-	if backend == nil {
-		return "", fmt.Errorf("no LLM backend configured; set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY")
+	client, err := llm.FromEnv()
+	if err != nil {
+		return "", fmt.Errorf("no LLM backend configured: %w", err)
 	}
 
-	result, err := backend.RunAgent(ctx, attractor.AgentRunConfig{
-		Prompt:       buildDOTFixPrompt(p.DOT, p.Diagnostics),
-		Goal:         "Return a corrected DOT graph that resolves validation errors.",
-		NodeID:       "dot_fix",
-		Provider:     os.Getenv("MAMMOTH_DEFAULT_PROVIDER"),
-		Model:        os.Getenv("MAMMOTH_DEFAULT_MODEL"),
-		WorkDir:      p.DataDir,
-		MaxTurns:     8,
-		FidelityMode: "compact",
+	prompt := buildDOTFixPrompt(p.DOT, p.Diagnostics)
+
+	model := os.Getenv("MAMMOTH_DEFAULT_MODEL")
+	provider := os.Getenv("MAMMOTH_DEFAULT_PROVIDER")
+
+	resp, err := client.Complete(ctx, llm.Request{
+		Model:    model,
+		Provider: provider,
+		Messages: []llm.Message{
+			{
+				Role: llm.RoleUser,
+				Content: []llm.ContentPart{
+					{Kind: llm.ContentText, Text: prompt},
+				},
+			},
+		},
 	})
 	if err != nil {
 		return "", fmt.Errorf("agent fix run failed: %w", err)
 	}
-	if result == nil || strings.TrimSpace(result.Output) == "" {
+
+	output := resp.TextContent()
+	if strings.TrimSpace(output) == "" {
 		return "", fmt.Errorf("agent returned empty response")
 	}
 
-	dotText, err := extractDOTFromAgentOutput(result.Output)
+	dotText, err := extractDOTFromAgentOutput(output)
 	if err != nil {
 		return "", fmt.Errorf("failed to extract DOT from agent response: %w", err)
 	}
