@@ -895,6 +895,10 @@ func runServe(scfg serveConfig) int {
 // validatePipeline parses and validates a DOT file without executing it.
 // Uses the dot/ parser and dot/validator Lint function for structural checks.
 func validatePipeline(cfg config) int {
+	if cfg.fixMode {
+		fmt.Fprintln(os.Stderr, "warning: -fix is not yet supported with the tracker pipeline runner")
+	}
+
 	source, err := os.ReadFile(cfg.pipelineFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

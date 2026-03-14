@@ -175,7 +175,7 @@ func buildEventToSSE(evt BuildEvent) SSEEvent {
 	}
 
 	return SSEEvent{
-		Event: string(evt.Type),
+		Event: evt.Type.SSEEventName(),
 		Data:  string(jsonData),
 	}
 }

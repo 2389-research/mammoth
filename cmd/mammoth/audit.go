@@ -13,6 +13,29 @@ import (
 	"github.com/2389-research/mammoth/runstate"
 )
 
+// eventTypeNormalize maps old dotted event names to canonical underscore form
+// so audit analysis works for runs stored by either attractor or tracker.
+var eventTypeNormalize = map[string]string{
+	"stage.started":         "stage_started",
+	"stage.completed":       "stage_completed",
+	"stage.failed":          "stage_failed",
+	"stage.retrying":        "stage_retrying",
+	"pipeline.started":      "pipeline_started",
+	"pipeline.completed":    "pipeline_completed",
+	"pipeline.failed":       "pipeline_failed",
+	"agent.tool_call.start": "tool_call_start",
+	"agent.tool_call.end":   "tool_call_end",
+	"agent.llm_turn":        "turn_metrics",
+}
+
+// normalizeEventType returns the canonical event type name.
+func normalizeEventType(t string) string {
+	if n, ok := eventTypeNormalize[t]; ok {
+		return n
+	}
+	return t
+}
+
 // auditReport holds the generated audit narrative.
 type auditReport struct {
 	Narrative string
@@ -59,9 +82,11 @@ func buildAuditContext(state *runstate.RunState, events []runstate.RunEvent, gra
 			line += fmt.Sprintf(" node=%s", evt.NodeID)
 		}
 
-		// Include event data based on verbosity
+		// Include event data based on verbosity.
+		// Normalize event types to handle both old dotted and new underscore names.
+		evtType := normalizeEventType(evt.Type)
 		if evt.Data != nil {
-			switch evt.Type {
+			switch evtType {
 			case "stage_failed", "pipeline_failed":
 				if reason, ok := evt.Data["reason"]; ok {
 					line += fmt.Sprintf(" reason=%v", reason)
@@ -104,7 +129,7 @@ func buildAuditContext(state *runstate.RunState, events []runstate.RunEvent, gra
 		toolCounts := map[string]int{}
 		llmTurns := 0
 		for _, evt := range events {
-			switch evt.Type {
+			switch normalizeEventType(evt.Type) {
 			case "tool_call_start":
 				if name, ok := evt.Data["tool_name"].(string); ok {
 					toolCounts[name]++
@@ -128,10 +153,12 @@ func buildAuditContext(state *runstate.RunState, events []runstate.RunEvent, gra
 // linearizeGraph walks the graph from start via BFS and returns a
 // human-readable flow string like "start -> build -> verify -> exit".
 func linearizeGraph(g *dot.Graph) string {
-	// Find start node (shape=Mdiamond)
+	// Find start node by shape=Mdiamond, node_type=start, or type=start.
 	var startID string
 	for id, n := range g.Nodes {
-		if n.Attrs["shape"] == "Mdiamond" {
+		if n.Attrs["shape"] == "Mdiamond" ||
+			n.Attrs["node_type"] == "start" ||
+			n.Attrs["type"] == "start" {
 			startID = id
 			break
 		}

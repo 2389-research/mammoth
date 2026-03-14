@@ -42,6 +42,41 @@ const (
 	BuildEventHumanGateAnswered BuildEventType = "human_gate_answered"
 )
 
+// sseEventNameMap translates internal BuildEventType names to the dotted SSE
+// event names expected by the browser. This preserves backward compatibility
+// with the existing JavaScript event listeners (e.g. "stage.started").
+var sseEventNameMap = map[BuildEventType]string{
+	BuildEventPipelineStarted:   "pipeline.started",
+	BuildEventPipelineCompleted: "pipeline.completed",
+	BuildEventPipelineFailed:    "pipeline.failed",
+	BuildEventNodeStarted:       "stage.started",
+	BuildEventNodeCompleted:     "stage.completed",
+	BuildEventNodeFailed:        "stage.failed",
+	BuildEventNodeRetrying:      "stage.retrying",
+	BuildEventCheckpointSaved:   "checkpoint.saved",
+	BuildEventParallelStarted:   "parallel.started",
+	BuildEventParallelCompleted: "parallel.completed",
+	BuildEventLoopRestart:       "loop.restart",
+	BuildEventToolCallStart:     "agent.tool_call.start",
+	BuildEventToolCallEnd:       "agent.tool_call.end",
+	BuildEventTextDelta:         "agent.text_delta",
+	BuildEventSessionStart:      "agent.session.start",
+	BuildEventSessionEnd:        "agent.session.end",
+	BuildEventAgentError:        "agent.error",
+	BuildEventHumanGateChoice:   "human_gate.choice",
+	BuildEventHumanGateFreeform: "human_gate.freeform",
+	BuildEventHumanGateAnswered: "human_gate.answered",
+}
+
+// SSEEventName returns the dotted SSE event name for this BuildEventType.
+// Falls back to the raw string if no mapping exists.
+func (t BuildEventType) SSEEventName() string {
+	if name, ok := sseEventNameMap[t]; ok {
+		return name
+	}
+	return string(t)
+}
+
 // BuildEvent is the unified SSE wire format for build progress.
 type BuildEvent struct {
 	Type      BuildEventType `json:"type"`
@@ -112,12 +147,20 @@ func buildEventFromAgent(evt agent.Event) BuildEvent {
 	case agent.EventToolCallStart:
 		data["tool_name"] = evt.ToolName
 		if evt.ToolInput != "" {
-			data["input"] = evt.ToolInput
+			data["arguments"] = evt.ToolInput
 		}
 	case agent.EventToolCallEnd:
 		data["tool_name"] = evt.ToolName
 		if evt.ToolError != "" {
 			data["error"] = evt.ToolError
+		}
+		if evt.ToolOutput != "" {
+			// Truncate to 200 chars for the UI snippet.
+			snippet := evt.ToolOutput
+			if len(snippet) > 200 {
+				snippet = snippet[:200] + "..."
+			}
+			data["output_snippet"] = snippet
 		}
 	case agent.EventTextDelta:
 		data["text"] = evt.Text
