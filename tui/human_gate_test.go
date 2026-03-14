@@ -1,14 +1,12 @@
-// ABOUTME: Tests for HumanGateModel, the TUI bridge between attractor.Interviewer and Bubble Tea.
+// ABOUTME: Tests for HumanGateModel, the TUI bridge between handlers.Interviewer and Bubble Tea.
 // ABOUTME: Covers model construction, activation, submission, view rendering, Ask channel bridge, and key forwarding.
 package tui
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -159,7 +157,7 @@ func TestHumanGateModelAskSendsRequest(t *testing.T) {
 
 	// Start Ask in a goroutine (it blocks)
 	go func() {
-		_, _ = m.Ask(context.Background(), "Continue?", []string{"yes", "no"})
+		_, _ = m.Ask("Continue?", []string{"yes", "no"}, "yes")
 	}()
 
 	// Read the request from the channel
@@ -170,6 +168,9 @@ func TestHumanGateModelAskSendsRequest(t *testing.T) {
 		}
 		if len(req.options) != 2 || req.options[0] != "yes" || req.options[1] != "no" {
 			t.Errorf("expected options [yes no], got %v", req.options)
+		}
+		if req.defaultChoice != "yes" {
+			t.Errorf("expected defaultChoice %q, got %q", "yes", req.defaultChoice)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for request on requestCh")
@@ -188,7 +189,7 @@ func TestHumanGateModelAskBlocksUntilResponse(t *testing.T) {
 	}, 1)
 
 	go func() {
-		answer, err := m.Ask(context.Background(), "Proceed?", nil)
+		answer, err := m.Ask("Proceed?", nil, "")
 		resultCh <- struct {
 			answer string
 			err    error
@@ -227,51 +228,6 @@ func TestHumanGateModelAskBlocksUntilResponse(t *testing.T) {
 	}
 }
 
-func TestHumanGateModelAskContextCancelled(t *testing.T) {
-	m := NewHumanGateModel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	resultCh := make(chan struct {
-		answer string
-		err    error
-	}, 1)
-
-	go func() {
-		answer, err := m.Ask(ctx, "Waiting forever?", nil)
-		resultCh <- struct {
-			answer string
-			err    error
-		}{answer, err}
-	}()
-
-	// Drain the request so Ask moves to waiting for response
-	select {
-	case <-m.requestCh:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for request")
-	}
-
-	// Cancel the context
-	cancel()
-
-	// Verify Ask returns with context error
-	select {
-	case result := <-resultCh:
-		if result.err == nil {
-			t.Fatal("expected error from cancelled context, got nil")
-		}
-		if result.err != context.Canceled {
-			t.Errorf("expected context.Canceled, got %v", result.err)
-		}
-		if result.answer != "" {
-			t.Errorf("expected empty answer, got %q", result.answer)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for Ask to return after cancel")
-	}
-}
-
 func TestHumanGateModelRequestChan(t *testing.T) {
 	m := NewHumanGateModel()
 
@@ -297,24 +253,6 @@ func TestHumanGateModelUpdateKeyMsg(t *testing.T) {
 	// The textinput should have received the key
 	if updated.textInput.Value() != "a" {
 		t.Errorf("expected textInput value 'a' after key event, got %q", updated.textInput.Value())
-	}
-}
-
-func TestHumanGateModelAskContextAlreadyCancelled(t *testing.T) {
-	m := NewHumanGateModel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel before calling Ask
-
-	answer, err := m.Ask(ctx, "Already cancelled?", nil)
-	if err == nil {
-		t.Fatal("expected error from pre-cancelled context, got nil")
-	}
-	if err != context.Canceled {
-		t.Errorf("expected context.Canceled, got %v", err)
-	}
-	if answer != "" {
-		t.Errorf("expected empty answer, got %q", answer)
 	}
 }
 
@@ -394,33 +332,6 @@ func TestHumanGateViewWithoutContext(t *testing.T) {
 	}
 }
 
-func TestHumanGateAskExtractsNodeID(t *testing.T) {
-	m := NewHumanGateModel()
-
-	ctx := attractor.WithNodeID(context.Background(), "review_gate")
-
-	// Start Ask in a goroutine (it blocks)
-	go func() {
-		_, _ = m.Ask(ctx, "Continue?", []string{"yes", "no"})
-	}()
-
-	// Read the request from the channel
-	select {
-	case req := <-m.requestCh:
-		if req.question != "Continue?" {
-			t.Errorf("expected question %q, got %q", "Continue?", req.question)
-		}
-		if req.nodeID != "review_gate" {
-			t.Errorf("expected nodeID %q, got %q", "review_gate", req.nodeID)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for request on requestCh")
-	}
-
-	// Unblock Ask by sending a response
-	m.responseCh <- gateResponse{answer: "yes"}
-}
-
 func TestHumanGateSubmitClearsNodeContext(t *testing.T) {
 	m := NewHumanGateModel()
 	m.SetActive("Question?", nil)
@@ -443,4 +354,29 @@ func TestHumanGateSubmitClearsNodeContext(t *testing.T) {
 	if m.position != "" {
 		t.Errorf("expected position to be cleared after Submit, got %q", m.position)
 	}
+}
+
+func TestHumanGateAskFreeform(t *testing.T) {
+	m := NewHumanGateModel()
+
+	// Start AskFreeform in a goroutine (it blocks)
+	go func() {
+		_, _ = m.AskFreeform("Describe the issue:")
+	}()
+
+	// Read the request from the channel
+	select {
+	case req := <-m.requestCh:
+		if req.question != "Describe the issue:" {
+			t.Errorf("expected question %q, got %q", "Describe the issue:", req.question)
+		}
+		if req.options != nil {
+			t.Errorf("expected nil options for freeform, got %v", req.options)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for request on requestCh")
+	}
+
+	// Unblock AskFreeform by sending a response
+	m.responseCh <- gateResponse{answer: "it's broken"}
 }

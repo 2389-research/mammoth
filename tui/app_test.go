@@ -8,28 +8,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/mammoth/dot"
+	"github.com/2389-research/tracker/pipeline"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // testAppModel creates an AppModel with a simple 3-node pipeline for testing.
 func testAppModel() AppModel {
-	g := &attractor.Graph{
+	g := &dot.Graph{
 		Name: "test_pipeline",
-		Nodes: map[string]*attractor.Node{
+		Nodes: map[string]*dot.Node{
 			"start": {ID: "start", Attrs: map[string]string{"shape": "Mdiamond", "label": "Start"}},
 			"build": {ID: "build", Attrs: map[string]string{"shape": "box", "label": "Build"}},
 			"done":  {ID: "done", Attrs: map[string]string{"shape": "Msquare", "label": "Done"}},
 		},
-		Edges: []*attractor.Edge{
+		Edges: []*dot.Edge{
 			{From: "start", To: "build"},
 			{From: "build", To: "done"},
 		},
 	}
-	engine := attractor.NewEngine(attractor.EngineConfig{
-		DefaultRetry: attractor.RetryPolicyNone(),
-	})
-	return NewAppModel(g, engine, "digraph{}", context.Background())
+	// Pass nil engine — app tests exercise the model's message routing, not the engine.
+	return NewAppModel(g, nil, context.Background())
 }
 
 func TestNewAppModel(t *testing.T) {
@@ -39,11 +38,8 @@ func TestNewAppModel(t *testing.T) {
 	if m.graph.graph == nil {
 		t.Error("graph panel has nil graph")
 	}
-	if m.engine == nil {
-		t.Error("engine is nil")
-	}
-	if m.source != "digraph{}" {
-		t.Errorf("source = %q, want %q", m.source, "digraph{}")
+	if m.astGraph == nil {
+		t.Error("astGraph is nil")
 	}
 	if m.focus != FocusGraph {
 		t.Errorf("initial focus = %d, want FocusGraph (%d)", m.focus, FocusGraph)
@@ -57,21 +53,6 @@ func TestNewAppModel(t *testing.T) {
 	if m.completed != 0 {
 		t.Errorf("completed = %d, want 0", m.completed)
 	}
-}
-
-func TestAppModelInit(t *testing.T) {
-	m := testAppModel()
-	cmd := m.Init()
-	if cmd == nil {
-		t.Fatal("Init() returned nil, expected a batch command")
-	}
-
-	// The Init() cmd should be a batch (tea.BatchMsg). We can't easily introspect
-	// tea.Batch internals, but we can verify it returned something non-nil.
-	// We also verify that statusBar was started (start time set).
-	// Note: Init modifies m but since AppModel uses value receivers, we need
-	// to verify indirectly. The statusBar.Start() should have been called before
-	// returning.
 }
 
 func TestAppModelUpdateWindowSize(t *testing.T) {
@@ -92,8 +73,8 @@ func TestAppModelUpdateWindowSize(t *testing.T) {
 func TestAppModelUpdateEngineEventStageStarted(t *testing.T) {
 	m := testAppModel()
 	evt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -112,8 +93,8 @@ func TestAppModelUpdateEngineEventStageCompleted(t *testing.T) {
 
 	// First start the node
 	updated, _ := m.Update(EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -122,8 +103,8 @@ func TestAppModelUpdateEngineEventStageCompleted(t *testing.T) {
 
 	// Now complete it
 	updated, _ = m.Update(EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageCompleted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageCompleted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -141,8 +122,8 @@ func TestAppModelUpdateEngineEventStageCompleted(t *testing.T) {
 func TestAppModelUpdateEngineEventStageFailed(t *testing.T) {
 	m := testAppModel()
 	evt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageFailed,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageFailed,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -159,8 +140,8 @@ func TestAppModelUpdateEngineEventStageFailed(t *testing.T) {
 func TestAppModelUpdateEngineEventPipelineStarted(t *testing.T) {
 	m := testAppModel()
 	evt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventPipelineStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventPipelineStarted,
 			Timestamp: time.Now(),
 		},
 	}
@@ -177,7 +158,7 @@ func TestAppModelUpdateEngineEventPipelineStarted(t *testing.T) {
 func TestAppModelUpdatePipelineResult(t *testing.T) {
 	m := testAppModel()
 	msg := PipelineResultMsg{
-		Result: &attractor.RunResult{
+		Result: &pipeline.EngineResult{
 			CompletedNodes: []string{"start", "build", "done"},
 		},
 		Err: nil,
@@ -243,7 +224,7 @@ func TestAppModelUpdateTickReturnsNilWhenDone(t *testing.T) {
 
 	// Mark pipeline as done
 	updated, _ := m.Update(PipelineResultMsg{
-		Result: &attractor.RunResult{},
+		Result: &pipeline.EngineResult{},
 		Err:    nil,
 	})
 	m = updated.(AppModel)
@@ -436,7 +417,7 @@ func TestAppModelViewShowsDoneMessage(t *testing.T) {
 
 	// Complete the pipeline
 	updated, _ := m.Update(PipelineResultMsg{
-		Result: &attractor.RunResult{
+		Result: &pipeline.EngineResult{
 			CompletedNodes: []string{"start", "build", "done"},
 		},
 	})
@@ -468,8 +449,8 @@ func TestAppModelUpdateMultipleStageCompletions(t *testing.T) {
 	// Complete two nodes
 	for _, nodeID := range []string{"start", "build"} {
 		updated, _ := m.Update(EngineEventMsg{
-			Event: attractor.EngineEvent{
-				Type:      attractor.EventStageCompleted,
+			PipelineEvent: &pipeline.PipelineEvent{
+				Type:      pipeline.EventStageCompleted,
 				NodeID:    nodeID,
 				Timestamp: time.Now(),
 			},
@@ -485,8 +466,8 @@ func TestAppModelUpdateMultipleStageCompletions(t *testing.T) {
 func TestAppModelUpdateStageRetryingLogged(t *testing.T) {
 	m := testAppModel()
 	evt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageRetrying,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageRetrying,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -529,8 +510,8 @@ func TestAppModelUpdateLogFocusState(t *testing.T) {
 func TestAppModelUpdateEngineEventStageStartedSetsDetail(t *testing.T) {
 	m := testAppModel()
 	evt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -556,8 +537,8 @@ func TestAppModelUpdatePipelineResultClearsDetail(t *testing.T) {
 
 	// Start a node to populate detail
 	updated, _ := m.Update(EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -566,7 +547,7 @@ func TestAppModelUpdatePipelineResultClearsDetail(t *testing.T) {
 
 	// Complete pipeline
 	updated, _ = m.Update(PipelineResultMsg{
-		Result: &attractor.RunResult{},
+		Result: &pipeline.EngineResult{},
 	})
 	m = updated.(AppModel)
 

@@ -6,21 +6,21 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/mammoth/dot"
 )
 
 // testGraph creates a simple linear DAG: start -> build -> test -> deploy -> done.
-func testGraph() *attractor.Graph {
-	return &attractor.Graph{
+func testGraph() *dot.Graph {
+	return &dot.Graph{
 		Name: "test_pipeline",
-		Nodes: map[string]*attractor.Node{
+		Nodes: map[string]*dot.Node{
 			"start":  {ID: "start", Attrs: map[string]string{"shape": "Mdiamond", "label": "Start"}},
 			"build":  {ID: "build", Attrs: map[string]string{"shape": "box", "label": "Build"}},
 			"test":   {ID: "test", Attrs: map[string]string{"shape": "box", "label": "Test"}},
 			"deploy": {ID: "deploy", Attrs: map[string]string{"shape": "box", "label": "Deploy"}},
 			"done":   {ID: "done", Attrs: map[string]string{"shape": "Msquare", "label": "Done"}},
 		},
-		Edges: []*attractor.Edge{
+		Edges: []*dot.Edge{
 			{From: "start", To: "build"},
 			{From: "build", To: "test"},
 			{From: "test", To: "deploy"},
@@ -157,13 +157,13 @@ func TestGraphPanelViewShowsAllNodeLabels(t *testing.T) {
 }
 
 func TestGraphPanelViewShowsNodeIDWhenNoLabel(t *testing.T) {
-	g := &attractor.Graph{
+	g := &dot.Graph{
 		Name: "no_labels",
-		Nodes: map[string]*attractor.Node{
+		Nodes: map[string]*dot.Node{
 			"alpha": {ID: "alpha", Attrs: map[string]string{"shape": "box"}},
 			"beta":  {ID: "beta", Attrs: map[string]string{"shape": "box"}},
 		},
-		Edges: []*attractor.Edge{
+		Edges: []*dot.Edge{
 			{From: "alpha", To: "beta"},
 		},
 	}
@@ -297,15 +297,15 @@ func TestGraphPanelTopologicalLevelsLinear(t *testing.T) {
 
 func TestGraphPanelTopologicalLevelsDiamond(t *testing.T) {
 	// Diamond DAG: start -> {A, B} -> end
-	g := &attractor.Graph{
+	g := &dot.Graph{
 		Name: "diamond",
-		Nodes: map[string]*attractor.Node{
+		Nodes: map[string]*dot.Node{
 			"start": {ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}},
 			"a":     {ID: "a", Attrs: map[string]string{"shape": "box"}},
 			"b":     {ID: "b", Attrs: map[string]string{"shape": "box"}},
 			"end":   {ID: "end", Attrs: map[string]string{"shape": "Msquare"}},
 		},
-		Edges: []*attractor.Edge{
+		Edges: []*dot.Edge{
 			{From: "start", To: "a"},
 			{From: "start", To: "b"},
 			{From: "a", To: "end"},
@@ -341,10 +341,10 @@ func TestGraphPanelTopologicalLevelsDiamond(t *testing.T) {
 }
 
 func TestGraphPanelTopologicalLevelsEmptyGraph(t *testing.T) {
-	g := &attractor.Graph{
+	g := &dot.Graph{
 		Name:  "empty",
-		Nodes: map[string]*attractor.Node{},
-		Edges: []*attractor.Edge{},
+		Nodes: map[string]*dot.Node{},
+		Edges: []*dot.Edge{},
 	}
 	m := NewGraphPanelModel(g)
 
@@ -355,12 +355,12 @@ func TestGraphPanelTopologicalLevelsEmptyGraph(t *testing.T) {
 }
 
 func TestGraphPanelTopologicalLevelsSingleNode(t *testing.T) {
-	g := &attractor.Graph{
+	g := &dot.Graph{
 		Name: "single",
-		Nodes: map[string]*attractor.Node{
+		Nodes: map[string]*dot.Node{
 			"only": {ID: "only", Attrs: map[string]string{"shape": "box"}},
 		},
-		Edges: []*attractor.Edge{},
+		Edges: []*dot.Edge{},
 	}
 	m := NewGraphPanelModel(g)
 
@@ -384,9 +384,9 @@ func TestGraphPanelSetWidth(t *testing.T) {
 }
 
 func TestGraphPanelNodeLabelFallsBackToID(t *testing.T) {
-	nodeWithLabel := &attractor.Node{ID: "my_node", Attrs: map[string]string{"label": "My Node"}}
-	nodeWithoutLabel := &attractor.Node{ID: "raw_id", Attrs: map[string]string{}}
-	nodeNilAttrs := &attractor.Node{ID: "nil_attrs", Attrs: nil}
+	nodeWithLabel := &dot.Node{ID: "my_node", Attrs: map[string]string{"label": "My Node"}}
+	nodeWithoutLabel := &dot.Node{ID: "raw_id", Attrs: map[string]string{}}
+	nodeNilAttrs := &dot.Node{ID: "nil_attrs", Attrs: nil}
 
 	if got := nodeLabel(nodeWithLabel); got != "My Node" {
 		t.Errorf("expected 'My Node', got %q", got)

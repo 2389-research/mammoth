@@ -7,91 +7,92 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/tracker/agent"
+	"github.com/2389-research/tracker/pipeline"
 )
 
-func TestEngineEventMsg(t *testing.T) {
+func TestEngineEventMsg_PipelineEvent(t *testing.T) {
 	tests := []struct {
 		name     string
-		event    attractor.EngineEvent
-		wantType attractor.EngineEventType
-		wantNode string
+		evtType  pipeline.PipelineEventType
+		nodeID   string
+		message  string
 	}{
 		{
-			name: "pipeline started event",
-			event: attractor.EngineEvent{
-				Type:      attractor.EventPipelineStarted,
-				NodeID:    "",
-				Data:      nil,
-				Timestamp: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-			},
-			wantType: attractor.EventPipelineStarted,
-			wantNode: "",
+			name:    "pipeline started event",
+			evtType: pipeline.EventPipelineStarted,
+			nodeID:  "",
+			message: "pipeline started",
 		},
 		{
-			name: "stage started event preserves node ID",
-			event: attractor.EngineEvent{
-				Type:      attractor.EventStageStarted,
-				NodeID:    "codergen_1",
-				Data:      map[string]any{"model": "gpt-4"},
-				Timestamp: time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC),
-			},
-			wantType: attractor.EventStageStarted,
-			wantNode: "codergen_1",
+			name:    "stage started event preserves node ID",
+			evtType: pipeline.EventStageStarted,
+			nodeID:  "codergen_1",
+			message: "executing node",
 		},
 		{
-			name: "stage failed event with data",
-			event: attractor.EngineEvent{
-				Type:      attractor.EventStageFailed,
-				NodeID:    "validate_3",
-				Data:      map[string]any{"error": "timeout", "retries": 3},
-				Timestamp: time.Date(2026, 6, 15, 8, 30, 0, 0, time.UTC),
-			},
-			wantType: attractor.EventStageFailed,
-			wantNode: "validate_3",
+			name:    "stage failed event",
+			evtType: pipeline.EventStageFailed,
+			nodeID:  "validate_3",
+			message: "handler error",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg := EngineEventMsg{Event: tt.event}
+			evt := pipeline.PipelineEvent{
+				Type:      tt.evtType,
+				NodeID:    tt.nodeID,
+				Message:   tt.message,
+				Timestamp: time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC),
+			}
+			msg := EngineEventMsg{PipelineEvent: &evt}
 
-			if msg.Event.Type != tt.wantType {
-				t.Errorf("Event.Type = %q, want %q", msg.Event.Type, tt.wantType)
+			if msg.PipelineEvent.Type != tt.evtType {
+				t.Errorf("PipelineEvent.Type = %q, want %q", msg.PipelineEvent.Type, tt.evtType)
 			}
-			if msg.Event.NodeID != tt.wantNode {
-				t.Errorf("Event.NodeID = %q, want %q", msg.Event.NodeID, tt.wantNode)
+			if msg.PipelineEvent.NodeID != tt.nodeID {
+				t.Errorf("PipelineEvent.NodeID = %q, want %q", msg.PipelineEvent.NodeID, tt.nodeID)
 			}
-			if msg.Event.Timestamp != tt.event.Timestamp {
-				t.Errorf("Event.Timestamp = %v, want %v", msg.Event.Timestamp, tt.event.Timestamp)
-			}
-			if tt.event.Data != nil {
-				if msg.Event.Data == nil {
-					t.Fatal("Event.Data is nil, want non-nil")
-				}
-				for k, v := range tt.event.Data {
-					if msg.Event.Data[k] != v {
-						t.Errorf("Event.Data[%q] = %v, want %v", k, msg.Event.Data[k], v)
-					}
-				}
+			if msg.AgentEvent != nil {
+				t.Error("AgentEvent should be nil for pipeline event msg")
 			}
 		})
+	}
+}
+
+func TestEngineEventMsg_AgentEvent(t *testing.T) {
+	evt := agent.Event{
+		Type:      agent.EventToolCallStart,
+		Timestamp: time.Now(),
+		ToolName:  "read_file",
+		ToolInput: `{"path":"main.go"}`,
+	}
+	msg := EngineEventMsg{AgentEvent: &evt}
+
+	if msg.AgentEvent.Type != agent.EventToolCallStart {
+		t.Errorf("AgentEvent.Type = %q, want %q", msg.AgentEvent.Type, agent.EventToolCallStart)
+	}
+	if msg.AgentEvent.ToolName != "read_file" {
+		t.Errorf("AgentEvent.ToolName = %q, want %q", msg.AgentEvent.ToolName, "read_file")
+	}
+	if msg.PipelineEvent != nil {
+		t.Error("PipelineEvent should be nil for agent event msg")
 	}
 }
 
 func TestPipelineResultMsg(t *testing.T) {
 	tests := []struct {
 		name       string
-		result     *attractor.RunResult
+		result     *pipeline.EngineResult
 		err        error
 		wantErr    bool
 		wantResult bool
 	}{
 		{
 			name: "success with result",
-			result: &attractor.RunResult{
+			result: &pipeline.EngineResult{
 				CompletedNodes: []string{"start", "codergen", "exit"},
-				NodeOutcomes:   map[string]*attractor.Outcome{},
 			},
 			err:        nil,
 			wantErr:    false,
@@ -106,7 +107,7 @@ func TestPipelineResultMsg(t *testing.T) {
 		},
 		{
 			name: "partial failure with both result and error",
-			result: &attractor.RunResult{
+			result: &pipeline.EngineResult{
 				CompletedNodes: []string{"start"},
 			},
 			err:        errors.New("stage 2 timed out"),

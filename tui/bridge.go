@@ -1,4 +1,4 @@
-// ABOUTME: Bridge connecting the attractor engine to the Bubble Tea message loop.
+// ABOUTME: Bridge connecting the tracker pipeline engine to the Bubble Tea message loop.
 // ABOUTME: Provides EventBridge for event injection, and tea.Cmd factories for pipeline execution, human gates, and ticks.
 package tui
 
@@ -6,20 +6,14 @@ import (
 	"context"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/tracker/agent"
+	"github.com/2389-research/tracker/pipeline"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// gateRequest carries a human gate question and its options from the engine
-// goroutine into the TUI message loop. Used by both bridge.go and human_gate.go.
-type gateRequest struct {
-	question string
-	options  []string
-	nodeID   string // originating pipeline node ID (may be empty)
-}
-
 // EventBridge wraps a tea.Program's Send method for injecting engine events
-// into the Bubble Tea message loop.
+// into the Bubble Tea message loop. It provides separate handler factories
+// for pipeline events and agent events.
 type EventBridge struct {
 	send func(msg tea.Msg)
 }
@@ -30,27 +24,28 @@ func NewEventBridge(send func(msg tea.Msg)) *EventBridge {
 	return &EventBridge{send: send}
 }
 
-// HandleEvent implements the attractor.EngineConfig.EventHandler signature.
-// It wraps the event in an EngineEventMsg and sends it to the TUI.
-func (b *EventBridge) HandleEvent(evt attractor.EngineEvent) {
-	b.send(EngineEventMsg{Event: evt})
-}
-
-// RunPipelineCmd returns a tea.Cmd that runs the engine with the given source DOT.
-// When the pipeline completes (or fails), it sends a PipelineResultMsg.
-// The context allows cancellation when the user quits the TUI.
-func RunPipelineCmd(ctx context.Context, engine *attractor.Engine, source string) tea.Cmd {
-	return func() tea.Msg {
-		result, err := engine.Run(ctx, source)
-		return PipelineResultMsg{Result: result, Err: err}
+// PipelineHandler returns a pipeline.PipelineEventHandlerFunc that forwards
+// pipeline events to the TUI as EngineEventMsg with PipelineEvent set.
+func (b *EventBridge) PipelineHandler() pipeline.PipelineEventHandlerFunc {
+	return func(evt pipeline.PipelineEvent) {
+		b.send(EngineEventMsg{PipelineEvent: &evt})
 	}
 }
 
-// RunPipelineGraphCmd returns a tea.Cmd that runs the engine with an already-parsed graph.
+// AgentHandler returns an agent.EventHandlerFunc that forwards agent events
+// to the TUI as EngineEventMsg with AgentEvent set.
+func (b *EventBridge) AgentHandler() agent.EventHandlerFunc {
+	return func(evt agent.Event) {
+		b.send(EngineEventMsg{AgentEvent: &evt})
+	}
+}
+
+// RunPipelineCmd returns a tea.Cmd that runs the engine.
 // When the pipeline completes (or fails), it sends a PipelineResultMsg.
-func RunPipelineGraphCmd(ctx context.Context, engine *attractor.Engine, graph *attractor.Graph) tea.Cmd {
+// The context allows cancellation when the user quits the TUI.
+func RunPipelineCmd(ctx context.Context, engine *pipeline.Engine) tea.Cmd {
 	return func() tea.Msg {
-		result, err := engine.RunGraph(ctx, graph)
+		result, err := engine.Run(ctx)
 		return PipelineResultMsg{Result: result, Err: err}
 	}
 }
@@ -64,19 +59,11 @@ func WaitForHumanGateCmd(requestCh <-chan gateRequest) tea.Cmd {
 			return nil // channel closed, no more gates
 		}
 		return HumanGateRequestMsg{
-			Question: req.question,
-			Options:  req.options,
-			NodeID:   req.nodeID,
+			Question:      req.question,
+			Options:       req.options,
+			DefaultChoice: req.defaultChoice,
+			NodeID:        req.nodeID,
 		}
-	}
-}
-
-// ResumeFromCheckpointCmd returns a tea.Cmd that resumes engine execution from a checkpoint.
-// When the pipeline completes (or fails), it sends a PipelineResultMsg.
-func ResumeFromCheckpointCmd(ctx context.Context, engine *attractor.Engine, graph *attractor.Graph, checkpointPath string) tea.Cmd {
-	return func() tea.Msg {
-		result, err := engine.ResumeFromCheckpoint(ctx, graph, checkpointPath)
-		return PipelineResultMsg{Result: result, Err: err}
 	}
 }
 
@@ -86,18 +73,5 @@ func TickCmd(interval time.Duration) tea.Cmd {
 	return func() tea.Msg {
 		time.Sleep(interval)
 		return TickMsg{Time: time.Now()}
-	}
-}
-
-// WireHumanGate attaches the given HumanGateModel as the Interviewer on
-// the engine's WaitForHumanHandler, enabling human-in-the-loop nodes to
-// route through the TUI text input instead of the console.
-func WireHumanGate(engine *attractor.Engine, gate *HumanGateModel) {
-	handler := engine.GetHandler("wait.human")
-	if handler == nil {
-		return
-	}
-	if hh, ok := handler.(*attractor.WaitForHumanHandler); ok {
-		hh.Interviewer = gate
 	}
 }

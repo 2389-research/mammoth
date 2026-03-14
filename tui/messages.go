@@ -5,17 +5,20 @@ package tui
 import (
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/tracker/agent"
+	"github.com/2389-research/tracker/pipeline"
 )
 
-// EngineEventMsg wraps an attractor.EngineEvent for the Bubble Tea message loop.
+// EngineEventMsg wraps pipeline and agent events for the Bubble Tea message loop.
+// Exactly one of PipelineEvent or AgentEvent is non-nil per message.
 type EngineEventMsg struct {
-	Event attractor.EngineEvent
+	PipelineEvent *pipeline.PipelineEvent
+	AgentEvent    *agent.Event
 }
 
 // PipelineResultMsg signals that the pipeline has finished executing.
 type PipelineResultMsg struct {
-	Result *attractor.RunResult
+	Result *pipeline.EngineResult
 	Err    error
 }
 
@@ -26,9 +29,10 @@ type TickMsg struct {
 
 // HumanGateRequestMsg signals that a human gate node needs user input.
 type HumanGateRequestMsg struct {
-	Question string
-	Options  []string
-	NodeID   string // originating pipeline node ID (may be empty)
+	Question      string
+	Options       []string
+	DefaultChoice string
+	NodeID        string // originating pipeline node ID (may be empty)
 }
 
 // HumanGateResponseMsg carries the user's response back to the engine.

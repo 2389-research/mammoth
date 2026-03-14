@@ -9,7 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/mammoth/dot"
+	"github.com/2389-research/tracker/agent"
+	"github.com/2389-research/tracker/llm"
+	"github.com/2389-research/tracker/pipeline"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -24,16 +27,16 @@ func markCompleted(m *StreamModel, n int) {
 }
 
 // testStreamGraph creates a simple linear DAG: start -> build -> test -> done.
-func testStreamGraph() *attractor.Graph {
-	return &attractor.Graph{
+func testStreamGraph() *dot.Graph {
+	return &dot.Graph{
 		Name: "stream_test",
-		Nodes: map[string]*attractor.Node{
+		Nodes: map[string]*dot.Node{
 			"start": {ID: "start", Attrs: map[string]string{"shape": "Mdiamond", "label": "Start"}},
 			"build": {ID: "build", Attrs: map[string]string{"shape": "box", "label": "Build"}},
 			"test":  {ID: "test", Attrs: map[string]string{"shape": "box", "label": "Test"}},
 			"done":  {ID: "done", Attrs: map[string]string{"shape": "Msquare", "label": "Done"}},
 		},
-		Edges: []*attractor.Edge{
+		Edges: []*dot.Edge{
 			{From: "start", To: "build"},
 			{From: "build", To: "test"},
 			{From: "test", To: "done"},
@@ -43,18 +46,13 @@ func testStreamGraph() *attractor.Graph {
 
 func testStreamModel() StreamModel {
 	g := testStreamGraph()
-	engine := attractor.NewEngine(attractor.EngineConfig{
-		DefaultRetry: attractor.RetryPolicyNone(),
-	})
-	return NewStreamModel(g, engine, "examples/simple.dot", context.Background(), false)
+	// Pass nil engine — stream tests exercise the model's message routing, not the engine.
+	return NewStreamModel(g, nil, "examples/simple.dot", context.Background(), false)
 }
 
 func testStreamModelVerbose() StreamModel {
 	g := testStreamGraph()
-	engine := attractor.NewEngine(attractor.EngineConfig{
-		DefaultRetry: attractor.RetryPolicyNone(),
-	})
-	return NewStreamModel(g, engine, "examples/simple.dot", context.Background(), true)
+	return NewStreamModel(g, nil, "examples/simple.dot", context.Background(), true)
 }
 
 func TestNewStreamModelSetsNodeOrder(t *testing.T) {
@@ -119,8 +117,8 @@ func TestStreamModelHandleStageStarted(t *testing.T) {
 	m := testStreamModel()
 
 	msg := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -142,8 +140,8 @@ func TestStreamModelHandleStageCompleted(t *testing.T) {
 
 	// First start the node
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -153,8 +151,8 @@ func TestStreamModelHandleStageCompleted(t *testing.T) {
 
 	// Then complete it
 	completed := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageCompleted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageCompleted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -178,8 +176,8 @@ func TestStreamModelHandleStageFailed(t *testing.T) {
 
 	// Start then fail
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -188,11 +186,11 @@ func TestStreamModelHandleStageFailed(t *testing.T) {
 	m = updated.(StreamModel)
 
 	failed := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageFailed,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageFailed,
 			NodeID:    "build",
+			Message:   "compilation error",
 			Timestamp: time.Now(),
-			Data:      map[string]any{"reason": "compilation error"},
 		},
 	}
 	updated, _ = m.Update(failed)
@@ -210,7 +208,7 @@ func TestStreamModelHandlePipelineResult(t *testing.T) {
 	m := testStreamModel()
 
 	msg := PipelineResultMsg{
-		Result: &attractor.RunResult{
+		Result: &pipeline.EngineResult{
 			CompletedNodes: []string{"start", "build", "test", "done"},
 		},
 		Err: nil,
@@ -306,8 +304,8 @@ func TestStreamModelViewShowsNodeStatuses(t *testing.T) {
 
 	// Complete one node
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "start",
 			Timestamp: time.Now(),
 		},
@@ -316,8 +314,8 @@ func TestStreamModelViewShowsNodeStatuses(t *testing.T) {
 	m = updated.(StreamModel)
 
 	completed := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageCompleted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageCompleted,
 			NodeID:    "start",
 			Timestamp: time.Now(),
 		},
@@ -342,8 +340,8 @@ func TestStreamModelViewShowsRunningSpinner(t *testing.T) {
 	m := testStreamModel()
 
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -363,8 +361,8 @@ func TestStreamModelViewShowsProgressLine(t *testing.T) {
 
 	// Complete one node to get a non-zero count
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "start",
 			Timestamp: time.Now(),
 		},
@@ -373,8 +371,8 @@ func TestStreamModelViewShowsProgressLine(t *testing.T) {
 	m = updated.(StreamModel)
 
 	completed := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageCompleted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageCompleted,
 			NodeID:    "start",
 			Timestamp: time.Now(),
 		},
@@ -449,8 +447,8 @@ func TestStreamModelVerboseShowsAgentEvents(t *testing.T) {
 
 	// Start a node
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -460,11 +458,10 @@ func TestStreamModelVerboseShowsAgentEvents(t *testing.T) {
 
 	// Send an agent tool call event
 	toolEvt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventAgentToolCallStart,
-			NodeID:    "build",
+		AgentEvent: &agent.Event{
+			Type:      agent.EventToolCallStart,
 			Timestamp: time.Now(),
-			Data:      map[string]any{"tool_name": "read_file"},
+			ToolName:  "read_file",
 		},
 	}
 	updated, _ = m.Update(toolEvt)
@@ -486,8 +483,8 @@ func TestStreamModelVerboseShowsLLMTurn(t *testing.T) {
 
 	// Start a node
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -495,13 +492,15 @@ func TestStreamModelVerboseShowsLLMTurn(t *testing.T) {
 	updated, _ := m.Update(started)
 	m = updated.(StreamModel)
 
-	// Send an LLM turn event
+	// Send an LLM turn end event with usage
 	llmEvt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventAgentLLMTurn,
-			NodeID:    "build",
+		AgentEvent: &agent.Event{
+			Type:      agent.EventTurnEnd,
 			Timestamp: time.Now(),
-			Data:      map[string]any{"input_tokens": 1200, "output_tokens": 340},
+			Usage: llm.Usage{
+				InputTokens:  1200,
+				OutputTokens: 340,
+			},
 		},
 	}
 	updated, _ = m.Update(llmEvt)
@@ -518,8 +517,8 @@ func TestStreamModelAlwaysShowsAgentEvents(t *testing.T) {
 
 	// Start a node
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -529,11 +528,10 @@ func TestStreamModelAlwaysShowsAgentEvents(t *testing.T) {
 
 	// Send an agent tool call event
 	toolEvt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventAgentToolCallStart,
-			NodeID:    "build",
+		AgentEvent: &agent.Event{
+			Type:      agent.EventToolCallStart,
 			Timestamp: time.Now(),
-			Data:      map[string]any{"tool_name": "read_file"},
+			ToolName:  "read_file",
 		},
 	}
 	updated, _ = m.Update(toolEvt)
@@ -574,10 +572,7 @@ func TestStreamModelCtrlCQuits(t *testing.T) {
 	defer cancel()
 
 	g := testStreamGraph()
-	engine := attractor.NewEngine(attractor.EngineConfig{
-		DefaultRetry: attractor.RetryPolicyNone(),
-	})
-	m := NewStreamModel(g, engine, "test.dot", ctx, false)
+	m := NewStreamModel(g, nil, "test.dot", ctx, false)
 
 	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
 	_, cmd := m.Update(msg)
@@ -614,8 +609,8 @@ func TestStreamModelPipelineStartedSetsTime(t *testing.T) {
 	m := testStreamModel()
 
 	msg := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventPipelineStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventPipelineStarted,
 			Timestamp: time.Now(),
 		},
 	}
@@ -629,10 +624,7 @@ func TestStreamModelPipelineStartedSetsTime(t *testing.T) {
 }
 
 func TestNewStreamModelWithNilGraph(t *testing.T) {
-	engine := attractor.NewEngine(attractor.EngineConfig{
-		DefaultRetry: attractor.RetryPolicyNone(),
-	})
-	m := NewStreamModel(nil, engine, "test.dot", context.Background(), false)
+	m := NewStreamModel(nil, nil, "test.dot", context.Background(), false)
 
 	if len(m.nodeOrder) != 0 {
 		t.Errorf("expected empty nodeOrder for nil graph, got %d", len(m.nodeOrder))
@@ -644,20 +636,17 @@ func TestNewStreamModelWithNilGraph(t *testing.T) {
 
 func TestStreamModelViewNodeWithoutLabel(t *testing.T) {
 	// Create a graph where a node has no label attribute
-	g := &attractor.Graph{
+	g := &dot.Graph{
 		Name: "nolabel_test",
-		Nodes: map[string]*attractor.Node{
+		Nodes: map[string]*dot.Node{
 			"start": {ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}},
 			"done":  {ID: "done", Attrs: map[string]string{"shape": "Msquare"}},
 		},
-		Edges: []*attractor.Edge{
+		Edges: []*dot.Edge{
 			{From: "start", To: "done"},
 		},
 	}
-	engine := attractor.NewEngine(attractor.EngineConfig{
-		DefaultRetry: attractor.RetryPolicyNone(),
-	})
-	m := NewStreamModel(g, engine, "test.dot", context.Background(), false)
+	m := NewStreamModel(g, nil, "test.dot", context.Background(), false)
 
 	view := m.View()
 
@@ -694,14 +683,11 @@ func TestStreamModelWindowSizeMsg(t *testing.T) {
 
 func testStreamModelWithResume() StreamModel {
 	g := testStreamGraph()
-	engine := attractor.NewEngine(attractor.EngineConfig{
-		DefaultRetry: attractor.RetryPolicyNone(),
-	})
 	info := &ResumeInfo{
 		ResumedFrom:   "Build",
 		PreviousNodes: []string{"start"},
 	}
-	return NewStreamModel(g, engine, "examples/simple.dot", context.Background(), false, WithResumeInfo(info))
+	return NewStreamModel(g, nil, "examples/simple.dot", context.Background(), false, WithResumeInfo(info))
 }
 
 func TestStreamModelResumeHeaderShown(t *testing.T) {
@@ -755,11 +741,8 @@ func TestStreamModelNoResumeHeaderWhenFresh(t *testing.T) {
 
 func TestStreamModelResumeInfoNilOption(t *testing.T) {
 	g := testStreamGraph()
-	engine := attractor.NewEngine(attractor.EngineConfig{
-		DefaultRetry: attractor.RetryPolicyNone(),
-	})
 	// Passing nil ResumeInfo should be safe
-	m := NewStreamModel(g, engine, "test.dot", context.Background(), false, WithResumeInfo(nil))
+	m := NewStreamModel(g, nil, "test.dot", context.Background(), false, WithResumeInfo(nil))
 
 	if m.resumeInfo != nil {
 		t.Error("expected nil resumeInfo when passing nil")
@@ -771,13 +754,13 @@ func TestStreamModelResumeInfoNilOption(t *testing.T) {
 	}
 }
 
-func TestStreamModelAccumulatesTokensFromLLMTurn(t *testing.T) {
+func TestStreamModelAccumulatesTokensFromTurnEnd(t *testing.T) {
 	m := testStreamModel() // non-verbose
 
-	// Start a node
+	// Start a node (sets activeNodeID)
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -785,16 +768,19 @@ func TestStreamModelAccumulatesTokensFromLLMTurn(t *testing.T) {
 	updated, _ := m.Update(started)
 	m = updated.(StreamModel)
 
-	// Send an LLM turn event
-	llmEvt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventAgentLLMTurn,
-			NodeID:    "build",
+	// Send a turn end event with token usage
+	turnEvt := EngineEventMsg{
+		AgentEvent: &agent.Event{
+			Type:      agent.EventTurnEnd,
 			Timestamp: time.Now(),
-			Data:      map[string]any{"input_tokens": 1000, "output_tokens": 500},
+			Usage: llm.Usage{
+				InputTokens:  1000,
+				OutputTokens: 500,
+				TotalTokens:  1500,
+			},
 		},
 	}
-	updated, _ = m.Update(llmEvt)
+	updated, _ = m.Update(turnEvt)
 	m = updated.(StreamModel)
 
 	if m.nodeTokens["build"] != 1500 {
@@ -804,16 +790,19 @@ func TestStreamModelAccumulatesTokensFromLLMTurn(t *testing.T) {
 		t.Errorf("expected totalTokens=1500, got %d", m.totalTokens)
 	}
 
-	// Send another LLM turn
-	llmEvt2 := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventAgentLLMTurn,
-			NodeID:    "build",
+	// Send another turn end
+	turnEvt2 := EngineEventMsg{
+		AgentEvent: &agent.Event{
+			Type:      agent.EventTurnEnd,
 			Timestamp: time.Now(),
-			Data:      map[string]any{"input_tokens": 800, "output_tokens": 200},
+			Usage: llm.Usage{
+				InputTokens:  800,
+				OutputTokens: 200,
+				TotalTokens:  1000,
+			},
 		},
 	}
-	updated, _ = m.Update(llmEvt2)
+	updated, _ = m.Update(turnEvt2)
 	m = updated.(StreamModel)
 
 	if m.nodeTokens["build"] != 2500 {
@@ -824,13 +813,13 @@ func TestStreamModelAccumulatesTokensFromLLMTurn(t *testing.T) {
 	}
 }
 
-func TestStreamModelCapturesModelFromStageCompleted(t *testing.T) {
+func TestStreamModelCapturesModelFromTurnEnd(t *testing.T) {
 	m := testStreamModel()
 
-	// Start then complete a node with codergen.model data
+	// Start a node
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -838,18 +827,19 @@ func TestStreamModelCapturesModelFromStageCompleted(t *testing.T) {
 	updated, _ := m.Update(started)
 	m = updated.(StreamModel)
 
-	completed := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageCompleted,
-			NodeID:    "build",
+	// Send turn end with model name
+	turnEvt := EngineEventMsg{
+		AgentEvent: &agent.Event{
+			Type:      agent.EventTurnEnd,
 			Timestamp: time.Now(),
-			Data: map[string]any{
-				"codergen.model":       "claude-sonnet-4-5-20250929",
-				"codergen.tokens_used": 5000,
+			Model:     "claude-sonnet-4-5-20250929",
+			Usage: llm.Usage{
+				InputTokens:  1000,
+				OutputTokens: 500,
 			},
 		},
 	}
-	updated, _ = m.Update(completed)
+	updated, _ = m.Update(turnEvt)
 	m = updated.(StreamModel)
 
 	if m.nodeModels["build"] != "claude-sonnet-4-5-20250929" {
@@ -862,8 +852,8 @@ func TestStreamModelRendersTokensOnCompletedNode(t *testing.T) {
 
 	// Start, accumulate tokens, complete
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -871,25 +861,26 @@ func TestStreamModelRendersTokensOnCompletedNode(t *testing.T) {
 	updated, _ := m.Update(started)
 	m = updated.(StreamModel)
 
-	llmEvt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventAgentLLMTurn,
-			NodeID:    "build",
+	turnEvt := EngineEventMsg{
+		AgentEvent: &agent.Event{
+			Type:      agent.EventTurnEnd,
 			Timestamp: time.Now(),
-			Data:      map[string]any{"input_tokens": 10000, "output_tokens": 2340},
+			Model:     "claude-sonnet-4-5-20250929",
+			Usage: llm.Usage{
+				InputTokens:  10000,
+				OutputTokens: 2340,
+				TotalTokens:  12340,
+			},
 		},
 	}
-	updated, _ = m.Update(llmEvt)
+	updated, _ = m.Update(turnEvt)
 	m = updated.(StreamModel)
 
 	completed := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageCompleted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageCompleted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
-			Data: map[string]any{
-				"codergen.model": "claude-sonnet-4-5-20250929",
-			},
 		},
 	}
 	updated, _ = m.Update(completed)
@@ -910,8 +901,8 @@ func TestStreamModelRendersTokensInProgressLine(t *testing.T) {
 
 	// Complete a node with tokens
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "start",
 			Timestamp: time.Now(),
 		},
@@ -919,20 +910,23 @@ func TestStreamModelRendersTokensInProgressLine(t *testing.T) {
 	updated, _ := m.Update(started)
 	m = updated.(StreamModel)
 
-	llmEvt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventAgentLLMTurn,
-			NodeID:    "start",
+	turnEvt := EngineEventMsg{
+		AgentEvent: &agent.Event{
+			Type:      agent.EventTurnEnd,
 			Timestamp: time.Now(),
-			Data:      map[string]any{"input_tokens": 20000, "output_tokens": 5050},
+			Usage: llm.Usage{
+				InputTokens:  20000,
+				OutputTokens: 5050,
+				TotalTokens:  25050,
+			},
 		},
 	}
-	updated, _ = m.Update(llmEvt)
+	updated, _ = m.Update(turnEvt)
 	m = updated.(StreamModel)
 
 	completed := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageCompleted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageCompleted,
 			NodeID:    "start",
 			Timestamp: time.Now(),
 		},
@@ -951,8 +945,8 @@ func TestStreamModelRendersTokensOnRunningNode(t *testing.T) {
 
 	// Start node and send token data
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -960,15 +954,18 @@ func TestStreamModelRendersTokensOnRunningNode(t *testing.T) {
 	updated, _ := m.Update(started)
 	m = updated.(StreamModel)
 
-	llmEvt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventAgentLLMTurn,
-			NodeID:    "build",
+	turnEvt := EngineEventMsg{
+		AgentEvent: &agent.Event{
+			Type:      agent.EventTurnEnd,
 			Timestamp: time.Now(),
-			Data:      map[string]any{"input_tokens": 3500, "output_tokens": 1000},
+			Usage: llm.Usage{
+				InputTokens:  3500,
+				OutputTokens: 1000,
+				TotalTokens:  4500,
+			},
 		},
 	}
-	updated, _ = m.Update(llmEvt)
+	updated, _ = m.Update(turnEvt)
 	m = updated.(StreamModel)
 
 	view := m.View()
@@ -1032,8 +1029,8 @@ func TestStreamModelTracksTotalToolCalls(t *testing.T) {
 
 	// Start a node
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -1044,11 +1041,10 @@ func TestStreamModelTracksTotalToolCalls(t *testing.T) {
 	// Send tool call events — should count even in non-verbose mode
 	for i := 0; i < 5; i++ {
 		toolEvt := EngineEventMsg{
-			Event: attractor.EngineEvent{
-				Type:      attractor.EventAgentToolCallStart,
-				NodeID:    "build",
+			AgentEvent: &agent.Event{
+				Type:      agent.EventToolCallStart,
 				Timestamp: time.Now(),
-				Data:      map[string]any{"tool_name": "read_file"},
+				ToolName:  "read_file",
 			},
 		}
 		updated, _ = m.Update(toolEvt)
@@ -1255,22 +1251,19 @@ func TestStreamModelNodeIndexByID(t *testing.T) {
 
 func TestStreamModelHumanGatePassesContext(t *testing.T) {
 	// Create a graph with a human gate node
-	g := &attractor.Graph{
+	g := &dot.Graph{
 		Name: "gate_context_test",
-		Nodes: map[string]*attractor.Node{
+		Nodes: map[string]*dot.Node{
 			"start":  {ID: "start", Attrs: map[string]string{"shape": "Mdiamond", "label": "Start"}},
 			"deploy": {ID: "deploy", Attrs: map[string]string{"shape": "hexagon", "label": "Deploy"}},
 			"done":   {ID: "done", Attrs: map[string]string{"shape": "Msquare", "label": "Done"}},
 		},
-		Edges: []*attractor.Edge{
+		Edges: []*dot.Edge{
 			{From: "start", To: "deploy"},
 			{From: "deploy", To: "done"},
 		},
 	}
-	engine := attractor.NewEngine(attractor.EngineConfig{
-		DefaultRetry: attractor.RetryPolicyNone(),
-	})
-	m := NewStreamModel(g, engine, "test.dot", context.Background(), false)
+	m := NewStreamModel(g, nil, "test.dot", context.Background(), false)
 
 	// Simulate receiving a HumanGateRequestMsg with a NodeID
 	msg := HumanGateRequestMsg{
@@ -1372,8 +1365,8 @@ func TestStreamModelTextDeltaEvents(t *testing.T) {
 
 	// Start a node
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -1383,11 +1376,10 @@ func TestStreamModelTextDeltaEvents(t *testing.T) {
 
 	// Send a text delta event
 	textEvt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventAgentTextDelta,
-			NodeID:    "build",
+		AgentEvent: &agent.Event{
+			Type:      agent.EventTextDelta,
 			Timestamp: time.Now(),
-			Data:      map[string]any{"text": "I'll create the file now"},
+			Text:      "I'll create the file now",
 		},
 	}
 	updated, _ = m.Update(textEvt)
@@ -1407,8 +1399,8 @@ func TestStreamModelToolCallWithArgs(t *testing.T) {
 
 	// Start a node
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -1418,14 +1410,11 @@ func TestStreamModelToolCallWithArgs(t *testing.T) {
 
 	// Send a tool call with shell arguments
 	toolEvt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventAgentToolCallStart,
-			NodeID:    "build",
+		AgentEvent: &agent.Event{
+			Type:      agent.EventToolCallStart,
 			Timestamp: time.Now(),
-			Data: map[string]any{
-				"tool_name": "shell",
-				"arguments": `{"command":"go build ./..."}`,
-			},
+			ToolName:  "shell",
+			ToolInput: `{"command":"go build ./..."}`,
 		},
 	}
 	updated, _ = m.Update(toolEvt)
@@ -1445,8 +1434,8 @@ func TestStreamModelToolCallEndWithSnippet(t *testing.T) {
 
 	// Start a node
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -1456,15 +1445,11 @@ func TestStreamModelToolCallEndWithSnippet(t *testing.T) {
 
 	// Send tool end with output snippet
 	toolEnd := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventAgentToolCallEnd,
-			NodeID:    "build",
-			Timestamp: time.Now(),
-			Data: map[string]any{
-				"tool_name":      "write_file",
-				"output_snippet": "wrote 42 bytes to index.html",
-				"duration_ms":    int64(150),
-			},
+		AgentEvent: &agent.Event{
+			Type:       agent.EventToolCallEnd,
+			Timestamp:  time.Now(),
+			ToolName:   "write_file",
+			ToolOutput: "wrote 42 bytes to index.html",
 		},
 	}
 	updated, _ = m.Update(toolEnd)
@@ -1476,13 +1461,13 @@ func TestStreamModelToolCallEndWithSnippet(t *testing.T) {
 	}
 }
 
-func TestStreamModelLoopDetectedEvent(t *testing.T) {
+func TestStreamModelErrorEvent(t *testing.T) {
 	m := testStreamModel()
 
 	// Start a node
 	started := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		PipelineEvent: &pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "build",
 			Timestamp: time.Now(),
 		},
@@ -1490,20 +1475,19 @@ func TestStreamModelLoopDetectedEvent(t *testing.T) {
 	updated, _ := m.Update(started)
 	m = updated.(StreamModel)
 
-	// Send loop detection event
-	loopEvt := EngineEventMsg{
-		Event: attractor.EngineEvent{
-			Type:      attractor.EventAgentLoopDetected,
-			NodeID:    "build",
+	// Send error event
+	errEvt := EngineEventMsg{
+		AgentEvent: &agent.Event{
+			Type:      agent.EventError,
 			Timestamp: time.Now(),
-			Data:      map[string]any{"message": "repeating pattern detected"},
+			Err:       fmt.Errorf("repeating pattern detected"),
 		},
 	}
-	updated, _ = m.Update(loopEvt)
+	updated, _ = m.Update(errEvt)
 	m = updated.(StreamModel)
 
 	view := m.View()
-	if !strings.Contains(view, "loop detected") {
-		t.Error("view should show loop detection warning")
+	if !strings.Contains(view, "repeating pattern detected") {
+		t.Error("view should show error message")
 	}
 }

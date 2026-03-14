@@ -8,7 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/tracker/agent"
+	"github.com/2389-research/tracker/pipeline"
 )
 
 func TestLogPanel_NewLogPanelModel_EmptyEntries(t *testing.T) {
@@ -22,13 +23,13 @@ func TestLogPanel_NewLogPanelModel_DefaultsTo200WhenZero(t *testing.T) {
 	m := NewLogPanelModel(0)
 	// Fill 200 entries, all should fit
 	for i := 0; i < 200; i++ {
-		m.Append(attractor.EngineEvent{Type: attractor.EventStageStarted, NodeID: fmt.Sprintf("n%d", i)})
+		m.AppendPipelineEvent(pipeline.PipelineEvent{Type: pipeline.EventStageStarted, NodeID: fmt.Sprintf("n%d", i)})
 	}
 	if m.Len() != 200 {
 		t.Errorf("expected 200 entries after filling to capacity, got %d", m.Len())
 	}
 	// Adding one more should evict the oldest
-	m.Append(attractor.EngineEvent{Type: attractor.EventStageStarted, NodeID: "overflow"})
+	m.AppendPipelineEvent(pipeline.PipelineEvent{Type: pipeline.EventStageStarted, NodeID: "overflow"})
 	if m.Len() != 200 {
 		t.Errorf("expected 200 entries after overflow, got %d", m.Len())
 	}
@@ -37,7 +38,7 @@ func TestLogPanel_NewLogPanelModel_DefaultsTo200WhenZero(t *testing.T) {
 func TestLogPanel_NewLogPanelModel_DefaultsTo200WhenNegative(t *testing.T) {
 	m := NewLogPanelModel(-5)
 	for i := 0; i < 201; i++ {
-		m.Append(attractor.EngineEvent{Type: attractor.EventStageStarted, NodeID: fmt.Sprintf("n%d", i)})
+		m.AppendPipelineEvent(pipeline.PipelineEvent{Type: pipeline.EventStageStarted, NodeID: fmt.Sprintf("n%d", i)})
 	}
 	if m.Len() != 200 {
 		t.Errorf("expected 200 entries after overflow with negative init, got %d", m.Len())
@@ -46,8 +47,8 @@ func TestLogPanel_NewLogPanelModel_DefaultsTo200WhenNegative(t *testing.T) {
 
 func TestLogPanel_Append_AddsEvents(t *testing.T) {
 	m := NewLogPanelModel(10)
-	m.Append(attractor.EngineEvent{Type: attractor.EventStageStarted, NodeID: "build"})
-	m.Append(attractor.EngineEvent{Type: attractor.EventStageCompleted, NodeID: "build"})
+	m.AppendPipelineEvent(pipeline.PipelineEvent{Type: pipeline.EventStageStarted, NodeID: "build"})
+	m.AppendPipelineEvent(pipeline.PipelineEvent{Type: pipeline.EventStageCompleted, NodeID: "build"})
 	if m.Len() != 2 {
 		t.Errorf("expected 2 entries, got %d", m.Len())
 	}
@@ -55,10 +56,10 @@ func TestLogPanel_Append_AddsEvents(t *testing.T) {
 
 func TestLogPanel_Append_EvictsOldestAtCapacity(t *testing.T) {
 	m := NewLogPanelModel(3)
-	m.Append(attractor.EngineEvent{Type: attractor.EventStageStarted, NodeID: "first"})
-	m.Append(attractor.EngineEvent{Type: attractor.EventStageStarted, NodeID: "second"})
-	m.Append(attractor.EngineEvent{Type: attractor.EventStageStarted, NodeID: "third"})
-	m.Append(attractor.EngineEvent{Type: attractor.EventStageStarted, NodeID: "fourth"})
+	m.AppendPipelineEvent(pipeline.PipelineEvent{Type: pipeline.EventStageStarted, NodeID: "first"})
+	m.AppendPipelineEvent(pipeline.PipelineEvent{Type: pipeline.EventStageStarted, NodeID: "second"})
+	m.AppendPipelineEvent(pipeline.PipelineEvent{Type: pipeline.EventStageStarted, NodeID: "third"})
+	m.AppendPipelineEvent(pipeline.PipelineEvent{Type: pipeline.EventStageStarted, NodeID: "fourth"})
 
 	if m.Len() != 3 {
 		t.Errorf("expected 3 entries after eviction, got %d", m.Len())
@@ -89,7 +90,7 @@ func TestLogPanel_Len(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m := NewLogPanelModel(100)
 			for i := 0; i < tt.numAdd; i++ {
-				m.Append(attractor.EngineEvent{Type: attractor.EventStageStarted, NodeID: fmt.Sprintf("n%d", i)})
+				m.AppendPipelineEvent(pipeline.PipelineEvent{Type: pipeline.EventStageStarted, NodeID: fmt.Sprintf("n%d", i)})
 			}
 			if m.Len() != tt.expected {
 				t.Errorf("Len() = %d, want %d", m.Len(), tt.expected)
@@ -135,14 +136,14 @@ func TestLogPanel_View_TitleShowsFocused(t *testing.T) {
 func TestLogPanel_View_ShowsEventTypeAndNodeID(t *testing.T) {
 	m := NewLogPanelModel(10)
 	m.SetSize(120, 20)
-	m.Append(attractor.EngineEvent{
-		Type:      attractor.EventStageStarted,
+	m.AppendPipelineEvent(pipeline.PipelineEvent{
+		Type:      pipeline.EventStageStarted,
 		NodeID:    "build_step",
 		Timestamp: time.Date(2026, 1, 15, 14, 30, 45, 0, time.UTC),
 	})
 	view := m.View()
-	if !strings.Contains(view, "stage.started") {
-		t.Errorf("expected view to contain event type 'stage.started', got:\n%s", view)
+	if !strings.Contains(view, "stage_started") {
+		t.Errorf("expected view to contain event type 'stage_started', got:\n%s", view)
 	}
 	if !strings.Contains(view, "build_step") {
 		t.Errorf("expected view to contain node ID 'build_step', got:\n%s", view)
@@ -152,8 +153,8 @@ func TestLogPanel_View_ShowsEventTypeAndNodeID(t *testing.T) {
 func TestLogPanel_View_ShowsTimestampFormatted(t *testing.T) {
 	m := NewLogPanelModel(10)
 	m.SetSize(120, 20)
-	m.Append(attractor.EngineEvent{
-		Type:      attractor.EventPipelineStarted,
+	m.AppendPipelineEvent(pipeline.PipelineEvent{
+		Type:      pipeline.EventPipelineStarted,
 		Timestamp: time.Date(2026, 1, 15, 9, 5, 3, 0, time.UTC),
 	})
 	view := m.View()
@@ -171,25 +172,25 @@ func TestLogPanel_View_ShowsNoEventsWhenEmpty(t *testing.T) {
 	}
 }
 
-func TestLogPanel_View_ShowsAllEventTypes(t *testing.T) {
+func TestLogPanel_View_ShowsPipelineEventTypes(t *testing.T) {
 	tests := []struct {
 		name      string
-		eventType attractor.EngineEventType
+		eventType pipeline.PipelineEventType
 	}{
-		{"pipeline_started", attractor.EventPipelineStarted},
-		{"pipeline_completed", attractor.EventPipelineCompleted},
-		{"pipeline_failed", attractor.EventPipelineFailed},
-		{"stage_started", attractor.EventStageStarted},
-		{"stage_completed", attractor.EventStageCompleted},
-		{"stage_failed", attractor.EventStageFailed},
-		{"stage_retrying", attractor.EventStageRetrying},
-		{"checkpoint_saved", attractor.EventCheckpointSaved},
+		{"pipeline_started", pipeline.EventPipelineStarted},
+		{"pipeline_completed", pipeline.EventPipelineCompleted},
+		{"pipeline_failed", pipeline.EventPipelineFailed},
+		{"stage_started", pipeline.EventStageStarted},
+		{"stage_completed", pipeline.EventStageCompleted},
+		{"stage_failed", pipeline.EventStageFailed},
+		{"stage_retrying", pipeline.EventStageRetrying},
+		{"checkpoint_saved", pipeline.EventCheckpointSaved},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := NewLogPanelModel(10)
 			m.SetSize(120, 20)
-			m.Append(attractor.EngineEvent{
+			m.AppendPipelineEvent(pipeline.PipelineEvent{
 				Type:      tt.eventType,
 				NodeID:    "test_node",
 				Timestamp: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
@@ -202,39 +203,37 @@ func TestLogPanel_View_ShowsAllEventTypes(t *testing.T) {
 	}
 }
 
-func TestLogPanel_formatEntry_IncludesDataKeyValuePairs(t *testing.T) {
-	evt := attractor.EngineEvent{
-		Type:      attractor.EventStageFailed,
-		NodeID:    "deploy",
+func TestLogPanel_formatLogEntry_WithMessage(t *testing.T) {
+	entry := logEntry{
 		Timestamp: time.Date(2026, 2, 9, 10, 30, 0, 0, time.UTC),
-		Data:      map[string]any{"error": "timeout", "attempt": 3},
+		Type:      string(pipeline.EventStageFailed),
+		NodeID:    "deploy",
+		Message:   "timeout",
+		Style:     pipelineEventStyle(pipeline.EventStageFailed),
 	}
-	result := formatEntry(evt)
+	result := formatLogEntry(entry)
 	if !strings.Contains(result, "10:30:00") {
 		t.Errorf("expected formatted timestamp in entry, got: %s", result)
 	}
-	if !strings.Contains(result, "stage.failed") {
+	if !strings.Contains(result, "stage_failed") {
 		t.Errorf("expected event type in entry, got: %s", result)
 	}
 	if !strings.Contains(result, "[deploy]") {
 		t.Errorf("expected [nodeID] in entry, got: %s", result)
 	}
-	// Check both key=value pairs are present (order may vary with maps)
-	if !strings.Contains(result, "error=timeout") {
-		t.Errorf("expected 'error=timeout' in entry, got: %s", result)
-	}
-	if !strings.Contains(result, "attempt=3") {
-		t.Errorf("expected 'attempt=3' in entry, got: %s", result)
+	if !strings.Contains(result, "timeout") {
+		t.Errorf("expected message 'timeout' in entry, got: %s", result)
 	}
 }
 
-func TestLogPanel_formatEntry_NoNodeID(t *testing.T) {
-	evt := attractor.EngineEvent{
-		Type:      attractor.EventPipelineStarted,
+func TestLogPanel_formatLogEntry_NoNodeID(t *testing.T) {
+	entry := logEntry{
 		Timestamp: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		Type:      string(pipeline.EventPipelineStarted),
+		Style:     pipelineEventStyle(pipeline.EventPipelineStarted),
 	}
-	result := formatEntry(evt)
-	if !strings.Contains(result, "pipeline.started") {
+	result := formatLogEntry(entry)
+	if !strings.Contains(result, "pipeline_started") {
 		t.Errorf("expected event type in entry, got: %s", result)
 	}
 	// Should not contain empty brackets
@@ -243,13 +242,14 @@ func TestLogPanel_formatEntry_NoNodeID(t *testing.T) {
 	}
 }
 
-func TestLogPanel_formatEntry_NoData(t *testing.T) {
-	evt := attractor.EngineEvent{
-		Type:      attractor.EventStageStarted,
-		NodeID:    "init",
+func TestLogPanel_formatLogEntry_NoMessage(t *testing.T) {
+	entry := logEntry{
 		Timestamp: time.Date(2026, 1, 1, 8, 15, 30, 0, time.UTC),
+		Type:      string(pipeline.EventStageStarted),
+		NodeID:    "init",
+		Style:     pipelineEventStyle(pipeline.EventStageStarted),
 	}
-	result := formatEntry(evt)
+	result := formatLogEntry(entry)
 	if !strings.Contains(result, "08:15:30") {
 		t.Errorf("expected timestamp in entry, got: %s", result)
 	}
@@ -261,21 +261,20 @@ func TestLogPanel_formatEntry_NoData(t *testing.T) {
 func TestLogPanel_View_ShowsAgentEventTypes(t *testing.T) {
 	agentEvents := []struct {
 		name      string
-		eventType attractor.EngineEventType
+		eventType agent.EventType
 	}{
-		{"agent_tool_call_start", attractor.EventAgentToolCallStart},
-		{"agent_tool_call_end", attractor.EventAgentToolCallEnd},
-		{"agent_llm_turn", attractor.EventAgentLLMTurn},
-		{"agent_steering", attractor.EventAgentSteering},
-		{"agent_loop_detected", attractor.EventAgentLoopDetected},
+		{"agent_tool_call_start", agent.EventToolCallStart},
+		{"agent_tool_call_end", agent.EventToolCallEnd},
+		{"agent_turn_start", agent.EventTurnStart},
+		{"agent_turn_end", agent.EventTurnEnd},
+		{"agent_steering", agent.EventSteeringInjected},
 	}
 	for _, tt := range agentEvents {
 		t.Run(tt.name, func(t *testing.T) {
 			m := NewLogPanelModel(10)
 			m.SetSize(120, 20)
-			m.Append(attractor.EngineEvent{
+			m.AppendAgentEvent(agent.Event{
 				Type:      tt.eventType,
-				NodeID:    "codegen_node",
 				Timestamp: time.Date(2026, 2, 10, 14, 0, 0, 0, time.UTC),
 			})
 			view := m.View()
@@ -290,18 +289,18 @@ func TestLogPanel_EventStyleForAgentEvents(t *testing.T) {
 	// Verify agent events get distinct styling by rendering and checking they
 	// produce non-empty styled output (not just fallback).
 	tests := []struct {
-		eventType attractor.EngineEventType
+		eventType agent.EventType
 		name      string
 	}{
-		{attractor.EventAgentToolCallStart, "tool_call_start"},
-		{attractor.EventAgentToolCallEnd, "tool_call_end"},
-		{attractor.EventAgentLLMTurn, "llm_turn"},
-		{attractor.EventAgentSteering, "steering"},
-		{attractor.EventAgentLoopDetected, "loop_detected"},
+		{agent.EventToolCallStart, "tool_call_start"},
+		{agent.EventToolCallEnd, "tool_call_end"},
+		{agent.EventTurnStart, "turn_start"},
+		{agent.EventTurnEnd, "turn_end"},
+		{agent.EventSteeringInjected, "steering"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			style := eventStyle(tt.eventType)
+			style := agentEventStyle(tt.eventType)
 			rendered := style.Render(string(tt.eventType))
 			if rendered == "" {
 				t.Errorf("expected non-empty rendered style for %s", tt.eventType)

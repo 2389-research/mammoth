@@ -1,19 +1,23 @@
-// ABOUTME: HumanGateModel bridges attractor.Interviewer with Bubble Tea's message loop via channels.
+// ABOUTME: HumanGateModel bridges tracker's handlers.Interviewer with Bubble Tea's message loop via channels.
 // ABOUTME: Renders a styled dialog with text input when a human gate node requires user interaction.
 package tui
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
-	"github.com/2389-research/mammoth/attractor"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Compile-time interface assertion: *HumanGateModel implements attractor.Interviewer.
-var _ attractor.Interviewer = (*HumanGateModel)(nil)
+// gateRequest carries a human gate question and its options from the engine
+// goroutine into the TUI message loop. Used by both bridge.go and human_gate.go.
+type gateRequest struct {
+	question      string
+	options       []string
+	defaultChoice string
+	nodeID        string // originating pipeline node ID (may be empty)
+}
 
 // gateResponse carries the user's answer from the TUI message loop back to the engine goroutine.
 type gateResponse struct {
@@ -21,11 +25,12 @@ type gateResponse struct {
 	err    error
 }
 
-// HumanGateModel implements attractor.Interviewer and renders a text input dialog
-// inside the Bubble Tea TUI. The engine calls Ask() from its own goroutine, which
-// sends a request on requestCh and blocks on responseCh. A persistent tea.Cmd polls
-// requestCh and injects HumanGateRequestMsg into the message loop. When the user
-// presses Enter, Submit() sends the answer on responseCh, unblocking the engine.
+// HumanGateModel implements handlers.Interviewer and handlers.FreeformInterviewer,
+// rendering a text input dialog inside the Bubble Tea TUI. The engine calls Ask()
+// from its own goroutine, which sends a request on requestCh and blocks on responseCh.
+// A persistent tea.Cmd polls requestCh and injects HumanGateRequestMsg into the
+// message loop. When the user presses Enter, Submit() sends the answer on responseCh,
+// unblocking the engine.
 type HumanGateModel struct {
 	textInput  textinput.Model
 	question   string
@@ -53,36 +58,28 @@ func NewHumanGateModel() HumanGateModel {
 	}
 }
 
-// Ask implements attractor.Interviewer. It sends the question on requestCh for the
-// TUI to pick up, then blocks until either a response arrives on responseCh or the
-// context is cancelled. This method is goroutine-safe and is called from the engine
-// goroutine.
-func (m *HumanGateModel) Ask(ctx context.Context, question string, options []string) (string, error) {
-	// Check context before sending
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-
+// Ask implements handlers.Interviewer. It sends the question on requestCh for the
+// TUI to pick up, then blocks until a response arrives on responseCh.
+// This method is goroutine-safe and is called from the engine goroutine.
+func (m *HumanGateModel) Ask(prompt string, choices []string, defaultChoice string) (string, error) {
 	req := gateRequest{
-		question: question,
-		options:  options,
-		nodeID:   attractor.NodeIDFromContext(ctx),
+		question:      prompt,
+		options:       choices,
+		defaultChoice: defaultChoice,
 	}
 
-	// Send request, respecting context cancellation
-	select {
-	case m.requestCh <- req:
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
+	// Send request
+	m.requestCh <- req
 
-	// Wait for response, respecting context cancellation
-	select {
-	case resp := <-m.responseCh:
-		return resp.answer, resp.err
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
+	// Wait for response
+	resp := <-m.responseCh
+	return resp.answer, resp.err
+}
+
+// AskFreeform implements handlers.FreeformInterviewer. It sends the prompt as a
+// question with no options, then blocks until a response arrives.
+func (m *HumanGateModel) AskFreeform(prompt string) (string, error) {
+	return m.Ask(prompt, nil, "")
 }
 
 // RequestChan returns the request channel for the bridge command to poll.

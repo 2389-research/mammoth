@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/mammoth/dot"
+	"github.com/2389-research/tracker/pipeline"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -30,10 +31,9 @@ type AppModel struct {
 	statusBar StatusBarModel
 	humanGate HumanGateModel
 
-	engine   *attractor.Engine
-	source   string           // DOT source (fallback for engine.Run)
-	astGraph *attractor.Graph // parsed graph for engine.RunGraph
-	ctx      context.Context  // cancellation context for engine execution
+	engine   *pipeline.Engine
+	astGraph *dot.Graph // parsed graph for display
+	ctx      context.Context
 
 	focus     FocusTarget
 	done      bool  // pipeline finished
@@ -44,7 +44,7 @@ type AppModel struct {
 }
 
 // NewAppModel creates an AppModel with all sub-models initialized from the given graph.
-func NewAppModel(g *attractor.Graph, engine *attractor.Engine, source string, ctx context.Context) AppModel {
+func NewAppModel(g *dot.Graph, engine *pipeline.Engine, ctx context.Context) AppModel {
 	totalNodes := 0
 	graphName := ""
 	if g != nil {
@@ -59,7 +59,6 @@ func NewAppModel(g *attractor.Graph, engine *attractor.Engine, source string, ct
 		statusBar: NewStatusBarModel(graphName, totalNodes),
 		humanGate: NewHumanGateModel(),
 		engine:    engine,
-		source:    source,
 		astGraph:  g,
 		ctx:       ctx,
 		focus:     FocusGraph,
@@ -77,11 +76,8 @@ func (m *AppModel) HumanGate() *HumanGateModel {
 // Init implements tea.Model. Returns a batch of initial commands to start the
 // pipeline, listen for human gate requests, and begin the tick loop.
 func (m AppModel) Init() tea.Cmd {
-	// statusBar.Start() is called in handleEngineEvent on EventPipelineStarted,
-	// which works correctly via the returned mutated model. Calling it here on
-	// a value receiver would discard the mutation.
 	return tea.Batch(
-		RunPipelineGraphCmd(m.ctx, m.engine, m.astGraph),
+		RunPipelineCmd(m.ctx, m.engine),
 		WaitForHumanGateCmd(m.humanGate.RequestChan()),
 		TickCmd(100*time.Millisecond),
 	)
@@ -196,33 +192,38 @@ func (m AppModel) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 // handleEngineEvent routes engine lifecycle events to the appropriate sub-panels.
 func (m AppModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) {
-	evt := msg.Event
+	// Handle pipeline events
+	if evt := msg.PipelineEvent; evt != nil {
+		m.log.AppendPipelineEvent(*evt)
 
-	// Always append to log panel
-	m.log.Append(evt)
+		switch evt.Type {
+		case pipeline.EventPipelineStarted:
+			m.statusBar.Start()
 
-	switch evt.Type {
-	case attractor.EventPipelineStarted:
-		m.statusBar.Start()
+		case pipeline.EventStageStarted:
+			m.graph.SetNodeStatus(evt.NodeID, NodeRunning)
+			m.statusBar.SetActiveNode(evt.NodeID)
 
-	case attractor.EventStageStarted:
-		m.graph.SetNodeStatus(evt.NodeID, NodeRunning)
-		m.statusBar.SetActiveNode(evt.NodeID)
+			// Build node detail from graph metadata
+			detail := m.buildNodeDetail(evt.NodeID, NodeRunning)
+			m.detail.SetActiveNode(detail)
 
-		// Build node detail from graph metadata
-		detail := m.buildNodeDetail(evt.NodeID, NodeRunning)
-		m.detail.SetActiveNode(detail)
+		case pipeline.EventStageCompleted:
+			m.graph.SetNodeStatus(evt.NodeID, NodeCompleted)
+			m.completed++
+			m.statusBar.SetCompleted(m.completed)
 
-	case attractor.EventStageCompleted:
-		m.graph.SetNodeStatus(evt.NodeID, NodeCompleted)
-		m.completed++
-		m.statusBar.SetCompleted(m.completed)
+		case pipeline.EventStageFailed:
+			m.graph.SetNodeStatus(evt.NodeID, NodeFailed)
 
-	case attractor.EventStageFailed:
-		m.graph.SetNodeStatus(evt.NodeID, NodeFailed)
+		case pipeline.EventStageRetrying:
+			// Logged only (already appended above)
+		}
+	}
 
-	case attractor.EventStageRetrying:
-		// Logged only (already appended above)
+	// Handle agent events
+	if evt := msg.AgentEvent; evt != nil {
+		m.log.AppendAgentEvent(*evt)
 	}
 
 	return m, nil
@@ -325,7 +326,7 @@ func (m AppModel) buildNodeDetail(nodeID string, status NodeStatus) NodeDetail {
 			if label, ok := node.Attrs["label"]; ok && label != "" {
 				detail.Name = label
 			}
-			detail.HandlerType = attractor.ShapeToHandlerType(node.Attrs["shape"])
+			detail.HandlerType = shapeToHandlerType(node.Attrs["shape"])
 		}
 	}
 

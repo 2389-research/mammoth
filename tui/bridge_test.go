@@ -1,15 +1,14 @@
 // ABOUTME: Tests for the EventBridge, RunPipelineCmd, WaitForHumanGateCmd, and TickCmd.
-// ABOUTME: Validates the bridge layer connecting attractor engine events to the Bubble Tea message loop.
+// ABOUTME: Validates the bridge layer connecting tracker engine events to the Bubble Tea message loop.
 package tui
 
 import (
-	"context"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/tracker/agent"
+	"github.com/2389-research/tracker/pipeline"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -34,41 +33,75 @@ func TestNewEventBridge(t *testing.T) {
 	}
 }
 
-func TestEventBridgeHandleEvent(t *testing.T) {
+func TestEventBridgePipelineHandler(t *testing.T) {
 	var received tea.Msg
 	send := func(msg tea.Msg) {
 		received = msg
 	}
 
 	bridge := NewEventBridge(send)
-	evt := attractor.EngineEvent{
-		Type:      attractor.EventStageStarted,
+	handler := bridge.PipelineHandler()
+
+	evt := pipeline.PipelineEvent{
+		Type:      pipeline.EventStageStarted,
 		NodeID:    "codergen_1",
-		Data:      map[string]any{"model": "claude-4"},
+		Message:   "executing node codergen_1",
 		Timestamp: time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC),
 	}
 
-	bridge.HandleEvent(evt)
+	handler(evt)
 
 	msg, ok := received.(EngineEventMsg)
 	if !ok {
 		t.Fatalf("received message is %T, want EngineEventMsg", received)
 	}
-	if msg.Event.Type != attractor.EventStageStarted {
-		t.Errorf("Event.Type = %q, want %q", msg.Event.Type, attractor.EventStageStarted)
+	if msg.PipelineEvent == nil {
+		t.Fatal("PipelineEvent is nil")
 	}
-	if msg.Event.NodeID != "codergen_1" {
-		t.Errorf("Event.NodeID = %q, want %q", msg.Event.NodeID, "codergen_1")
+	if msg.PipelineEvent.Type != pipeline.EventStageStarted {
+		t.Errorf("PipelineEvent.Type = %q, want %q", msg.PipelineEvent.Type, pipeline.EventStageStarted)
 	}
-	if msg.Event.Data["model"] != "claude-4" {
-		t.Errorf("Event.Data[model] = %v, want %q", msg.Event.Data["model"], "claude-4")
+	if msg.PipelineEvent.NodeID != "codergen_1" {
+		t.Errorf("PipelineEvent.NodeID = %q, want %q", msg.PipelineEvent.NodeID, "codergen_1")
 	}
-	if !msg.Event.Timestamp.Equal(evt.Timestamp) {
-		t.Errorf("Event.Timestamp = %v, want %v", msg.Event.Timestamp, evt.Timestamp)
+	if msg.AgentEvent != nil {
+		t.Error("AgentEvent should be nil for pipeline event")
 	}
 }
 
-func TestEventBridgeHandleEventMultiple(t *testing.T) {
+func TestEventBridgeAgentHandler(t *testing.T) {
+	var received tea.Msg
+	send := func(msg tea.Msg) {
+		received = msg
+	}
+
+	bridge := NewEventBridge(send)
+	handler := bridge.AgentHandler()
+
+	evt := agent.Event{
+		Type:      agent.EventToolCallStart,
+		Timestamp: time.Now(),
+		ToolName:  "read_file",
+	}
+
+	handler(evt)
+
+	msg, ok := received.(EngineEventMsg)
+	if !ok {
+		t.Fatalf("received message is %T, want EngineEventMsg", received)
+	}
+	if msg.AgentEvent == nil {
+		t.Fatal("AgentEvent is nil")
+	}
+	if msg.AgentEvent.Type != agent.EventToolCallStart {
+		t.Errorf("AgentEvent.Type = %q, want %q", msg.AgentEvent.Type, agent.EventToolCallStart)
+	}
+	if msg.PipelineEvent != nil {
+		t.Error("PipelineEvent should be nil for agent event")
+	}
+}
+
+func TestEventBridgeHandleMultipleEvents(t *testing.T) {
 	var mu sync.Mutex
 	var received []EngineEventMsg
 	send := func(msg tea.Msg) {
@@ -80,18 +113,19 @@ func TestEventBridgeHandleEventMultiple(t *testing.T) {
 	}
 
 	bridge := NewEventBridge(send)
+	pHandler := bridge.PipelineHandler()
 
-	events := []attractor.EngineEvent{
-		{Type: attractor.EventPipelineStarted, Timestamp: time.Now()},
-		{Type: attractor.EventStageStarted, NodeID: "node_a", Timestamp: time.Now()},
-		{Type: attractor.EventStageCompleted, NodeID: "node_a", Timestamp: time.Now()},
-		{Type: attractor.EventStageStarted, NodeID: "node_b", Timestamp: time.Now()},
-		{Type: attractor.EventStageFailed, NodeID: "node_b", Timestamp: time.Now()},
-		{Type: attractor.EventPipelineFailed, Timestamp: time.Now()},
+	events := []pipeline.PipelineEvent{
+		{Type: pipeline.EventPipelineStarted, Timestamp: time.Now()},
+		{Type: pipeline.EventStageStarted, NodeID: "node_a", Timestamp: time.Now()},
+		{Type: pipeline.EventStageCompleted, NodeID: "node_a", Timestamp: time.Now()},
+		{Type: pipeline.EventStageStarted, NodeID: "node_b", Timestamp: time.Now()},
+		{Type: pipeline.EventStageFailed, NodeID: "node_b", Timestamp: time.Now()},
+		{Type: pipeline.EventPipelineFailed, Timestamp: time.Now()},
 	}
 
 	for _, evt := range events {
-		bridge.HandleEvent(evt)
+		pHandler(evt)
 	}
 
 	mu.Lock()
@@ -102,63 +136,16 @@ func TestEventBridgeHandleEventMultiple(t *testing.T) {
 	}
 
 	for i, msg := range received {
-		if msg.Event.Type != events[i].Type {
-			t.Errorf("message[%d].Event.Type = %q, want %q", i, msg.Event.Type, events[i].Type)
+		if msg.PipelineEvent == nil {
+			t.Errorf("message[%d].PipelineEvent is nil", i)
+			continue
 		}
-		if msg.Event.NodeID != events[i].NodeID {
-			t.Errorf("message[%d].Event.NodeID = %q, want %q", i, msg.Event.NodeID, events[i].NodeID)
+		if msg.PipelineEvent.Type != events[i].Type {
+			t.Errorf("message[%d].PipelineEvent.Type = %q, want %q", i, msg.PipelineEvent.Type, events[i].Type)
 		}
-	}
-}
-
-func TestRunPipelineCmdSuccess(t *testing.T) {
-	engine := attractor.NewEngine(attractor.EngineConfig{
-		DefaultRetry: attractor.RetryPolicyNone(),
-	})
-	source := `digraph test { start [shape=Mdiamond]; finish [shape=Msquare]; start -> finish }`
-
-	cmd := RunPipelineCmd(context.Background(), engine, source)
-	if cmd == nil {
-		t.Fatal("RunPipelineCmd returned nil")
-	}
-
-	msg := cmd()
-	result, ok := msg.(PipelineResultMsg)
-	if !ok {
-		t.Fatalf("cmd returned %T, want PipelineResultMsg", msg)
-	}
-	if result.Err != nil {
-		t.Fatalf("unexpected error: %v", result.Err)
-	}
-	if result.Result == nil {
-		t.Fatal("Result is nil, want non-nil")
-	}
-	if len(result.Result.CompletedNodes) == 0 {
-		t.Error("CompletedNodes is empty, want at least one node")
-	}
-}
-
-func TestRunPipelineCmdError(t *testing.T) {
-	engine := attractor.NewEngine(attractor.EngineConfig{
-		DefaultRetry: attractor.RetryPolicyNone(),
-	})
-	source := `this is not valid DOT at all {{{`
-
-	cmd := RunPipelineCmd(context.Background(), engine, source)
-	if cmd == nil {
-		t.Fatal("RunPipelineCmd returned nil")
-	}
-
-	msg := cmd()
-	result, ok := msg.(PipelineResultMsg)
-	if !ok {
-		t.Fatalf("cmd returned %T, want PipelineResultMsg", msg)
-	}
-	if result.Err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(result.Err.Error(), "parse") {
-		t.Errorf("error = %q, want it to contain 'parse'", result.Err.Error())
+		if msg.PipelineEvent.NodeID != events[i].NodeID {
+			t.Errorf("message[%d].PipelineEvent.NodeID = %q, want %q", i, msg.PipelineEvent.NodeID, events[i].NodeID)
+		}
 	}
 }
 
@@ -216,41 +203,6 @@ func TestTickCmdSendsAfterInterval(t *testing.T) {
 	if elapsed < interval {
 		t.Errorf("elapsed = %v, want >= %v", elapsed, interval)
 	}
-}
-
-func TestWireHumanGateWiresInterviewer(t *testing.T) {
-	engine := attractor.NewEngine(attractor.EngineConfig{
-		DefaultRetry: attractor.RetryPolicyNone(),
-		Handlers:     attractor.DefaultHandlerRegistry(),
-	})
-
-	gate := NewHumanGateModel()
-	WireHumanGate(engine, &gate)
-
-	handler := engine.GetHandler("wait.human")
-	if handler == nil {
-		t.Fatal("expected wait.human handler")
-	}
-	hh, ok := handler.(*attractor.WaitForHumanHandler)
-	if !ok {
-		t.Fatalf("expected *WaitForHumanHandler, got %T", handler)
-	}
-	if hh.Interviewer == nil {
-		t.Error("expected Interviewer to be wired")
-	}
-	if hh.Interviewer != &gate {
-		t.Error("expected Interviewer to be the HumanGateModel")
-	}
-}
-
-func TestWireHumanGateNilHandler(t *testing.T) {
-	// Engine with no handlers should not panic
-	engine := attractor.NewEngine(attractor.EngineConfig{
-		DefaultRetry: attractor.RetryPolicyNone(),
-	})
-
-	gate := NewHumanGateModel()
-	WireHumanGate(engine, &gate) // should not panic
 }
 
 func TestTickCmdTimingApproximate(t *testing.T) {

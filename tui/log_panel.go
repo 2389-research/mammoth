@@ -4,18 +4,28 @@ package tui
 
 import (
 	"fmt"
-	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/tracker/agent"
+	"github.com/2389-research/tracker/pipeline"
 )
+
+// logEntry is a unified internal representation of an event for the log panel.
+type logEntry struct {
+	Timestamp time.Time
+	Type      string // display string for the event type
+	NodeID    string
+	Message   string
+	Style     lipgloss.Style
+}
 
 // LogPanelModel is a scrollable event log that displays engine events.
 type LogPanelModel struct {
-	entries  []attractor.EngineEvent
+	entries  []logEntry
 	max      int
 	viewport viewport.Model
 	focused  bool
@@ -31,18 +41,42 @@ func NewLogPanelModel(maxEntries int) LogPanelModel {
 	}
 	vp := viewport.New(80, 10)
 	return LogPanelModel{
-		entries:  make([]attractor.EngineEvent, 0, maxEntries),
+		entries:  make([]logEntry, 0, maxEntries),
 		max:      maxEntries,
 		viewport: vp,
 	}
 }
 
-// Append adds an event to the log, evicting the oldest entry if at capacity.
-func (m *LogPanelModel) Append(evt attractor.EngineEvent) {
+// AppendPipelineEvent adds a pipeline event to the log, evicting the oldest entry if at capacity.
+func (m *LogPanelModel) AppendPipelineEvent(evt pipeline.PipelineEvent) {
+	entry := logEntry{
+		Timestamp: evt.Timestamp,
+		Type:      string(evt.Type),
+		NodeID:    evt.NodeID,
+		Message:   evt.Message,
+		Style:     pipelineEventStyle(evt.Type),
+	}
+	m.appendEntry(entry)
+}
+
+// AppendAgentEvent adds an agent event to the log, evicting the oldest entry if at capacity.
+func (m *LogPanelModel) AppendAgentEvent(evt agent.Event) {
+	entry := logEntry{
+		Timestamp: evt.Timestamp,
+		Type:      string(evt.Type),
+		NodeID:    "", // agent events don't carry a node ID directly
+		Message:   agentEventMessage(evt),
+		Style:     agentEventStyle(evt.Type),
+	}
+	m.appendEntry(entry)
+}
+
+// appendEntry adds a log entry, evicting the oldest if at capacity.
+func (m *LogPanelModel) appendEntry(entry logEntry) {
 	if len(m.entries) >= m.max {
 		m.entries = m.entries[1:]
 	}
-	m.entries = append(m.entries, evt)
+	m.entries = append(m.entries, entry)
 	m.syncViewport()
 }
 
@@ -108,68 +142,84 @@ func (m *LogPanelModel) syncViewport() {
 		return
 	}
 	var lines []string
-	for _, evt := range m.entries {
-		lines = append(lines, formatEntry(evt))
+	for _, entry := range m.entries {
+		lines = append(lines, formatLogEntry(entry))
 	}
 	m.viewport.SetContent(strings.Join(lines, "\n"))
 	m.viewport.GotoBottom()
 }
 
-// formatEntry formats a single engine event as a log line.
-func formatEntry(evt attractor.EngineEvent) string {
-	ts := LogTimestampStyle.Render(evt.Timestamp.Format("15:04:05"))
-	evtType := eventStyle(evt.Type).Render(string(evt.Type))
+// formatLogEntry formats a single log entry as a log line.
+func formatLogEntry(entry logEntry) string {
+	ts := LogTimestampStyle.Render(entry.Timestamp.Format("15:04:05"))
+	evtType := entry.Style.Render(entry.Type)
 
 	var parts []string
 	parts = append(parts, ts, evtType)
 
-	if evt.NodeID != "" {
-		parts = append(parts, fmt.Sprintf("[%s]", evt.NodeID))
+	if entry.NodeID != "" {
+		parts = append(parts, fmt.Sprintf("[%s]", entry.NodeID))
 	}
 
-	if len(evt.Data) > 0 {
-		parts = append(parts, formatData(evt.Data))
+	if entry.Message != "" {
+		parts = append(parts, entry.Message)
 	}
 
 	return strings.Join(parts, " ")
 }
 
-// formatData formats event data as compact sorted key=value pairs.
-func formatData(data map[string]any) string {
-	// Sort keys for deterministic output
-	keys := make([]string, 0, len(data))
-	for k := range data {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	pairs := make([]string, 0, len(data))
-	for _, k := range keys {
-		pairs = append(pairs, fmt.Sprintf("%s=%v", k, data[k]))
-	}
-	return strings.Join(pairs, " ")
-}
-
-// eventStyle returns the appropriate lipgloss style for a given event type.
-func eventStyle(evtType attractor.EngineEventType) lipgloss.Style {
+// pipelineEventStyle returns the appropriate lipgloss style for a given pipeline event type.
+func pipelineEventStyle(evtType pipeline.PipelineEventType) lipgloss.Style {
 	switch evtType {
-	case attractor.EventPipelineStarted, attractor.EventStageStarted:
+	case pipeline.EventPipelineStarted, pipeline.EventStageStarted:
 		return LogEventStyle
-	case attractor.EventPipelineCompleted, attractor.EventStageCompleted, attractor.EventCheckpointSaved:
+	case pipeline.EventPipelineCompleted, pipeline.EventStageCompleted, pipeline.EventCheckpointSaved:
 		return LogSuccessStyle
-	case attractor.EventPipelineFailed, attractor.EventStageFailed:
+	case pipeline.EventPipelineFailed, pipeline.EventStageFailed:
 		return LogErrorStyle
-	case attractor.EventStageRetrying:
-		return LogRetryStyle
-	case attractor.EventAgentToolCallStart, attractor.EventAgentToolCallEnd:
-		return LogAgentToolStyle
-	case attractor.EventAgentLLMTurn:
-		return LogAgentTurnStyle
-	case attractor.EventAgentSteering:
-		return LogAgentSteeringStyle
-	case attractor.EventAgentLoopDetected:
+	case pipeline.EventStageRetrying:
 		return LogRetryStyle
 	default:
 		return LogEventStyle
+	}
+}
+
+// agentEventStyle returns the appropriate lipgloss style for a given agent event type.
+func agentEventStyle(evtType agent.EventType) lipgloss.Style {
+	switch evtType {
+	case agent.EventToolCallStart, agent.EventToolCallEnd:
+		return LogAgentToolStyle
+	case agent.EventTurnStart, agent.EventTurnEnd:
+		return LogAgentTurnStyle
+	case agent.EventSteeringInjected:
+		return LogAgentSteeringStyle
+	case agent.EventError:
+		return LogErrorStyle
+	default:
+		return LogEventStyle
+	}
+}
+
+// agentEventMessage builds a human-readable summary from an agent event.
+func agentEventMessage(evt agent.Event) string {
+	switch evt.Type {
+	case agent.EventToolCallStart:
+		return fmt.Sprintf("tool: %s", evt.ToolName)
+	case agent.EventToolCallEnd:
+		if evt.ToolError != "" {
+			return fmt.Sprintf("tool done: %s (error: %s)", evt.ToolName, evt.ToolError)
+		}
+		return fmt.Sprintf("tool done: %s", evt.ToolName)
+	case agent.EventTextDelta:
+		return truncateOneLine(evt.Text, 80)
+	case agent.EventSteeringInjected:
+		return "steering injected"
+	case agent.EventError:
+		if evt.Err != nil {
+			return evt.Err.Error()
+		}
+		return "error"
+	default:
+		return string(evt.Type)
 	}
 }

@@ -7,20 +7,20 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/mammoth/dot"
 	"github.com/charmbracelet/lipgloss"
 )
 
 // GraphPanelModel displays the pipeline DAG with status markers.
 type GraphPanelModel struct {
-	graph        *attractor.Graph
+	graph        *dot.Graph
 	statuses     map[string]NodeStatus
 	spinnerIndex int
 	width        int
 }
 
 // NewGraphPanelModel creates a new graph panel for the given pipeline graph.
-func NewGraphPanelModel(g *attractor.Graph) GraphPanelModel {
+func NewGraphPanelModel(g *dot.Graph) GraphPanelModel {
 	return GraphPanelModel{
 		graph:    g,
 		statuses: make(map[string]NodeStatus),
@@ -80,7 +80,7 @@ func (m GraphPanelModel) View() string {
 			style := StyleForStatus(status)
 			icon := status.Icon()
 			label := nodeLabel(node)
-			handlerType := attractor.ShapeToHandlerType(node.Attrs["shape"])
+			handlerType := shapeToHandlerType(node.Attrs["shape"])
 
 			var line string
 			if status == NodeRunning {
@@ -169,11 +169,40 @@ func (m GraphPanelModel) topologicalLevels() [][]string {
 }
 
 // nodeLabel returns the display label for a node, falling back to the node ID.
-func nodeLabel(node *attractor.Node) string {
+func nodeLabel(node *dot.Node) string {
 	if node.Attrs != nil {
 		if label, ok := node.Attrs["label"]; ok && label != "" {
 			return label
 		}
 	}
 	return node.ID
+}
+
+// shapeToHandlerType maps a DOT shape attribute to a handler type name.
+// This is a local utility that mirrors the mapping in the tracker pipeline package.
+func shapeToHandlerType(shape string) string {
+	switch shape {
+	case "Mdiamond":
+		return "start"
+	case "Msquare":
+		return "exit"
+	case "box":
+		return "codergen"
+	case "hexagon":
+		return "wait.human"
+	case "diamond":
+		return "conditional"
+	case "component":
+		return "parallel"
+	case "tripleoctagon":
+		return "parallel.fan_in"
+	case "parallelogram":
+		return "tool"
+	case "house":
+		return "stack.manager_loop"
+	case "tab":
+		return "subgraph"
+	default:
+		return "unknown"
+	}
 }

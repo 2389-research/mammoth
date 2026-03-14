@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/mammoth/dot"
+	"github.com/2389-research/tracker/agent"
+	"github.com/2389-research/tracker/pipeline"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -46,8 +48,8 @@ func WithResumeInfo(info *ResumeInfo) StreamOption {
 // pipeline progress as a streaming list of nodes with status indicators,
 // elapsed times, and an optional verbose agent event feed.
 type StreamModel struct {
-	graph   *attractor.Graph
-	engine  *attractor.Engine
+	graph   *dot.Graph
+	engine  *pipeline.Engine
 	title   string
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -76,6 +78,9 @@ type StreamModel struct {
 	// Output directory (from engine's workdir)
 	workdir string
 
+	// Currently active node ID for agent event routing
+	activeNodeID string
+
 	// Spinner
 	spinnerIdx int
 
@@ -97,8 +102,8 @@ type StreamModel struct {
 // It computes a topological node order using Kahn's algorithm and initializes
 // all nodes as pending. Optional StreamOption funcs configure resume behavior.
 func NewStreamModel(
-	graph *attractor.Graph,
-	engine *attractor.Engine,
+	graph *dot.Graph,
+	engine *pipeline.Engine,
 	title string,
 	ctx context.Context,
 	verbose bool,
@@ -170,7 +175,7 @@ func (m StreamModel) Init() tea.Cmd {
 	if m.resumeCmd != nil {
 		pipelineCmd = m.resumeCmd()
 	} else {
-		pipelineCmd = RunPipelineGraphCmd(m.ctx, m.engine, m.graph)
+		pipelineCmd = RunPipelineCmd(m.ctx, m.engine)
 	}
 	return tea.Batch(
 		pipelineCmd,
@@ -266,147 +271,101 @@ func (m StreamModel) View() string {
 
 // handleEngineEvent processes engine lifecycle events.
 func (m StreamModel) handleEngineEvent(msg EngineEventMsg) (tea.Model, tea.Cmd) {
-	evt := msg.Event
+	// Handle pipeline events
+	if evt := msg.PipelineEvent; evt != nil {
+		switch evt.Type {
+		case pipeline.EventPipelineStarted:
+			m.pipelineStart = time.Now()
 
-	switch evt.Type {
-	case attractor.EventPipelineStarted:
-		m.pipelineStart = time.Now()
-		if evt.Data != nil {
-			if wd, ok := evt.Data["workdir"].(string); ok {
-				m.workdir = wd
+		case pipeline.EventStageStarted:
+			m.statuses[evt.NodeID] = NodeRunning
+			m.startedAt[evt.NodeID] = time.Now()
+			m.activeNodeID = evt.NodeID
+
+		case pipeline.EventStageCompleted:
+			m.statuses[evt.NodeID] = NodeCompleted
+			if start, ok := m.startedAt[evt.NodeID]; ok {
+				m.durations[evt.NodeID] = time.Since(start)
+			}
+
+		case pipeline.EventStageFailed:
+			m.statuses[evt.NodeID] = NodeFailed
+			if start, ok := m.startedAt[evt.NodeID]; ok {
+				m.durations[evt.NodeID] = time.Since(start)
 			}
 		}
+	}
 
-	case attractor.EventStageStarted:
-		m.statuses[evt.NodeID] = NodeRunning
-		m.startedAt[evt.NodeID] = time.Now()
+	// Handle agent events
+	if evt := msg.AgentEvent; evt != nil {
+		// Route agent events to the currently active node
+		nodeID := m.activeNodeID
 
-	case attractor.EventStageCompleted:
-		m.statuses[evt.NodeID] = NodeCompleted
-		if start, ok := m.startedAt[evt.NodeID]; ok {
-			m.durations[evt.NodeID] = time.Since(start)
-		}
-		// Capture model name and token counts from codergen.* data
-		if evt.Data != nil {
-			if model, ok := evt.Data["codergen.model"]; ok {
-				if s, ok := model.(string); ok {
-					m.nodeModels[evt.NodeID] = s
+		switch evt.Type {
+		case agent.EventToolCallStart:
+			m.nodeToolCalls[nodeID]++
+			m.totalToolCalls++
+			line := LogAgentToolStyle.Render(fmt.Sprintf("▸ %s", evt.ToolName))
+			// Show formatted arguments for common tools
+			if evt.ToolInput != "" {
+				detail := formatToolArgs(evt.ToolName, evt.ToolInput)
+				if detail != "" {
+					line += PendingStyle.Render(fmt.Sprintf(" %s", detail))
 				}
 			}
-			// Backfill tokens from stage completion if EventAgentLLMTurn
-			// didn't already provide them (e.g. claude-code backend error paths).
-			if m.nodeTokens[evt.NodeID] == 0 {
-				if tok, ok := evt.Data["codergen.tokens_used"]; ok {
-					tokens := toInt(tok)
-					m.nodeTokens[evt.NodeID] += tokens
-					m.totalTokens += tokens
+			m.appendAgentLine(nodeID, line)
+
+		case agent.EventToolCallEnd:
+			if evt.ToolOutput != "" {
+				short := truncateOneLine(evt.ToolOutput, 80)
+				line := LogAgentToolStyle.Render(fmt.Sprintf("  %s", evt.ToolName)) +
+					PendingStyle.Render(fmt.Sprintf(" → %s", short))
+				m.appendAgentLine(nodeID, line)
+			} else {
+				line := LogAgentToolStyle.Render(fmt.Sprintf("  %s done", evt.ToolName))
+				m.appendAgentLine(nodeID, line)
+			}
+
+		case agent.EventTextDelta:
+			if evt.Text != "" {
+				short := truncateOneLine(evt.Text, 100)
+				if short != "" {
+					line := PendingStyle.Render(fmt.Sprintf("  %s", short))
+					m.appendAgentLine(nodeID, line)
 				}
 			}
-		}
 
-	case attractor.EventStageFailed:
-		m.statuses[evt.NodeID] = NodeFailed
-		if start, ok := m.startedAt[evt.NodeID]; ok {
-			m.durations[evt.NodeID] = time.Since(start)
-		}
-
-	case attractor.EventAgentToolCallStart:
-		m.nodeToolCalls[evt.NodeID]++
-		m.totalToolCalls++
-		if evt.Data == nil {
-			break
-		}
-		toolName := fmt.Sprintf("%v", evt.Data["tool_name"])
-		line := LogAgentToolStyle.Render(fmt.Sprintf("▸ %s", toolName))
-		// Show formatted arguments for common tools
-		if args, ok := evt.Data["arguments"].(string); ok && args != "" {
-			detail := formatToolArgs(toolName, args)
-			if detail != "" {
-				line += PendingStyle.Render(fmt.Sprintf(" %s", detail))
+		case agent.EventTurnEnd:
+			// Accumulate tokens from usage
+			turnTokens := evt.Usage.TotalTokens
+			if turnTokens == 0 {
+				turnTokens = evt.Usage.InputTokens + evt.Usage.OutputTokens
 			}
-		}
-		m.appendAgentLine(evt.NodeID, line)
-
-	case attractor.EventAgentToolCallEnd:
-		if evt.Data == nil {
-			break
-		}
-		toolName := fmt.Sprintf("%v", evt.Data["tool_name"])
-		durMs := evt.Data["duration_ms"]
-		// Show output snippet if available
-		if snippet, ok := evt.Data["output_snippet"].(string); ok && snippet != "" {
-			short := truncateOneLine(snippet, 80)
-			line := LogAgentToolStyle.Render(fmt.Sprintf("  %s", toolName)) +
-				PendingStyle.Render(fmt.Sprintf(" → %s (%vms)", short, durMs))
-			m.appendAgentLine(evt.NodeID, line)
-		} else {
-			line := LogAgentToolStyle.Render(fmt.Sprintf("  %s done", toolName)) +
-				PendingStyle.Render(fmt.Sprintf(" (%vms)", durMs))
-			m.appendAgentLine(evt.NodeID, line)
-		}
-
-	case attractor.EventAgentTextDelta:
-		if evt.Data == nil {
-			break
-		}
-		if text, ok := evt.Data["text"].(string); ok && text != "" {
-			// Show a truncated preview of streaming agent text
-			short := truncateOneLine(text, 100)
-			if short != "" {
-				line := PendingStyle.Render(fmt.Sprintf("  %s", short))
-				m.appendAgentLine(evt.NodeID, line)
+			if turnTokens > 0 {
+				m.nodeTokens[nodeID] += turnTokens
+				m.totalTokens += turnTokens
 			}
-		}
-
-	case attractor.EventAgentLLMTurn:
-		if evt.Data == nil {
-			break
-		}
-		// Accumulate tokens
-		turnTokens := 0
-		if totalTok, ok := evt.Data["total_tokens"]; ok && toInt(totalTok) > 0 {
-			turnTokens = toInt(totalTok)
-		} else {
-			if inputTok, ok := evt.Data["input_tokens"]; ok {
-				turnTokens += toInt(inputTok)
+			if evt.Model != "" {
+				m.nodeModels[nodeID] = evt.Model
 			}
-			if outputTok, ok := evt.Data["output_tokens"]; ok {
-				turnTokens += toInt(outputTok)
+
+			if evt.Usage.InputTokens > 0 {
+				line := LogAgentTurnStyle.Render(fmt.Sprintf("  llm turn (in:%d out:%d)", evt.Usage.InputTokens, evt.Usage.OutputTokens))
+				m.appendAgentLine(nodeID, line)
 			}
-		}
-		if turnTokens == 0 {
-			if tok, ok := evt.Data["tokens"]; ok {
-				turnTokens = toInt(tok)
+
+		case agent.EventSteeringInjected:
+			line := LogAgentSteeringStyle.Render("  steering injected")
+			m.appendAgentLine(nodeID, line)
+
+		case agent.EventError:
+			errMsg := "error"
+			if evt.Err != nil {
+				errMsg = evt.Err.Error()
 			}
+			line := LogRetryStyle.Render(fmt.Sprintf("  ⚠ %s", errMsg))
+			m.appendAgentLine(nodeID, line)
 		}
-		m.nodeTokens[evt.NodeID] += turnTokens
-		m.totalTokens += turnTokens
-
-		if inputTok, ok := evt.Data["input_tokens"]; ok {
-			outputTok := evt.Data["output_tokens"]
-			line := LogAgentTurnStyle.Render(fmt.Sprintf("  llm turn (in:%v out:%v)", inputTok, outputTok))
-			m.appendAgentLine(evt.NodeID, line)
-		} else {
-			tokens := evt.Data["tokens"]
-			line := LogAgentTurnStyle.Render(fmt.Sprintf("  llm turn (%v tokens)", tokens))
-			m.appendAgentLine(evt.NodeID, line)
-		}
-
-	case attractor.EventAgentSteering:
-		if evt.Data == nil {
-			break
-		}
-		msg := evt.Data["message"]
-		line := LogAgentSteeringStyle.Render(fmt.Sprintf("  steering: %v", msg))
-		m.appendAgentLine(evt.NodeID, line)
-
-	case attractor.EventAgentLoopDetected:
-		if evt.Data == nil {
-			break
-		}
-		msg := evt.Data["message"]
-		line := LogRetryStyle.Render(fmt.Sprintf("  ⚠ loop detected: %v", msg))
-		m.appendAgentLine(evt.NodeID, line)
 	}
 
 	return m, nil
@@ -689,7 +648,7 @@ func (m *StreamModel) appendAgentLine(nodeID, line string) {
 
 // topologicalOrder computes a flat topological ordering of graph nodes using
 // Kahn's algorithm. Nodes at the same topological level are sorted alphabetically.
-func topologicalOrder(graph *attractor.Graph) []string {
+func topologicalOrder(graph *dot.Graph) []string {
 	if graph == nil || len(graph.Nodes) == 0 {
 		return nil
 	}
