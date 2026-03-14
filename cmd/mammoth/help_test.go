@@ -43,7 +43,6 @@ func TestPrintHelpContainsUsagePatterns(t *testing.T) {
 	patterns := []string{
 		"mammoth [run] <pipeline.dot>",
 		"mammoth -validate <pipeline.dot>",
-		"mammoth -server",
 		"mammoth serve",
 	}
 	for _, p := range patterns {
@@ -63,10 +62,8 @@ func TestPrintHelpContainsAllFlags(t *testing.T) {
 		"-checkpoint-dir",
 		"-artifact-dir",
 		"-data-dir",
-		"-base-url",
 		"-tui",
 		"-verbose",
-		"-server",
 		"-port",
 		"-validate",
 		"-version",
@@ -92,7 +89,7 @@ func TestPrintHelpContainsExamples(t *testing.T) {
 		"mammoth examples/simple.dot",
 		"mammoth -validate",
 		"mammoth -tui",
-		"mammoth -server",
+		"mammoth serve",
 		"mammoth -retry aggressive",
 	}
 	for _, e := range examples {
@@ -202,7 +199,7 @@ func TestPrintHelpFlagGrouping(t *testing.T) {
 
 	sections := []string{
 		"Pipeline Flags:",
-		"Server Flags:",
+		"Serve Flags:",
 		"Other:",
 	}
 	for _, s := range sections {

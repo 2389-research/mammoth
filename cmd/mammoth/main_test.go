@@ -1,18 +1,20 @@
-// ABOUTME: Tests for the mammoth CLI entrypoint covering flag parsing, retry policy mapping,
-// ABOUTME: pipeline validation, pipeline execution, version display, and render wiring.
+// ABOUTME: Tests for the mammoth CLI entrypoint covering flag parsing, pipeline validation,
+// ABOUTME: pipeline execution, version display, LLM client construction, and serve subcommand.
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/mammoth/dot"
+	"github.com/2389-research/mammoth/dot/validator"
+	"github.com/2389-research/mammoth/runstate"
+	"github.com/2389-research/tracker/agent"
+	"github.com/2389-research/tracker/pipeline"
 )
 
 // writeTempDOT creates a temporary DOT file with the given content and returns its path.
@@ -53,9 +55,6 @@ func TestParseFlagsDefaults(t *testing.T) {
 	os.Args = []string{"mammoth", "pipeline.dot"}
 	cfg := parseFlags()
 
-	if cfg.serverMode {
-		t.Error("expected serverMode=false by default")
-	}
 	if cfg.port != 2389 {
 		t.Errorf("expected default port=2389, got %d", cfg.port)
 	}
@@ -89,36 +88,6 @@ func TestParseFlagsDefaults(t *testing.T) {
 	if cfg.fresh {
 		t.Error("expected fresh=false by default")
 	}
-	if cfg.backendType != "" {
-		t.Errorf("expected empty backendType by default, got %q", cfg.backendType)
-	}
-}
-
-func TestParseFlagsBackend(t *testing.T) {
-	origArgs := os.Args
-	defer func() { os.Args = origArgs }()
-
-	os.Args = []string{"mammoth", "--backend", "claude-code", "pipeline.dot"}
-	cfg := parseFlags()
-
-	if cfg.backendType != "claude-code" {
-		t.Errorf("expected backendType='claude-code', got %q", cfg.backendType)
-	}
-	if cfg.pipelineFile != "pipeline.dot" {
-		t.Errorf("expected pipelineFile='pipeline.dot', got %q", cfg.pipelineFile)
-	}
-}
-
-func TestParseFlagsBackendDefaultEmpty(t *testing.T) {
-	origArgs := os.Args
-	defer func() { os.Args = origArgs }()
-
-	os.Args = []string{"mammoth", "pipeline.dot"}
-	cfg := parseFlags()
-
-	if cfg.backendType != "" {
-		t.Errorf("expected empty backendType by default, got %q", cfg.backendType)
-	}
 }
 
 func TestParseFlagsFresh(t *testing.T) {
@@ -148,18 +117,6 @@ func TestParseFlagsFreshDefaultFalse(t *testing.T) {
 	}
 }
 
-func TestParseFlagsServer(t *testing.T) {
-	origArgs := os.Args
-	defer func() { os.Args = origArgs }()
-
-	os.Args = []string{"mammoth", "--server"}
-	cfg := parseFlags()
-
-	if !cfg.serverMode {
-		t.Error("expected serverMode=true with --server flag")
-	}
-}
-
 func TestParseFlagsValidate(t *testing.T) {
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
@@ -179,7 +136,7 @@ func TestParseFlagsPort(t *testing.T) {
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
-	os.Args = []string{"mammoth", "--server", "--port", "9999"}
+	os.Args = []string{"mammoth", "--port", "9999", "pipeline.dot"}
 	cfg := parseFlags()
 
 	if cfg.port != 9999 {
@@ -211,30 +168,6 @@ func TestParseFlagsTUIDefaultFalse(t *testing.T) {
 
 	if cfg.tuiMode {
 		t.Error("expected tuiMode=false by default")
-	}
-}
-
-func TestParseFlagsBaseURL(t *testing.T) {
-	origArgs := os.Args
-	defer func() { os.Args = origArgs }()
-
-	os.Args = []string{"mammoth", "--base-url", "https://custom.api.example.com", "test.dot"}
-	cfg := parseFlags()
-
-	if cfg.baseURL != "https://custom.api.example.com" {
-		t.Errorf("expected baseURL='https://custom.api.example.com', got %q", cfg.baseURL)
-	}
-}
-
-func TestParseFlagsBaseURLDefaultEmpty(t *testing.T) {
-	origArgs := os.Args
-	defer func() { os.Args = origArgs }()
-
-	os.Args = []string{"mammoth", "test.dot"}
-	cfg := parseFlags()
-
-	if cfg.baseURL != "" {
-		t.Errorf("expected empty baseURL by default, got %q", cfg.baseURL)
 	}
 }
 
@@ -304,14 +237,14 @@ func TestParseFlagsRunSubcommandWithFlags(t *testing.T) {
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
-	os.Args = []string{"mammoth", "--backend", "claude-code", "run", "pipeline.dot"}
+	os.Args = []string{"mammoth", "--verbose", "run", "pipeline.dot"}
 	cfg := parseFlags()
 
 	if cfg.pipelineFile != "pipeline.dot" {
 		t.Errorf("expected pipelineFile='pipeline.dot', got %q", cfg.pipelineFile)
 	}
-	if cfg.backendType != "claude-code" {
-		t.Errorf("expected backendType='claude-code', got %q", cfg.backendType)
+	if !cfg.verbose {
+		t.Error("expected verbose=true")
 	}
 }
 
@@ -325,45 +258,6 @@ func TestParseFlagsRunSubcommandAlone(t *testing.T) {
 
 	if cfg.pipelineFile != "" {
 		t.Errorf("expected empty pipelineFile, got %q", cfg.pipelineFile)
-	}
-}
-
-// --- retryPolicyFromName tests ---
-
-func TestRetryPolicyFromNameAll(t *testing.T) {
-	tests := []struct {
-		name        string
-		expectedMax int
-	}{
-		{"none", 1},
-		{"standard", 5},
-		{"aggressive", 5},
-		{"linear", 3},
-		{"patient", 3},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			policy := retryPolicyFromName(tc.name)
-			if policy.MaxAttempts != tc.expectedMax {
-				t.Errorf("retryPolicyFromName(%q): expected MaxAttempts=%d, got %d", tc.name, tc.expectedMax, policy.MaxAttempts)
-			}
-		})
-	}
-}
-
-func TestRetryPolicyFromNameUnknown(t *testing.T) {
-	policy := retryPolicyFromName("bogus")
-	nonePolicy := attractor.RetryPolicyNone()
-	if policy.MaxAttempts != nonePolicy.MaxAttempts {
-		t.Errorf("expected unknown name to return none policy (MaxAttempts=%d), got MaxAttempts=%d", nonePolicy.MaxAttempts, policy.MaxAttempts)
-	}
-}
-
-func TestRetryPolicyFromNameCaseInsensitive(t *testing.T) {
-	policy := retryPolicyFromName("STANDARD")
-	if policy.MaxAttempts != 5 {
-		t.Errorf("expected case-insensitive match for STANDARD, got MaxAttempts=%d", policy.MaxAttempts)
 	}
 }
 
@@ -493,9 +387,6 @@ func TestRunValidateMode(t *testing.T) {
 }
 
 func TestRunRunMode(t *testing.T) {
-	// run() requires an API key to be set before dispatching to pipeline execution.
-	t.Setenv("ANTHROPIC_API_KEY", "test-key")
-
 	dotFile := writeTempDOT(t, validDOT)
 	cfg := config{
 		pipelineFile: dotFile,
@@ -504,24 +395,6 @@ func TestRunRunMode(t *testing.T) {
 	exitCode := run(cfg)
 	if exitCode != 0 {
 		t.Errorf("expected exit code 0 for run mode with valid pipeline, got %d", exitCode)
-	}
-}
-
-func TestRunRejectsExecutionWithoutAPIKey(t *testing.T) {
-	// Ensure no API keys are set and no env-based backend override.
-	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("GEMINI_API_KEY", "")
-	t.Setenv("MAMMOTH_BACKEND", "") // Prevent env override from bypassing key check
-
-	dotFile := writeTempDOT(t, validDOT)
-	cfg := config{
-		pipelineFile: dotFile,
-		retryPolicy:  "none",
-	}
-	exitCode := run(cfg)
-	if exitCode != 1 {
-		t.Errorf("expected exit code 1 when no API key is set, got %d", exitCode)
 	}
 }
 
@@ -545,168 +418,164 @@ func TestRunNoArgsShowsHelp(t *testing.T) {
 	}
 }
 
-// --- buildPipelineServer render wiring tests ---
+// --- dot.Parse and validator.Lint tests ---
 
-func TestBuildPipelineServerWiresRenderFunctions(t *testing.T) {
-	cfg := config{
-		retryPolicy: "none",
-		dataDir:     t.TempDir(),
-	}
-	server, err := buildPipelineServer(cfg)
+func TestDotParseValidDOT(t *testing.T) {
+	graph, err := dot.Parse(validDOT)
 	if err != nil {
-		t.Fatalf("buildPipelineServer failed: %v", err)
+		t.Fatalf("dot.Parse failed for valid DOT: %v", err)
 	}
-
-	if server.ToDOT == nil {
-		t.Error("expected ToDOT to be wired on the pipeline server")
+	if graph == nil {
+		t.Fatal("expected non-nil graph")
 	}
-	if server.ToDOTWithStatus == nil {
-		t.Error("expected ToDOTWithStatus to be wired on the pipeline server")
-	}
-	if server.RenderDOTSource == nil {
-		t.Error("expected RenderDOTSource to be wired on the pipeline server")
+	if graph.Name != "test" {
+		t.Errorf("expected graph name 'test', got %q", graph.Name)
 	}
 }
 
-func TestBuildPipelineServerToDOTProducesValidOutput(t *testing.T) {
-	cfg := config{
-		retryPolicy: "none",
-		dataDir:     t.TempDir(),
-	}
-	server, err := buildPipelineServer(cfg)
+func TestValidatorLintValid(t *testing.T) {
+	graph, err := dot.Parse(validDOT)
 	if err != nil {
-		t.Fatalf("buildPipelineServer failed: %v", err)
+		t.Fatalf("dot.Parse failed: %v", err)
 	}
-
-	graph := &attractor.Graph{
-		Name: "wiring_test",
-		Nodes: map[string]*attractor.Node{
-			"a": {ID: "a", Attrs: map[string]string{}},
-			"b": {ID: "b", Attrs: map[string]string{}},
-		},
-		Edges: []*attractor.Edge{
-			{From: "a", To: "b", Attrs: map[string]string{}},
-		},
-		Attrs: map[string]string{},
+	diags := validator.Lint(graph)
+	hasErrors := false
+	for _, d := range diags {
+		if d.Severity == "error" {
+			hasErrors = true
+			t.Errorf("unexpected error: %s", d.Message)
+		}
 	}
-
-	dot := server.ToDOT(graph)
-	if !strings.Contains(dot, "digraph wiring_test") {
-		t.Errorf("expected digraph output from wired ToDOT, got: %s", dot)
-	}
-	if !strings.Contains(dot, "a -> b") {
-		t.Errorf("expected edge in wired ToDOT output, got: %s", dot)
+	if hasErrors {
+		t.Error("expected no errors for valid DOT")
 	}
 }
 
-func TestBuildPipelineServerToDOTWithStatusProducesColoredOutput(t *testing.T) {
-	cfg := config{
-		retryPolicy: "none",
-		dataDir:     t.TempDir(),
-	}
-	server, err := buildPipelineServer(cfg)
+func TestValidatorLintInvalid(t *testing.T) {
+	graph, err := dot.Parse(invalidDOT)
 	if err != nil {
-		t.Fatalf("buildPipelineServer failed: %v", err)
+		t.Fatalf("dot.Parse failed: %v", err)
 	}
-
-	graph := &attractor.Graph{
-		Name: "status_test",
-		Nodes: map[string]*attractor.Node{
-			"a": {ID: "a", Attrs: map[string]string{}},
-		},
-		Edges: []*attractor.Edge{},
-		Attrs: map[string]string{},
+	diags := validator.Lint(graph)
+	hasErrors := false
+	for _, d := range diags {
+		if d.Severity == "error" {
+			hasErrors = true
+		}
 	}
-	outcomes := map[string]*attractor.Outcome{
-		"a": {Status: attractor.StatusSuccess},
-	}
-
-	dot := server.ToDOTWithStatus(graph, outcomes)
-	if !strings.Contains(dot, "fillcolor") {
-		t.Errorf("expected fillcolor in status DOT output, got: %s", dot)
+	if !hasErrors {
+		t.Error("expected at least one error for invalid DOT (missing start node)")
 	}
 }
 
-func TestRunPipelineWiresInterviewer(t *testing.T) {
-	// Verify that runPipeline wires a ConsoleInterviewer into the
-	// WaitForHumanHandler so human gate nodes work in CLI mode.
-	cfg := config{
-		retryPolicy: "none",
+// --- runstate tests ---
+
+func TestRunstateSourceHash(t *testing.T) {
+	hash1 := runstate.SourceHash("hello")
+	hash2 := runstate.SourceHash("hello")
+	if hash1 != hash2 {
+		t.Errorf("expected same hash for same input, got %q and %q", hash1, hash2)
 	}
 
-	engineCfg := attractor.EngineConfig{
-		Handlers:     attractor.DefaultHandlerRegistry(),
-		DefaultRetry: attractor.RetryPolicyNone(),
+	hash3 := runstate.SourceHash("world")
+	if hash1 == hash3 {
+		t.Error("expected different hash for different input")
 	}
-	engine := attractor.NewEngine(engineCfg)
-
-	// Simulate the wiring that runPipeline does
-	wireInterviewer(engine)
-
-	handler := engine.GetHandler("wait.human")
-	if handler == nil {
-		t.Fatal("expected wait.human handler in default registry")
-	}
-	hh, ok := handler.(*attractor.WaitForHumanHandler)
-	if !ok {
-		t.Fatalf("expected *WaitForHumanHandler, got %T", handler)
-	}
-	if hh.Interviewer == nil {
-		t.Error("expected Interviewer to be wired on WaitForHumanHandler")
-	}
-
-	// Verify cfg is used (suppress unused variable)
-	_ = cfg
 }
 
-func TestVerboseEventHandlerAgentEvents(t *testing.T) {
-	// Capture stderr output to verify agent events are logged
-	// We test the function directly without capturing stderr since
-	// verboseEventHandler writes to os.Stderr. Just verify it doesn't panic.
-	agentEvents := []attractor.EngineEvent{
-		{
-			Type:   attractor.EventAgentToolCallStart,
-			NodeID: "codegen",
-			Data:   map[string]any{"tool_name": "file_write"},
-		},
-		{
-			Type:   attractor.EventAgentToolCallEnd,
-			NodeID: "codegen",
-			Data:   map[string]any{"tool_name": "file_write", "duration_ms": int64(150)},
-		},
-		{
-			Type:   attractor.EventAgentLLMTurn,
-			NodeID: "codegen",
-			Data:   map[string]any{"tokens": 500},
-		},
-		{
-			Type:   attractor.EventAgentSteering,
-			NodeID: "codegen",
-			Data:   map[string]any{"message": "focus"},
-		},
-		{
-			Type:   attractor.EventAgentLoopDetected,
-			NodeID: "codegen",
-			Data:   map[string]any{"message": "loop detected"},
-		},
+func TestRunstateGenerateRunID(t *testing.T) {
+	id, err := runstate.GenerateRunID()
+	if err != nil {
+		t.Fatalf("GenerateRunID failed: %v", err)
+	}
+	if len(id) != 16 {
+		t.Errorf("expected 16-character run ID, got %d characters: %q", len(id), id)
+	}
+}
+
+// --- buildTrackerLLMClient tests ---
+
+func TestBuildTrackerLLMClientNoKeys(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	client, err := buildTrackerLLMClient()
+	if err != nil {
+		t.Fatalf("expected no error without API keys, got: %v", err)
+	}
+	if client != nil {
+		t.Error("expected nil client when no API keys are set")
+	}
+}
+
+func TestHasLLMKeys(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	if hasLLMKeys() {
+		t.Error("expected hasLLMKeys=false with no keys set")
 	}
 
-	// Just make sure the handler doesn't panic on any agent event type
-	for _, evt := range agentEvents {
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	if !hasLLMKeys() {
+		t.Error("expected hasLLMKeys=true with ANTHROPIC_API_KEY set")
+	}
+}
+
+// --- verbose event handler tests ---
+
+func TestVerbosePipelineHandler(t *testing.T) {
+	// Just verify it doesn't panic on various event types.
+	events := []pipeline.PipelineEvent{
+		{Type: pipeline.EventPipelineStarted},
+		{Type: pipeline.EventStageStarted, NodeID: "build"},
+		{Type: pipeline.EventStageCompleted, NodeID: "build"},
+		{Type: pipeline.EventStageFailed, NodeID: "build"},
+		{Type: pipeline.EventStageRetrying, NodeID: "build"},
+		{Type: pipeline.EventPipelineCompleted},
+		{Type: pipeline.EventPipelineFailed},
+		{Type: pipeline.EventCheckpointSaved, NodeID: "build"},
+	}
+
+	for _, evt := range events {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					t.Errorf("verboseEventHandler panicked on %s: %v", evt.Type, r)
+					t.Errorf("verbosePipelineHandler panicked on %s: %v", evt.Type, r)
 				}
 			}()
-			verboseEventHandler(evt)
+			verbosePipelineHandler(evt)
 		}()
 	}
 }
 
+func TestVerboseAgentHandler(t *testing.T) {
+	// Just verify it doesn't panic on various event types.
+	events := []agent.Event{
+		{Type: agent.EventTextDelta, Text: "hello"},
+		{Type: agent.EventToolCallStart, ToolName: "file_write"},
+		{Type: agent.EventToolCallEnd, ToolName: "file_write"},
+		{Type: agent.EventTurnEnd, Turn: 1},
+		{Type: agent.EventSteeringInjected, Text: "focus"},
+	}
+
+	for _, evt := range events {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("verboseAgentHandler panicked on %s: %v", evt.Type, r)
+				}
+			}()
+			verboseAgentHandler(evt)
+		}()
+	}
+}
+
+// --- example DOT files test ---
+
 func TestExampleDOTFilesParseAndValidate(t *testing.T) {
-	// Verify all example DOT files still parse and validate after
-	// converting review nodes from wait.human to codergen.
 	examples := []string{
 		"../../examples/build_pong.dot",
 		"../../examples/build_dvd_bounce.dot",
@@ -724,67 +593,18 @@ func TestExampleDOTFilesParseAndValidate(t *testing.T) {
 				}
 				t.Fatalf("failed to read %s: %v", path, err)
 			}
-			graph, err := attractor.Parse(string(source))
+			graph, err := dot.Parse(string(source))
 			if err != nil {
 				t.Fatalf("failed to parse %s: %v", path, err)
 			}
 
-			transforms := attractor.DefaultTransforms()
-			graph = attractor.ApplyTransforms(graph, transforms...)
-
-			diags := attractor.Validate(graph)
+			diags := validator.Lint(graph)
 			for _, d := range diags {
-				if d.Severity == attractor.SeverityError {
+				if d.Severity == "error" {
 					t.Errorf("[%s] validation error: %s (node: %s)", path, d.Message, d.NodeID)
 				}
 			}
 		})
-	}
-}
-
-func TestBuildPipelineServerGraphEndpointReturnsDOT(t *testing.T) {
-	cfg := config{
-		retryPolicy: "none",
-		dataDir:     t.TempDir(),
-	}
-	server, err := buildPipelineServer(cfg)
-	if err != nil {
-		t.Fatalf("buildPipelineServer failed: %v", err)
-	}
-
-	// Submit a pipeline via POST
-	dotSource := `digraph test { start [shape=Mdiamond]; finish [shape=Msquare]; start -> finish }`
-	req := httptest.NewRequest("POST", "/pipelines", strings.NewReader(dotSource))
-	rec := httptest.NewRecorder()
-	server.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	var submitResp map[string]string
-	json.Unmarshal(rec.Body.Bytes(), &submitResp)
-	pipelineID := submitResp["id"]
-	if pipelineID == "" {
-		t.Fatal("no pipeline ID in response")
-	}
-
-	// Give the pipeline a moment to complete
-	time.Sleep(200 * time.Millisecond)
-
-	// GET the graph in DOT format
-	graphReq := httptest.NewRequest("GET", "/pipelines/"+pipelineID+"/graph?format=dot", nil)
-	graphReq = graphReq.WithContext(context.Background())
-	graphRec := httptest.NewRecorder()
-	server.ServeHTTP(graphRec, graphReq)
-
-	if graphRec.Code != http.StatusOK {
-		t.Fatalf("expected 200 for graph endpoint, got %d: %s", graphRec.Code, graphRec.Body.String())
-	}
-
-	body := graphRec.Body.String()
-	if !strings.Contains(body, "digraph") {
-		t.Errorf("expected DOT output from graph endpoint, got: %s", body)
 	}
 }
 
@@ -846,7 +666,7 @@ func TestRunPipelineStoresSourceHash(t *testing.T) {
 
 	// Read the run state and verify it has a source hash
 	runsDir := dataDir + "/runs"
-	store, err := attractor.NewFSRunStateStore(runsDir)
+	store, err := runstate.NewFSRunStateStore(runsDir)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -859,7 +679,7 @@ func TestRunPipelineStoresSourceHash(t *testing.T) {
 		t.Fatal("expected at least one run")
 	}
 
-	expectedHash := attractor.SourceHash(validDOT)
+	expectedHash := runstate.SourceHash(validDOT)
 	if runs[0].SourceHash != expectedHash {
 		t.Errorf("SourceHash mismatch: got %q, want %q", runs[0].SourceHash, expectedHash)
 	}
@@ -889,7 +709,7 @@ func TestRunPipelineFreshSkipsResume(t *testing.T) {
 
 	// Should have two run directories now
 	runsDir := dataDir + "/runs"
-	store, err := attractor.NewFSRunStateStore(runsDir)
+	store, err := runstate.NewFSRunStateStore(runsDir)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -899,67 +719,6 @@ func TestRunPipelineFreshSkipsResume(t *testing.T) {
 	}
 	if len(runs) != 2 {
 		t.Errorf("expected 2 runs (fresh created a new one), got %d", len(runs))
-	}
-}
-
-// --- detectBackend tests ---
-
-func TestDetectBackendClaudeCodeFlag(t *testing.T) {
-	// When --backend=claude-code and claude binary exists, should return ClaudeCodeBackend
-	// We can't guarantee claude is installed, so just test the env var path.
-	// Clear API keys so the agent fallback doesn't activate
-	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("GEMINI_API_KEY", "")
-
-	// With a bogus backend type, should fall through to API key detection
-	backend := detectBackend(false, "bogus-backend")
-	if backend != nil {
-		t.Errorf("expected nil backend for unknown type without API keys, got %T", backend)
-	}
-}
-
-func TestDetectBackendEnvVar(t *testing.T) {
-	// MAMMOTH_BACKEND env var should be checked when backendType is empty
-	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("GEMINI_API_KEY", "")
-	t.Setenv("MAMMOTH_BACKEND", "bogus-type")
-
-	// With a bogus env var value, should fall through to API key check (and return nil)
-	backend := detectBackend(false, "")
-	if backend != nil {
-		t.Errorf("expected nil backend for bogus MAMMOTH_BACKEND without API keys, got %T", backend)
-	}
-}
-
-func TestDetectBackendAgentDefault(t *testing.T) {
-	// With an API key and no explicit backend, should return AgentBackend
-	t.Setenv("ANTHROPIC_API_KEY", "test-key")
-	t.Setenv("MAMMOTH_BACKEND", "") // Clear env override so auto-detection runs
-
-	backend := detectBackend(false, "")
-	if backend == nil {
-		t.Fatal("expected non-nil backend with API key set")
-	}
-	if _, ok := backend.(*attractor.AgentBackend); !ok {
-		t.Errorf("expected *AgentBackend, got %T", backend)
-	}
-}
-
-func TestDetectBackendClaudeCodeFallback(t *testing.T) {
-	// When claude-code is requested but binary not found, should fall back to agent
-	t.Setenv("ANTHROPIC_API_KEY", "test-key")
-	// Use a PATH that won't have claude
-	t.Setenv("PATH", "/nonexistent")
-
-	backend := detectBackend(false, "claude-code")
-	// Should fall back to AgentBackend since claude binary isn't found but API key exists
-	if backend == nil {
-		t.Fatal("expected non-nil backend (fallback to agent)")
-	}
-	if _, ok := backend.(*attractor.AgentBackend); !ok {
-		t.Errorf("expected fallback to *AgentBackend, got %T", backend)
 	}
 }
 
@@ -1188,23 +947,36 @@ func TestRunServeResolvesDefaultDataDir(t *testing.T) {
 	}
 }
 
-func TestDetectBackendClaudeCodeEnvVarActivation(t *testing.T) {
-	// MAMMOTH_BACKEND=claude-code with claude binary available should use it
-	t.Setenv("MAMMOTH_BACKEND", "claude-code")
-	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+// --- buildPipelineEngine tests ---
 
-	backend := detectBackend(false, "")
-	if backend == nil {
-		t.Fatal("expected non-nil backend")
+func TestBuildPipelineEngineSimple(t *testing.T) {
+	engine, graph, err := buildPipelineEngine(validDOT, t.TempDir(), nil, "", "", nil, nil)
+	if err != nil {
+		t.Fatalf("buildPipelineEngine failed: %v", err)
 	}
-	// The backend type depends on whether claude is actually installed;
-	// just verify we get a non-nil backend of some type
-	switch backend.(type) {
-	case *attractor.ClaudeCodeBackend:
-		// claude was found — correct
-	case *attractor.AgentBackend:
-		// claude not found, fell back to agent — also correct
-	default:
-		t.Errorf("expected *ClaudeCodeBackend or *AgentBackend, got %T", backend)
+	if engine == nil {
+		t.Fatal("expected non-nil engine")
 	}
+	if graph == nil {
+		t.Fatal("expected non-nil graph")
+	}
+}
+
+func TestBuildPipelineEngineInvalidDOT(t *testing.T) {
+	_, _, err := buildPipelineEngine("not valid DOT {{{", t.TempDir(), nil, "", "", nil, nil)
+	if err == nil {
+		t.Fatal("expected error for invalid DOT")
+	}
+}
+
+// --- printPipelineResult test ---
+
+func TestPrintPipelineResult(t *testing.T) {
+	// Just verify it doesn't panic with nil or populated results.
+	printPipelineResult(nil, "")
+	printPipelineResult(&pipeline.EngineResult{
+		Status:         "completed",
+		CompletedNodes: []string{"start", "finish"},
+		Context:        map[string]string{"_workdir": "/tmp/test"},
+	}, "(resumed)")
 }

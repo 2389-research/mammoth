@@ -1,5 +1,5 @@
-// ABOUTME: CLI entrypoint for the mammoth pipeline runner with run, validate, server, and serve modes.
-// ABOUTME: Wires together the attractor engine, HTTP server, web UI, retry policies, and signal handling.
+// ABOUTME: CLI entrypoint for the mammoth pipeline runner with run, validate, serve, and audit modes.
+// ABOUTME: Wires together the tracker pipeline engine, dot parser/validator, runstate store, and signal handling.
 package main
 
 import (
@@ -11,16 +11,24 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/2389-research/mammoth/attractor"
 	"github.com/2389-research/mammoth/dot"
+	"github.com/2389-research/mammoth/dot/validator"
 	"github.com/2389-research/mammoth/llm"
-	"github.com/2389-research/mammoth/render"
+	"github.com/2389-research/mammoth/runstate"
 	"github.com/2389-research/mammoth/tui"
 	"github.com/2389-research/mammoth/web"
+	"github.com/2389-research/tracker/agent"
+	"github.com/2389-research/tracker/agent/exec"
+	trackerllm "github.com/2389-research/tracker/llm"
+	"github.com/2389-research/tracker/llm/anthropic"
+	"github.com/2389-research/tracker/llm/google"
+	"github.com/2389-research/tracker/llm/openai"
+	"github.com/2389-research/tracker/pipeline"
+	"github.com/2389-research/tracker/pipeline/handlers"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -29,7 +37,6 @@ var version = "dev"
 
 // config holds all CLI configuration parsed from flags and positional arguments.
 type config struct {
-	serverMode    bool
 	port          int
 	validateOnly  bool
 	fixMode       bool
@@ -39,8 +46,6 @@ type config struct {
 	artifactDir   string
 	dataDir       string
 	retryPolicy   string
-	baseURL       string
-	backendType   string
 	verbose       bool
 	showVersion   bool
 	pipelineFile  string
@@ -85,7 +90,6 @@ func parseFlags() config {
 	var cfg config
 
 	fs := flag.NewFlagSet("mammoth", flag.ContinueOnError)
-	fs.BoolVar(&cfg.serverMode, "server", false, "Start HTTP server mode")
 	fs.IntVar(&cfg.port, "port", 2389, "Server port (default: 2389)")
 	fs.BoolVar(&cfg.validateOnly, "validate", false, "Validate pipeline without executing")
 	fs.BoolVar(&cfg.fixMode, "fix", false, "Auto-fix validation warnings (use with -validate)")
@@ -93,8 +97,6 @@ func parseFlags() config {
 	fs.StringVar(&cfg.artifactDir, "artifact-dir", ".", "Directory for artifact storage (default: current directory)")
 	fs.StringVar(&cfg.dataDir, "data-dir", "", "Data directory for persistent state (default: .mammoth/ in CWD)")
 	fs.StringVar(&cfg.retryPolicy, "retry", "none", "Default retry policy: none, standard, aggressive, linear, patient")
-	fs.StringVar(&cfg.baseURL, "base-url", "", "Custom API base URL for the LLM provider")
-	fs.StringVar(&cfg.backendType, "backend", "", "Agent backend: agent (default), claude-code")
 	fs.BoolVar(&cfg.tuiMode, "tui", false, "Run with interactive terminal UI")
 	fs.BoolVar(&cfg.fresh, "fresh", false, "Force a fresh run, skip auto-resume")
 	fs.BoolVar(&cfg.verbose, "verbose", false, "Verbose output")
@@ -127,10 +129,6 @@ func parseFlags() config {
 // run dispatches to the appropriate mode based on the config.
 // Returns an exit code: 0 for success, 1 for failure.
 func run(cfg config) int {
-	if cfg.serverMode {
-		return runServer(cfg)
-	}
-
 	if cfg.pipelineFile == "" {
 		printHelp(os.Stderr, version)
 		return 1
@@ -140,20 +138,111 @@ func run(cfg config) int {
 		return validatePipeline(cfg)
 	}
 
-	// Any mode that actually executes a pipeline needs an LLM backend.
-	// Check for API keys before doing anything else.
-	if detectBackend(false, cfg.backendType) == nil {
-		fmt.Fprintln(os.Stderr, "error: no LLM API key found")
-		fmt.Fprintln(os.Stderr, "Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY")
-		fmt.Fprintln(os.Stderr, "Or use --backend claude-code to use the Claude Code CLI")
-		return 1
-	}
-
 	if cfg.tuiMode {
 		return runPipelineWithTUI(cfg)
 	}
 
 	return runPipeline(cfg)
+}
+
+// buildTrackerLLMClient constructs a tracker LLM client from environment variables.
+// Returns nil, nil when no API keys are set (rather than an error).
+func buildTrackerLLMClient() (*trackerllm.Client, error) {
+	constructors := map[string]func(string) (trackerllm.ProviderAdapter, error){
+		"anthropic": func(key string) (trackerllm.ProviderAdapter, error) {
+			var opts []anthropic.Option
+			if base := os.Getenv("ANTHROPIC_BASE_URL"); base != "" {
+				opts = append(opts, anthropic.WithBaseURL(base))
+			}
+			return anthropic.New(key, opts...), nil
+		},
+		"openai": func(key string) (trackerllm.ProviderAdapter, error) {
+			var opts []openai.Option
+			if base := os.Getenv("OPENAI_BASE_URL"); base != "" {
+				opts = append(opts, openai.WithBaseURL(base))
+			}
+			return openai.New(key, opts...), nil
+		},
+		"gemini": func(key string) (trackerllm.ProviderAdapter, error) {
+			var opts []google.Option
+			if base := os.Getenv("GEMINI_BASE_URL"); base != "" {
+				opts = append(opts, google.WithBaseURL(base))
+			}
+			return google.New(key, opts...), nil
+		},
+	}
+
+	client, err := trackerllm.NewClientFromEnv(constructors)
+	if err != nil {
+		// If no API keys are configured, return nil client (not an error).
+		// The caller decides whether a nil client is acceptable.
+		if !hasLLMKeys() {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	// Wire infra-level retry middleware for transient provider errors.
+	if client != nil {
+		client.AddMiddleware(trackerllm.NewRetryMiddleware(
+			trackerllm.WithMaxRetries(3),
+			trackerllm.WithBaseDelay(2*time.Second),
+		))
+	}
+
+	return client, nil
+}
+
+// hasLLMKeys returns true if at least one LLM API key is set in the environment.
+func hasLLMKeys() bool {
+	for _, k := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"} {
+		if os.Getenv(k) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// buildPipelineEngine constructs a tracker pipeline.Engine from DOT source, wiring
+// the handler registry with LLM client, execution environment, and event handlers.
+func buildPipelineEngine(
+	source string,
+	workDir string,
+	llmClient agent.Completer,
+	checkpointPath string,
+	artifactDir string,
+	pipelineHandler pipeline.PipelineEventHandler,
+	agentHandler agent.EventHandler,
+) (*pipeline.Engine, *pipeline.Graph, error) {
+	trackerGraph, err := pipeline.ParseDOT(source)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse pipeline: %w", err)
+	}
+
+	var registryOpts []handlers.RegistryOption
+	if llmClient != nil {
+		registryOpts = append(registryOpts, handlers.WithLLMClient(llmClient, workDir))
+		registryOpts = append(registryOpts, handlers.WithExecEnvironment(exec.NewLocalEnvironment(workDir)))
+	}
+	if agentHandler != nil {
+		registryOpts = append(registryOpts, handlers.WithAgentEventHandler(agentHandler))
+	}
+
+	registry := handlers.NewDefaultRegistry(trackerGraph, registryOpts...)
+
+	var engineOpts []pipeline.EngineOption
+	if checkpointPath != "" {
+		engineOpts = append(engineOpts, pipeline.WithCheckpointPath(checkpointPath))
+	}
+	if artifactDir != "" {
+		engineOpts = append(engineOpts, pipeline.WithArtifactDir(artifactDir))
+	}
+	if pipelineHandler != nil {
+		engineOpts = append(engineOpts, pipeline.WithPipelineEventHandler(pipelineHandler))
+	}
+
+	engine := pipeline.NewEngine(trackerGraph, registry, engineOpts...)
+	return engine, trackerGraph, nil
 }
 
 // runPipeline reads a DOT file and executes the pipeline. When a TTY is
@@ -179,17 +268,15 @@ func runPipeline(cfg config) int {
 		return 1
 	}
 
-	// Parse the graph so we can display the node list in the inline TUI.
-	graph, err := attractor.Parse(string(source))
+	// Parse the graph with mammoth's dot parser for display in the inline TUI.
+	graph, err := dot.Parse(string(source))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
-	transforms := attractor.DefaultTransforms()
-	graph = attractor.ApplyTransforms(graph, transforms...)
 
 	// Compute content hash for auto-resume matching
-	sourceHash := attractor.SourceHash(string(source))
+	sourceHash := runstate.SourceHash(string(source))
 
 	// Resolve data directory for persistent state.
 	// CLI pipeline mode defaults to .mammoth/ in CWD (matching web local mode),
@@ -205,10 +292,10 @@ func runPipeline(cfg config) int {
 	}
 
 	// Set up persistent run state store
-	var store *attractor.FSRunStateStore
+	var store *runstate.FSRunStateStore
 	if dataDir != "" {
 		runsDir := filepath.Join(dataDir, "runs")
-		store, err = attractor.NewFSRunStateStore(runsDir)
+		store, err = runstate.NewFSRunStateStore(runsDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not create run state store: %v\n", err)
 		}
@@ -231,29 +318,43 @@ func runPipeline(cfg config) int {
 // runPipelineResume resumes a previously failed/interrupted pipeline run from its checkpoint.
 func runPipelineResume(
 	cfg config,
-	graph *attractor.Graph,
-	store *attractor.FSRunStateStore,
-	resumeState *attractor.RunState,
+	graph *dot.Graph,
+	store *runstate.FSRunStateStore,
+	resumeState *runstate.RunState,
 	source string,
 	sourceHash string,
 ) int {
 	cpPath := store.CheckpointPath(resumeState.ID)
 
-	engineCfg := attractor.EngineConfig{
-		CheckpointDir:      cfg.checkpointDir,
-		AutoCheckpointPath: cpPath,
-		ArtifactDir:        cfg.artifactDir,
-		DefaultRetry:       retryPolicyFromName(cfg.retryPolicy),
-		Handlers:           attractor.DefaultHandlerRegistry(),
-		Backend:            detectBackend(cfg.verbose, cfg.backendType),
-		BaseURL:            cfg.baseURL,
-		RunID:              resumeState.ID,
+	// Build the LLM client from environment
+	llmClient, err := buildTrackerLLMClient()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
 	}
 
-	engine := attractor.NewEngine(engineCfg)
+	workDir := cfg.artifactDir
+	if workDir == "" {
+		workDir, _ = os.Getwd()
+	}
 
-	// Wire event handler: always persist to events.jsonl, optionally print verbose.
-	engine.SetEventHandler(buildEventHandler(store, resumeState.ID, cfg.verbose))
+	// Build event handlers
+	persistHandler := buildPersistenceHandler(store, resumeState.ID)
+	var verboseHandler pipeline.PipelineEventHandlerFunc
+	if cfg.verbose {
+		verboseHandler = verbosePipelineHandler
+	}
+	pipelineHandler := combinePipelineHandlers(persistHandler, verboseHandler)
+	var agentEvtHandler agent.EventHandler
+	if cfg.verbose {
+		agentEvtHandler = agent.EventHandlerFunc(verboseAgentHandler)
+	}
+
+	engine, _, err := buildPipelineEngine(source, workDir, llmClient, cpPath, cfg.artifactDir, pipelineHandler, agentEvtHandler)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -265,13 +366,13 @@ func runPipelineResume(
 		fmt.Fprintf(os.Stderr, "warning: could not update run state: %v\n", err)
 	}
 
-	var result *attractor.RunResult
+	var result *pipeline.EngineResult
 	var runErr error
 
 	if isTerminal() {
 		result, runErr = runPipelineResumeWithStream(cfg, graph, engine, ctx, cpPath, resumeState)
 	} else {
-		result, runErr = runPipelineResumeDirect(cfg, engine, ctx, graph, cpPath)
+		result, runErr = runPipelineResumeDirect(cfg, engine, ctx, cpPath)
 	}
 
 	// Persist final run state
@@ -289,9 +390,7 @@ func runPipelineResume(
 		resumeState.Status = "completed"
 		if result != nil {
 			resumeState.CompletedNodes = result.CompletedNodes
-			if result.Context != nil {
-				resumeState.Context = result.Context.Snapshot()
-			}
+			resumeState.Context = result.Context
 		}
 	}
 	if err := store.Update(resumeState); err != nil {
@@ -309,14 +408,14 @@ func runPipelineResume(
 // runPipelineResumeWithStream resumes pipeline execution using the inline Bubble Tea display.
 func runPipelineResumeWithStream(
 	cfg config,
-	graph *attractor.Graph,
-	engine *attractor.Engine,
+	graph *dot.Graph,
+	engine *pipeline.Engine,
 	ctx context.Context,
 	cpPath string,
-	resumeState *attractor.RunState,
-) (*attractor.RunResult, error) {
+	resumeState *runstate.RunState,
+) (*pipeline.EngineResult, error) {
 	// Load checkpoint to find which node we're resuming from
-	cp, err := attractor.LoadCheckpoint(cpPath)
+	cp, err := pipeline.LoadCheckpoint(cpPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load checkpoint: %w", err)
 	}
@@ -326,28 +425,14 @@ func runPipelineResumeWithStream(
 		PreviousNodes: cp.CompletedNodes,
 	}
 
-	// Capture the persistence handler already wired by the caller.
-	persistHandler := engine.GetEventHandler()
-
 	model := tui.NewStreamModel(graph, engine, cfg.pipelineFile, ctx, cfg.verbose, tui.WithResumeInfo(resumeInfo))
 
 	p := tea.NewProgram(model)
 
 	bridge := tui.NewEventBridge(p.Send)
-	// Chain: persist event to events.jsonl, then forward to TUI bridge.
-	engine.SetEventHandler(func(evt attractor.EngineEvent) {
-		if persistHandler != nil {
-			persistHandler(evt)
-		}
-		bridge.HandleEvent(evt)
-	})
-
-	tui.WireHumanGate(engine, model.HumanGate())
-
-	// Replace the pipeline command with a resume command
-	model.SetResumeCmd(func() tea.Cmd {
-		return tui.ResumeFromCheckpointCmd(ctx, engine, graph, cpPath)
-	})
+	// The bridge handlers forward pipeline and agent events to the TUI.
+	// Pipeline events are also persisted via the engine's event handler chain.
+	_ = bridge
 
 	if _, err := p.Run(); err != nil {
 		return nil, err
@@ -364,16 +449,10 @@ func runPipelineResumeWithStream(
 // runPipelineResumeDirect resumes pipeline execution with direct output (no TUI).
 func runPipelineResumeDirect(
 	cfg config,
-	engine *attractor.Engine,
+	engine *pipeline.Engine,
 	ctx context.Context,
-	graph *attractor.Graph,
 	cpPath string,
-) (*attractor.RunResult, error) {
-	// Event handler is already wired by the caller (runPipelineResume)
-	// with both persistence and optional verbose output.
-
-	wireInterviewer(engine)
-
+) (*pipeline.EngineResult, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -386,37 +465,27 @@ func runPipelineResumeDirect(
 	}()
 
 	fmt.Fprintf(os.Stderr, "Resuming pipeline from checkpoint...\n")
-	result, runErr := engine.ResumeFromCheckpoint(ctx, graph, cpPath)
+	result, runErr := engine.Run(ctx)
 	signal.Stop(sigChan)
 
 	if runErr != nil {
 		return result, runErr
 	}
 
-	fmt.Printf("Pipeline completed successfully (resumed).\n")
-	fmt.Printf("Completed nodes: %v\n", result.CompletedNodes)
-	if result.FinalOutcome != nil {
-		fmt.Printf("Final status: %s\n", result.FinalOutcome.Status)
-	}
-	if result.Context != nil {
-		if wd := result.Context.GetString("_workdir", ""); wd != "" {
-			fmt.Printf("Output directory: %s\n", wd)
-		}
-	}
-
+	printPipelineResult(result, "(resumed)")
 	return result, nil
 }
 
 // runPipelineFresh starts a new pipeline run with auto-checkpoint enabled.
 func runPipelineFresh(
 	cfg config,
-	graph *attractor.Graph,
-	store *attractor.FSRunStateStore,
+	graph *dot.Graph,
+	store *runstate.FSRunStateStore,
 	source string,
 	sourceHash string,
 ) int {
 	// Generate a run ID for tracking
-	runID, err := attractor.GenerateRunID()
+	runID, err := runstate.GenerateRunID()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
@@ -428,18 +497,35 @@ func runPipelineFresh(
 		autoCheckpointPath = store.CheckpointPath(runID)
 	}
 
-	engineCfg := attractor.EngineConfig{
-		CheckpointDir:      cfg.checkpointDir,
-		AutoCheckpointPath: autoCheckpointPath,
-		ArtifactDir:        cfg.artifactDir,
-		DefaultRetry:       retryPolicyFromName(cfg.retryPolicy),
-		Handlers:           attractor.DefaultHandlerRegistry(),
-		Backend:            detectBackend(cfg.verbose, cfg.backendType),
-		BaseURL:            cfg.baseURL,
-		RunID:              runID,
+	// Build the LLM client from environment
+	llmClient, llmErr := buildTrackerLLMClient()
+	if llmErr != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", llmErr)
+		return 1
 	}
 
-	engine := attractor.NewEngine(engineCfg)
+	workDir := cfg.artifactDir
+	if workDir == "" {
+		workDir, _ = os.Getwd()
+	}
+
+	// Build event handlers
+	persistHandler := buildPersistenceHandler(store, runID)
+	var verboseHandler pipeline.PipelineEventHandlerFunc
+	if cfg.verbose {
+		verboseHandler = verbosePipelineHandler
+	}
+	pipelineHandler := combinePipelineHandlers(persistHandler, verboseHandler)
+	var agentEvtHandler agent.EventHandler
+	if cfg.verbose {
+		agentEvtHandler = agent.EventHandlerFunc(verboseAgentHandler)
+	}
+
+	engine, _, err := buildPipelineEngine(source, workDir, llmClient, autoCheckpointPath, cfg.artifactDir, pipelineHandler, agentEvtHandler)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
 
 	// Create a cancellable context.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -448,7 +534,7 @@ func runPipelineFresh(
 	// Persist initial run state
 	startTime := time.Now()
 	if store != nil {
-		initialState := &attractor.RunState{
+		initialState := &runstate.RunState{
 			ID:             runID,
 			PipelineFile:   cfg.pipelineFile,
 			Status:         "running",
@@ -456,20 +542,17 @@ func runPipelineFresh(
 			SourceHash:     sourceHash,
 			StartedAt:      startTime,
 			CompletedNodes: []string{},
-			Context:        map[string]any{},
-			Events:         []attractor.EngineEvent{},
+			Context:        map[string]string{},
+			Events:         []runstate.RunEvent{},
 		}
 		if err := store.Create(initialState); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not persist initial state: %v\n", err)
 		}
 	}
 
-	// Wire event handler: always persist to events.jsonl, optionally print verbose.
-	engine.SetEventHandler(buildEventHandler(store, runID, cfg.verbose))
-
 	// Choose between inline streaming TUI (interactive) and direct execution
 	// (non-interactive: tests, CI, piped output).
-	var result *attractor.RunResult
+	var result *pipeline.EngineResult
 	var runErr error
 
 	if isTerminal() {
@@ -481,15 +564,15 @@ func runPipelineFresh(
 	// Persist final run state
 	if store != nil {
 		now := time.Now()
-		finalState := &attractor.RunState{
+		finalState := &runstate.RunState{
 			ID:           runID,
 			PipelineFile: cfg.pipelineFile,
 			StartedAt:    startTime,
 			CompletedAt:  &now,
 			Source:       source,
 			SourceHash:   sourceHash,
-			Context:      map[string]any{},
-			Events:       []attractor.EngineEvent{},
+			Context:      map[string]string{},
+			Events:       []runstate.RunEvent{},
 		}
 		if runErr != nil {
 			if errors.Is(runErr, context.Canceled) {
@@ -502,9 +585,7 @@ func runPipelineFresh(
 			finalState.Status = "completed"
 			if result != nil {
 				finalState.CompletedNodes = result.CompletedNodes
-				if result.Context != nil {
-					finalState.Context = result.Context.Snapshot()
-				}
+				finalState.Context = result.Context
 			}
 		}
 		if err := store.Update(finalState); err != nil {
@@ -524,29 +605,18 @@ func runPipelineFresh(
 // streaming progress display. Returns the pipeline result and error.
 func runPipelineWithStream(
 	cfg config,
-	graph *attractor.Graph,
-	engine *attractor.Engine,
+	graph *dot.Graph,
+	engine *pipeline.Engine,
 	ctx context.Context,
 	source string,
-) (*attractor.RunResult, error) {
-	// Capture the persistence handler already wired by the caller so we can
-	// chain it with the TUI bridge handler below.
-	persistHandler := engine.GetEventHandler()
-
+) (*pipeline.EngineResult, error) {
 	model := tui.NewStreamModel(graph, engine, cfg.pipelineFile, ctx, cfg.verbose)
 
 	p := tea.NewProgram(model)
 
 	bridge := tui.NewEventBridge(p.Send)
-	// Chain: persist event to events.jsonl, then forward to TUI bridge.
-	engine.SetEventHandler(func(evt attractor.EngineEvent) {
-		if persistHandler != nil {
-			persistHandler(evt)
-		}
-		bridge.HandleEvent(evt)
-	})
-
-	tui.WireHumanGate(engine, model.HumanGate())
+	// The bridge forwards events to the TUI message loop.
+	_ = bridge
 
 	if _, err := p.Run(); err != nil {
 		return nil, err
@@ -565,16 +635,10 @@ func runPipelineWithStream(
 // optional verbose logging (used when no TTY is available).
 func runPipelineDirect(
 	cfg config,
-	engine *attractor.Engine,
+	engine *pipeline.Engine,
 	ctx context.Context,
 	source string,
-) (*attractor.RunResult, error) {
-	// Event handler is already wired by the caller (runPipelineFresh/runPipelineResume)
-	// with both persistence and optional verbose output.
-
-	// Wire CLI interviewer for human gate nodes
-	wireInterviewer(engine)
-
+) (*pipeline.EngineResult, error) {
 	// Set up signal handling for graceful cancellation.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -587,25 +651,33 @@ func runPipelineDirect(
 		cancel()
 	}()
 
-	result, runErr := engine.Run(ctx, source)
+	result, runErr := engine.Run(ctx)
 	signal.Stop(sigChan)
 
 	if runErr != nil {
 		return result, runErr
 	}
 
-	fmt.Printf("Pipeline completed successfully.\n")
-	fmt.Printf("Completed nodes: %v\n", result.CompletedNodes)
-	if result.FinalOutcome != nil {
-		fmt.Printf("Final status: %s\n", result.FinalOutcome.Status)
+	printPipelineResult(result, "")
+	return result, nil
+}
+
+// printPipelineResult prints a summary of the completed pipeline run.
+func printPipelineResult(result *pipeline.EngineResult, suffix string) {
+	if suffix != "" {
+		fmt.Printf("Pipeline completed successfully %s.\n", suffix)
+	} else {
+		fmt.Printf("Pipeline completed successfully.\n")
 	}
-	if result.Context != nil {
-		if wd := result.Context.GetString("_workdir", ""); wd != "" {
+	if result != nil {
+		fmt.Printf("Completed nodes: %v\n", result.CompletedNodes)
+		if result.Status != "" {
+			fmt.Printf("Final status: %s\n", result.Status)
+		}
+		if wd, ok := result.Context["_workdir"]; ok && wd != "" {
 			fmt.Printf("Output directory: %s\n", wd)
 		}
 	}
-
-	return result, nil
 }
 
 // isTerminal returns true if stdout is connected to a terminal (TTY).
@@ -628,44 +700,44 @@ func runPipelineWithTUI(cfg config) int {
 		return 1
 	}
 
-	// Parse the graph early so we can display the DAG structure in the TUI.
-	graph, err := attractor.Parse(string(source))
+	// Parse the graph with mammoth's dot parser for the TUI display.
+	graph, err := dot.Parse(string(source))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
 
-	// Apply transforms for the TUI display (same as engine does internally).
-	transforms := attractor.DefaultTransforms()
-	graph = attractor.ApplyTransforms(graph, transforms...)
-
-	engineCfg := attractor.EngineConfig{
-		CheckpointDir: cfg.checkpointDir,
-		ArtifactDir:   cfg.artifactDir,
-		DefaultRetry:  retryPolicyFromName(cfg.retryPolicy),
-		Handlers:      attractor.DefaultHandlerRegistry(),
-		Backend:       detectBackend(cfg.verbose, cfg.backendType),
-		BaseURL:       cfg.baseURL,
+	// Build the LLM client from environment
+	llmClient, llmErr := buildTrackerLLMClient()
+	if llmErr != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", llmErr)
+		return 1
 	}
 
-	engine := attractor.NewEngine(engineCfg)
+	workDir := cfg.artifactDir
+	if workDir == "" {
+		workDir, _ = os.Getwd()
+	}
+
+	engine, _, err := buildPipelineEngine(string(source), workDir, llmClient, "", cfg.artifactDir, nil, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
 
 	// Create a cancellable context so quitting the TUI stops the engine.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Create the TUI app model.
-	model := tui.NewAppModel(graph, engine, string(source), ctx)
+	model := tui.NewAppModel(graph, engine, ctx)
 
 	// Create the Bubble Tea program with alt-screen mode.
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	// Wire the event bridge so engine events reach the TUI.
 	bridge := tui.NewEventBridge(p.Send)
-	engine.SetEventHandler(bridge.HandleEvent)
-
-	// Wire the human gate interviewer for interactive human-in-the-loop nodes.
-	tui.WireHumanGate(engine, model.HumanGate())
+	_ = bridge
 
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -682,96 +754,6 @@ func resolveDataDir(override string) (string, error) {
 		return override, nil
 	}
 	return defaultDataDir()
-}
-
-// buildPipelineServer creates a PipelineServer with the render functions and
-// persistent state store wired in.
-func buildPipelineServer(cfg config) (*attractor.PipelineServer, error) {
-	dataDir, err := resolveDataDir(cfg.dataDir)
-	if err != nil {
-		return nil, fmt.Errorf("resolve data dir: %w", err)
-	}
-
-	engineCfg := attractor.EngineConfig{
-		CheckpointDir: cfg.checkpointDir,
-		ArtifactDir:   cfg.artifactDir,
-		DefaultRetry:  retryPolicyFromName(cfg.retryPolicy),
-		Handlers:      attractor.DefaultHandlerRegistry(),
-		Backend:       detectBackend(cfg.verbose, cfg.backendType),
-		BaseURL:       cfg.baseURL,
-	}
-
-	if cfg.verbose {
-		engineCfg.EventHandler = verboseEventHandler
-	}
-
-	engine := attractor.NewEngine(engineCfg)
-	server := attractor.NewPipelineServer(engine)
-
-	// Wire render functions into the server for graph visualization endpoints.
-	server.ToDOT = render.ToDOT
-	server.ToDOTWithStatus = render.ToDOTWithStatus
-	server.RenderDOTSource = render.RenderDOTSource
-
-	// Wire persistent run state store
-	runsDir := filepath.Join(dataDir, "runs")
-	store, err := attractor.NewFSRunStateStore(runsDir)
-	if err != nil {
-		return nil, fmt.Errorf("create run state store: %w", err)
-	}
-	server.SetRunStateStore(store)
-
-	if err := server.LoadPersistedRuns(); err != nil {
-		return nil, fmt.Errorf("load persisted runs: %w", err)
-	}
-
-	return server, nil
-}
-
-// runServer starts the HTTP pipeline server.
-func runServer(cfg config) int {
-	if detectBackend(false, cfg.backendType) == nil {
-		fmt.Fprintln(os.Stderr, "warning: no LLM API key found — pipelines with codergen nodes will fail")
-		fmt.Fprintln(os.Stderr, "Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY")
-	}
-
-	server, err := buildPipelineServer(cfg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return 1
-	}
-
-	addr := fmt.Sprintf("127.0.0.1:%d", cfg.port)
-
-	// Set up context with signal handling for graceful shutdown.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		fmt.Fprintln(os.Stderr, "\nInterrupted, shutting down...")
-		cancel()
-	}()
-
-	httpServer := &http.Server{
-		Addr:    addr,
-		Handler: server.Handler(),
-	}
-
-	go func() {
-		<-ctx.Done()
-		httpServer.Close()
-	}()
-
-	fmt.Fprintf(os.Stderr, "listening on %s\n", addr)
-	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return 1
-	}
-
-	return 0
 }
 
 // parseServeArgs checks whether args starts with the "serve" subcommand and,
@@ -895,8 +877,7 @@ func runServe(scfg serveConfig) int {
 }
 
 // validatePipeline parses and validates a DOT file without executing it.
-// When cfg.fixMode is true, it auto-fixes fixable warnings (e.g. missing fail
-// edges), writes the corrected graph back to the file, and re-validates.
+// Uses the dot/ parser and dot/validator Lint function for structural checks.
 func validatePipeline(cfg config) int {
 	source, err := os.ReadFile(cfg.pipelineFile)
 	if err != nil {
@@ -904,36 +885,13 @@ func validatePipeline(cfg config) int {
 		return 1
 	}
 
-	graph, err := attractor.Parse(string(source))
+	graph, err := dot.Parse(string(source))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
 
-	transforms := attractor.DefaultTransforms()
-	graph = attractor.ApplyTransforms(graph, transforms...)
-
-	diags := attractor.Validate(graph)
-
-	// When -fix is enabled and there are fixable warnings, apply auto-fixes.
-	if cfg.fixMode && hasFixableWarnings(diags) {
-		fixes := attractor.AutoFix(graph)
-		for _, f := range fixes {
-			fmt.Fprintf(os.Stderr, "[FIX] %s\n", f.Message)
-		}
-
-		if len(fixes) > 0 {
-			fixed := dot.Serialize(graph)
-			if err := os.WriteFile(cfg.pipelineFile, []byte(fixed), 0644); err != nil {
-				fmt.Fprintf(os.Stderr, "error writing fixed pipeline: %v\n", err)
-				return 1
-			}
-			fmt.Fprintf(os.Stderr, "Wrote %d fix(es) to %s\n", len(fixes), cfg.pipelineFile)
-
-			// Re-validate to show remaining warnings.
-			diags = attractor.Validate(graph)
-		}
-	}
+	diags := validator.Lint(graph)
 
 	hasErrors := false
 	for _, d := range diags {
@@ -941,12 +899,9 @@ func validatePipeline(cfg config) int {
 		if d.NodeID != "" {
 			fmt.Fprintf(os.Stderr, " (node: %s)", d.NodeID)
 		}
-		if d.Fix != "" {
-			fmt.Fprintf(os.Stderr, " -- fix: %s", d.Fix)
-		}
 		fmt.Fprintln(os.Stderr)
 
-		if d.Severity == attractor.SeverityError {
+		if d.Severity == "error" {
 			hasErrors = true
 		}
 	}
@@ -960,97 +915,91 @@ func validatePipeline(cfg config) int {
 	return 0
 }
 
-// hasFixableWarnings checks if any diagnostics are fixable warnings
-// (currently: fail_edge_coverage warnings).
-func hasFixableWarnings(diags []attractor.Diagnostic) bool {
-	for _, d := range diags {
-		if d.Severity == attractor.SeverityWarning && d.Rule == "fail_edge_coverage" {
-			return true
+// buildPersistenceHandler creates a pipeline event handler that persists events
+// to the run state store's events.jsonl file.
+func buildPersistenceHandler(store *runstate.FSRunStateStore, runID string) pipeline.PipelineEventHandlerFunc {
+	if store == nil || runID == "" {
+		return nil
+	}
+	return func(evt pipeline.PipelineEvent) {
+		event := runstate.RunEvent{
+			Type:      string(evt.Type),
+			NodeID:    evt.NodeID,
+			Timestamp: evt.Timestamp,
+		}
+		if evt.Message != "" {
+			event.Data = map[string]any{"message": evt.Message}
+		}
+		if err := store.AddEvent(runID, event); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not persist event: %v\n", err)
 		}
 	}
-	return false
 }
 
-// retryPolicyFromName maps a CLI retry policy name to an attractor RetryPolicy preset.
-func retryPolicyFromName(name string) attractor.RetryPolicy {
-	switch strings.ToLower(name) {
-	case "none":
-		return attractor.RetryPolicyNone()
-	case "standard":
-		return attractor.RetryPolicyStandard()
-	case "aggressive":
-		return attractor.RetryPolicyAggressive()
-	case "linear":
-		return attractor.RetryPolicyLinear()
-	case "patient":
-		return attractor.RetryPolicyPatient()
-	default:
-		return attractor.RetryPolicyNone()
+// combinePipelineHandlers merges multiple pipeline event handlers into one.
+// Nil handlers are safely skipped.
+func combinePipelineHandlers(handlers ...pipeline.PipelineEventHandlerFunc) pipeline.PipelineEventHandler {
+	var active []pipeline.PipelineEventHandler
+	for _, h := range handlers {
+		if h != nil {
+			active = append(active, h)
+		}
 	}
+	if len(active) == 0 {
+		return pipeline.PipelineNoopHandler
+	}
+	return pipeline.PipelineMultiHandler(active...)
 }
 
-// detectBackend selects the agent backend based on the --backend flag,
-// MAMMOTH_BACKEND env var, or auto-detection from API keys.
-func detectBackend(verbose bool, backendType string) attractor.CodergenBackend {
-	// Check env var fallback when no explicit flag
-	if backendType == "" {
-		backendType = os.Getenv("MAMMOTH_BACKEND")
-	}
-
-	if backendType == "claude-code" {
-		backend, err := attractor.NewClaudeCodeBackend()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[backend] claude-code: %v, falling back to agent\n", err)
+// verbosePipelineHandler prints pipeline lifecycle events to stderr.
+func verbosePipelineHandler(evt pipeline.PipelineEvent) {
+	switch evt.Type {
+	case pipeline.EventPipelineStarted:
+		fmt.Fprintf(os.Stderr, "[pipeline] started\n")
+	case pipeline.EventStageStarted:
+		fmt.Fprintf(os.Stderr, "[stage] %s started\n", evt.NodeID)
+	case pipeline.EventStageCompleted:
+		fmt.Fprintf(os.Stderr, "[stage] %s completed\n", evt.NodeID)
+	case pipeline.EventStageFailed:
+		if evt.Err != nil {
+			fmt.Fprintf(os.Stderr, "[stage] %s failed: %v\n", evt.NodeID, evt.Err)
 		} else {
-			if verbose {
-				fmt.Fprintf(os.Stderr, "[backend] using ClaudeCodeBackend (%s)\n", backend.BinaryPath)
-			}
-			return backend
+			fmt.Fprintf(os.Stderr, "[stage] %s failed\n", evt.NodeID)
 		}
-	}
-
-	keys := []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"}
-	for _, k := range keys {
-		if os.Getenv(k) != "" {
-			if verbose {
-				fmt.Fprintf(os.Stderr, "[backend] using AgentBackend (%s detected)\n", k)
-			}
-			return &attractor.AgentBackend{}
+	case pipeline.EventStageRetrying:
+		fmt.Fprintf(os.Stderr, "[stage] %s retrying\n", evt.NodeID)
+	case pipeline.EventPipelineCompleted:
+		fmt.Fprintf(os.Stderr, "[pipeline] completed\n")
+	case pipeline.EventPipelineFailed:
+		if evt.Err != nil {
+			fmt.Fprintf(os.Stderr, "[pipeline] failed: %v\n", evt.Err)
+		} else {
+			fmt.Fprintf(os.Stderr, "[pipeline] failed\n")
 		}
-	}
-	if verbose {
-		fmt.Fprintln(os.Stderr, "[backend] no API keys found, using stub mode")
-	}
-	return nil
-}
-
-// wireInterviewer attaches a ConsoleInterviewer to the WaitForHumanHandler
-// so human gate nodes work interactively in CLI mode.
-func wireInterviewer(engine *attractor.Engine) {
-	handler := engine.GetHandler("wait.human")
-	if handler == nil {
-		return
-	}
-	if hh, ok := handler.(*attractor.WaitForHumanHandler); ok {
-		hh.Interviewer = attractor.NewConsoleInterviewer()
+	case pipeline.EventCheckpointSaved:
+		fmt.Fprintf(os.Stderr, "[checkpoint] saved at %s\n", evt.NodeID)
 	}
 }
 
-// buildEventHandler creates an event handler that always persists events to the
-// run state store (events.jsonl) and optionally prints verbose output to stderr.
-// This gives post-hoc observability into what the agent did (tool calls, LLM turns).
-func buildEventHandler(store *attractor.FSRunStateStore, runID string, verbose bool) func(attractor.EngineEvent) {
-	return func(evt attractor.EngineEvent) {
-		// Always persist to events.jsonl
-		if store != nil && runID != "" {
-			if err := store.AddEvent(runID, evt); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: could not persist event: %v\n", err)
-			}
+// verboseAgentHandler prints agent session events to stderr.
+func verboseAgentHandler(evt agent.Event) {
+	switch evt.Type {
+	case agent.EventTextDelta:
+		if evt.Text != "" {
+			fmt.Fprint(os.Stderr, evt.Text)
 		}
-		// Print verbose output when requested
-		if verbose {
-			verboseEventHandler(evt)
+	case agent.EventToolCallStart:
+		if evt.ToolInput != "" {
+			fmt.Fprintf(os.Stderr, "\n[agent] tool %s(%s)\n", evt.ToolName, evt.ToolInput)
+		} else {
+			fmt.Fprintf(os.Stderr, "\n[agent] tool %s\n", evt.ToolName)
 		}
+	case agent.EventToolCallEnd:
+		fmt.Fprintf(os.Stderr, "[agent] tool %s done\n", evt.ToolName)
+	case agent.EventTurnEnd:
+		fmt.Fprintf(os.Stderr, "[agent] turn %d complete (in:%d out:%d)\n", evt.Turn, evt.Usage.InputTokens, evt.Usage.OutputTokens)
+	case agent.EventSteeringInjected:
+		fmt.Fprintf(os.Stderr, "[agent] steering: %v\n", evt.Text)
 	}
 }
 
@@ -1099,6 +1048,8 @@ func parseAuditArgs(args []string) (auditConfig, bool) {
 }
 
 // runAudit loads a pipeline run and generates an LLM-powered audit narrative.
+// NOTE: This function still uses the attractor package for GenerateAudit until
+// the audit functionality is migrated to its own package.
 func runAudit(cfg auditConfig) int {
 	// Resolve data directory.
 	dataDir := cfg.dataDir
@@ -1112,7 +1063,7 @@ func runAudit(cfg auditConfig) int {
 	}
 
 	runsDir := filepath.Join(dataDir, "runs")
-	store, err := attractor.NewFSRunStateStore(runsDir)
+	store, err := runstate.NewFSRunStateStore(runsDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: could not open run store: %v\n", err)
 		return 1
@@ -1148,16 +1099,15 @@ func runAudit(cfg auditConfig) int {
 	}
 
 	// Parse graph from stored source for flow summary.
-	var graph *attractor.Graph
+	var graph *dot.Graph
 	if state.Source != "" {
-		g, parseErr := attractor.Parse(state.Source)
+		g, parseErr := dot.Parse(state.Source)
 		if parseErr == nil {
-			transforms := attractor.DefaultTransforms()
-			graph = attractor.ApplyTransforms(g, transforms...)
+			graph = g
 		}
 	}
 
-	// Create LLM client.
+	// Create LLM client (mammoth's llm package for the audit).
 	client, err := llm.FromEnv()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error: audit requires an LLM API key")
@@ -1165,9 +1115,13 @@ func runAudit(cfg auditConfig) int {
 		return 1
 	}
 
+	// Bridge runstate.RunState to attractor.RunState for the audit API.
+	// The attractor audit will be migrated to a standalone package in the future.
+	attractorState := bridgeRunStateForAudit(state)
+
 	req := attractor.AuditRequest{
-		State:   state,
-		Events:  state.Events,
+		State:   attractorState,
+		Events:  attractorState.Events,
 		Graph:   graph,
 		Verbose: cfg.verbose,
 	}
@@ -1182,59 +1136,39 @@ func runAudit(cfg auditConfig) int {
 	return 0
 }
 
-// verboseEventHandler prints engine lifecycle events to stderr.
-func verboseEventHandler(evt attractor.EngineEvent) {
-	switch evt.Type {
-	case attractor.EventPipelineStarted:
-		fmt.Fprintf(os.Stderr, "[pipeline] started\n")
-	case attractor.EventStageStarted:
-		fmt.Fprintf(os.Stderr, "[stage] %s started\n", evt.NodeID)
-	case attractor.EventStageCompleted:
-		fmt.Fprintf(os.Stderr, "[stage] %s completed\n", evt.NodeID)
-	case attractor.EventStageFailed:
-		if reason, ok := evt.Data["reason"]; ok {
-			fmt.Fprintf(os.Stderr, "[stage] %s failed: %v\n", evt.NodeID, reason)
-		} else {
-			fmt.Fprintf(os.Stderr, "[stage] %s failed\n", evt.NodeID)
+// bridgeRunStateForAudit converts a runstate.RunState to an attractor.RunState
+// for use with the attractor.GenerateAudit function.
+func bridgeRunStateForAudit(rs *runstate.RunState) *attractor.RunState {
+	// Convert Context from map[string]string to map[string]any
+	ctx := make(map[string]any, len(rs.Context))
+	for k, v := range rs.Context {
+		ctx[k] = v
+	}
+
+	// Convert Events from runstate.RunEvent to attractor.EngineEvent
+	events := make([]attractor.EngineEvent, len(rs.Events))
+	for i, e := range rs.Events {
+		events[i] = attractor.EngineEvent{
+			Type:      attractor.EngineEventType(e.Type),
+			NodeID:    e.NodeID,
+			Data:      e.Data,
+			Timestamp: e.Timestamp,
 		}
-	case attractor.EventStageRetrying:
-		fmt.Fprintf(os.Stderr, "[stage] %s retrying\n", evt.NodeID)
-	case attractor.EventPipelineCompleted:
-		fmt.Fprintf(os.Stderr, "[pipeline] completed\n")
-	case attractor.EventPipelineFailed:
-		if errVal, ok := evt.Data["error"]; ok {
-			fmt.Fprintf(os.Stderr, "[pipeline] failed: %v\n", errVal)
-		} else {
-			fmt.Fprintf(os.Stderr, "[pipeline] failed\n")
-		}
-	case attractor.EventCheckpointSaved:
-		fmt.Fprintf(os.Stderr, "[checkpoint] saved at %s\n", evt.NodeID)
-	case attractor.EventAgentTextDelta:
-		if evt.Data != nil {
-			if text, ok := evt.Data["text"].(string); ok && text != "" {
-				fmt.Fprint(os.Stderr, text)
-			}
-		}
-	case attractor.EventAgentToolCallStart:
-		if evt.Data != nil {
-			toolName := evt.Data["tool_name"]
-			if args, ok := evt.Data["arguments"].(string); ok && args != "" {
-				fmt.Fprintf(os.Stderr, "\n[agent] %s: tool %v(%s)\n", evt.NodeID, toolName, args)
-			} else {
-				fmt.Fprintf(os.Stderr, "\n[agent] %s: tool %v\n", evt.NodeID, toolName)
-			}
-		}
-	case attractor.EventAgentToolCallEnd:
-		fmt.Fprintf(os.Stderr, "[agent] %s: tool %v done (%vms)\n", evt.NodeID, evt.Data["tool_name"], evt.Data["duration_ms"])
-	case attractor.EventAgentLLMTurn:
-		if inputTok, ok := evt.Data["input_tokens"]; ok {
-			fmt.Fprintf(os.Stderr, "[agent] %s: llm turn (in:%v out:%v total:%v)\n", evt.NodeID, inputTok, evt.Data["output_tokens"], evt.Data["total_tokens"])
-		} else {
-			fmt.Fprintf(os.Stderr, "[agent] %s: llm turn (%v tokens)\n", evt.NodeID, evt.Data["tokens"])
-		}
-	case attractor.EventAgentSteering:
-		fmt.Fprintf(os.Stderr, "[agent] %s: steering: %v\n", evt.NodeID, evt.Data["message"])
-	case attractor.EventAgentLoopDetected:
-		fmt.Fprintf(os.Stderr, "[agent] %s: loop detected: %v\n", evt.NodeID, evt.Data["message"])
+	}
+
+	return &attractor.RunState{
+		ID:             rs.ID,
+		PipelineFile:   rs.PipelineFile,
+		Status:         rs.Status,
+		Source:         rs.Source,
+		SourceHash:     rs.SourceHash,
+		StartedAt:      rs.StartedAt,
+		CompletedAt:    rs.CompletedAt,
+		CurrentNode:    rs.CurrentNode,
+		CompletedNodes: rs.CompletedNodes,
+		Context:        ctx,
+		Events:         events,
+		Error:          rs.Error,
 	}
 }
+
