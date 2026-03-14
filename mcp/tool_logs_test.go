@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -47,10 +46,10 @@ func TestGetRunLogs_AllLogs(t *testing.T) {
 	run := ms.registry.Create(simplePipeline, RunConfig{})
 	now := time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC)
 	run.mu.Lock()
-	run.EventBuffer = []attractor.EngineEvent{
-		{Type: attractor.EventStageStarted, NodeID: "start", Timestamp: now},
-		{Type: attractor.EventStageCompleted, NodeID: "start", Timestamp: now.Add(1 * time.Second)},
-		{Type: attractor.EventStageStarted, NodeID: "build", Timestamp: now.Add(2 * time.Second)},
+	run.EventBuffer = []RunEvent{
+		{Type: "stage_started", NodeID: "start", Timestamp: now},
+		{Type: "stage_completed", NodeID: "start", Timestamp: now.Add(1 * time.Second)},
+		{Type: "stage_started", NodeID: "build", Timestamp: now.Add(2 * time.Second)},
 	}
 	run.mu.Unlock()
 
@@ -79,11 +78,11 @@ func TestGetRunLogs_Tail(t *testing.T) {
 	run := ms.registry.Create(simplePipeline, RunConfig{})
 	now := time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC)
 	run.mu.Lock()
-	run.EventBuffer = []attractor.EngineEvent{
-		{Type: attractor.EventStageStarted, NodeID: "start", Timestamp: now},
-		{Type: attractor.EventStageCompleted, NodeID: "start", Timestamp: now.Add(1 * time.Second)},
-		{Type: attractor.EventStageStarted, NodeID: "build", Timestamp: now.Add(2 * time.Second)},
-		{Type: attractor.EventStageCompleted, NodeID: "build", Timestamp: now.Add(3 * time.Second)},
+	run.EventBuffer = []RunEvent{
+		{Type: "stage_started", NodeID: "start", Timestamp: now},
+		{Type: "stage_completed", NodeID: "start", Timestamp: now.Add(1 * time.Second)},
+		{Type: "stage_started", NodeID: "build", Timestamp: now.Add(2 * time.Second)},
+		{Type: "stage_completed", NodeID: "build", Timestamp: now.Add(3 * time.Second)},
 	}
 	run.mu.Unlock()
 
@@ -115,10 +114,10 @@ func TestGetRunLogs_NodeFilter(t *testing.T) {
 	run := ms.registry.Create(simplePipeline, RunConfig{})
 	now := time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC)
 	run.mu.Lock()
-	run.EventBuffer = []attractor.EngineEvent{
-		{Type: attractor.EventStageStarted, NodeID: "start", Timestamp: now},
-		{Type: attractor.EventStageCompleted, NodeID: "start", Timestamp: now.Add(1 * time.Second)},
-		{Type: attractor.EventStageStarted, NodeID: "build", Timestamp: now.Add(2 * time.Second)},
+	run.EventBuffer = []RunEvent{
+		{Type: "stage_started", NodeID: "start", Timestamp: now},
+		{Type: "stage_completed", NodeID: "start", Timestamp: now.Add(1 * time.Second)},
+		{Type: "stage_started", NodeID: "build", Timestamp: now.Add(2 * time.Second)},
 	}
 	run.mu.Unlock()
 

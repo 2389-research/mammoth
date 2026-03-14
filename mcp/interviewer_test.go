@@ -9,17 +9,18 @@ import (
 )
 
 func TestMCPInterviewerReceivesAnswer(t *testing.T) {
+	ctx := context.Background()
 	run := &ActiveRun{
 		ID:       "test-run",
 		Status:   StatusRunning,
 		answerCh: make(chan string, 1),
 	}
-	iv := &mcpInterviewer{run: run}
+	iv := &mcpInterviewer{run: run, ctx: ctx}
 	go func() {
 		time.Sleep(10 * time.Millisecond)
 		run.answerCh <- "yes"
 	}()
-	answer, err := iv.Ask(context.Background(), "Continue?", []string{"yes", "no"})
+	answer, err := iv.Ask("Continue?", []string{"yes", "no"}, "yes")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -38,27 +39,28 @@ func TestMCPInterviewerReceivesAnswer(t *testing.T) {
 }
 
 func TestMCPInterviewerContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
 	run := &ActiveRun{
 		ID:       "test-run",
 		Status:   StatusRunning,
 		answerCh: make(chan string, 1),
 	}
-	iv := &mcpInterviewer{run: run}
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	_, err := iv.Ask(ctx, "Will timeout?", nil)
+	iv := &mcpInterviewer{run: run, ctx: ctx}
+	_, err := iv.Ask("Will timeout?", nil, "")
 	if err == nil {
 		t.Fatal("expected context error")
 	}
 }
 
 func TestMCPInterviewerSetsPausedStatus(t *testing.T) {
+	ctx := context.Background()
 	run := &ActiveRun{
 		ID:       "test-run",
 		Status:   StatusRunning,
 		answerCh: make(chan string, 1),
 	}
-	iv := &mcpInterviewer{run: run}
+	iv := &mcpInterviewer{run: run, ctx: ctx}
 	go func() {
 		for {
 			run.mu.RLock()
@@ -71,7 +73,7 @@ func TestMCPInterviewerSetsPausedStatus(t *testing.T) {
 			time.Sleep(5 * time.Millisecond)
 		}
 	}()
-	answer, err := iv.Ask(context.Background(), "Gate check", nil)
+	answer, err := iv.Ask("Gate check", nil, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -85,5 +87,26 @@ func TestMCPInterviewerSetsPausedStatus(t *testing.T) {
 	}
 	if run.PendingQuestion != nil {
 		t.Error("expected pending question to be cleared")
+	}
+}
+
+func TestMCPInterviewerAskFreeform(t *testing.T) {
+	ctx := context.Background()
+	run := &ActiveRun{
+		ID:       "test-run",
+		Status:   StatusRunning,
+		answerCh: make(chan string, 1),
+	}
+	iv := &mcpInterviewer{run: run, ctx: ctx}
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		run.answerCh <- "freeform answer"
+	}()
+	answer, err := iv.AskFreeform("What do you think?")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if answer != "freeform answer" {
+		t.Errorf("expected %q, got %q", "freeform answer", answer)
 	}
 }

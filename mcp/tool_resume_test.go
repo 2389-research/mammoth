@@ -8,8 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/tracker/pipeline"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -95,10 +96,16 @@ func TestResumePipeline_WithCheckpoint(t *testing.T) {
 	checkpointDir := filepath.Join(ms.dataDir, "aabbccddee112233", "checkpoints")
 	_ = os.MkdirAll(checkpointDir, 0755)
 
-	pctx := attractor.NewContext()
-	cp := attractor.NewCheckpoint(pctx, "start", []string{"start"}, map[string]int{})
+	cp := &pipeline.Checkpoint{
+		RunID:          "aabbccddee112233",
+		CurrentNode:    "start",
+		CompletedNodes: []string{"start"},
+		RetryCounts:    map[string]int{},
+		Context:        map[string]string{},
+		Timestamp:      time.Now(),
+	}
 	cpPath := filepath.Join(checkpointDir, "checkpoint_001.json")
-	if err := cp.Save(cpPath); err != nil {
+	if err := pipeline.SaveCheckpoint(cp, cpPath); err != nil {
 		t.Fatalf("save checkpoint: %v", err)
 	}
 

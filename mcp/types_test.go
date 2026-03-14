@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
-
-	"github.com/2389-research/mammoth/attractor"
 )
 
 func TestRunStatusConstants(t *testing.T) {
@@ -60,7 +58,7 @@ func TestActiveRunFields(t *testing.T) {
 		Status:         StatusRunning,
 		Source:         "digraph { a -> b }",
 		CompletedNodes: make([]string, 0),
-		EventBuffer:    make([]attractor.EngineEvent, 0, maxEventBuffer),
+		EventBuffer:    make([]RunEvent, 0, maxEventBuffer),
 		CreatedAt:      time.Now(),
 		answerCh:       make(chan string, 1),
 		cancel:         cancel,
@@ -94,5 +92,26 @@ func TestActiveRunFields(t *testing.T) {
 	// Verify maxEventBuffer constant.
 	if maxEventBuffer != 500 {
 		t.Errorf("maxEventBuffer: got %d, want 500", maxEventBuffer)
+	}
+}
+
+func TestRunEventJSON(t *testing.T) {
+	evt := RunEvent{
+		Type:      "stage_started",
+		NodeID:    "build",
+		Timestamp: time.Now(),
+		Message:   "starting build",
+		Data:      map[string]any{"key": "value"},
+	}
+	data, err := json.Marshal(evt)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got RunEvent
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Type != evt.Type || got.NodeID != evt.NodeID {
+		t.Errorf("round-trip mismatch: got %+v", got)
 	}
 }

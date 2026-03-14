@@ -1,5 +1,5 @@
 // ABOUTME: validate_pipeline MCP tool handler for synchronous DOT pipeline validation.
-// ABOUTME: Parses DOT source, applies transforms, runs validation rules, and returns errors/warnings.
+// ABOUTME: Parses DOT source, runs validator lint rules, and returns errors/warnings.
 package mcp
 
 import (
@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/mammoth/dot"
+	"github.com/2389-research/mammoth/dot/validator"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -62,7 +63,7 @@ func (s *Server) handleValidatePipeline(_ context.Context, _ *mcpsdk.CallToolReq
 		}, ValidatePipelineOutput{}, nil
 	}
 
-	graph, err := attractor.Parse(src)
+	graph, err := dot.Parse(src)
 	if err != nil {
 		return &mcpsdk.CallToolResult{
 			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("parse error: %v", err)}},
@@ -70,20 +71,22 @@ func (s *Server) handleValidatePipeline(_ context.Context, _ *mcpsdk.CallToolReq
 		}, ValidatePipelineOutput{}, nil
 	}
 
-	// Apply default transforms before validation.
-	graph = attractor.ApplyTransforms(graph, attractor.DefaultTransforms()...)
+	diags := validator.Lint(graph)
 
-	diags, valErr := attractor.ValidateOrError(graph)
-
-	output := ValidatePipelineOutput{Valid: valErr == nil}
+	hasError := false
+	output := ValidatePipelineOutput{Valid: true}
 	for _, d := range diags {
 		msg := fmt.Sprintf("[%s] %s: %s", d.Severity, d.Rule, d.Message)
 		switch d.Severity {
-		case attractor.SeverityError:
+		case "error":
 			output.Errors = append(output.Errors, msg)
+			hasError = true
 		default:
 			output.Warnings = append(output.Warnings, msg)
 		}
+	}
+	if hasError {
+		output.Valid = false
 	}
 
 	data, err := json.Marshal(output)

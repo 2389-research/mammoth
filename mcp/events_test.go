@@ -1,4 +1,4 @@
-// ABOUTME: Tests for the MCP event handler that tracks live pipeline activity.
+// ABOUTME: Tests for the MCP event handlers that track live pipeline activity.
 // ABOUTME: Validates current node, current activity, completed nodes, and buffer rotation.
 package mcp
 
@@ -6,19 +6,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/tracker/agent"
+	"github.com/2389-research/tracker/pipeline"
 )
 
-func TestEventHandlerUpdatesCurrentNode(t *testing.T) {
+func TestPipelineEventHandlerUpdatesCurrentNode(t *testing.T) {
 	run := &ActiveRun{
 		ID:          "test",
 		Status:      StatusRunning,
-		EventBuffer: make([]attractor.EngineEvent, 0, maxEventBuffer),
+		EventBuffer: make([]RunEvent, 0, maxEventBuffer),
 	}
-	handler := newEventHandler(run)
-	handler(attractor.EngineEvent{
-		Type:   attractor.EventStageStarted,
-		NodeID: "build_step",
+	handler := newPipelineEventHandler(run)
+	handler.HandlePipelineEvent(pipeline.PipelineEvent{
+		Type:      pipeline.EventStageStarted,
+		NodeID:    "build_step",
+		Timestamp: time.Now(),
 	})
 	run.mu.RLock()
 	defer run.mu.RUnlock()
@@ -27,16 +29,16 @@ func TestEventHandlerUpdatesCurrentNode(t *testing.T) {
 	}
 }
 
-func TestEventHandlerTracksCompletedNodes(t *testing.T) {
+func TestPipelineEventHandlerTracksCompletedNodes(t *testing.T) {
 	run := &ActiveRun{
 		ID:             "test",
 		Status:         StatusRunning,
 		CompletedNodes: make([]string, 0),
-		EventBuffer:    make([]attractor.EngineEvent, 0, maxEventBuffer),
+		EventBuffer:    make([]RunEvent, 0, maxEventBuffer),
 	}
-	handler := newEventHandler(run)
-	handler(attractor.EngineEvent{Type: attractor.EventStageCompleted, NodeID: "step_1"})
-	handler(attractor.EngineEvent{Type: attractor.EventStageCompleted, NodeID: "step_2"})
+	handler := newPipelineEventHandler(run)
+	handler.HandlePipelineEvent(pipeline.PipelineEvent{Type: pipeline.EventStageCompleted, NodeID: "step_1", Timestamp: time.Now()})
+	handler.HandlePipelineEvent(pipeline.PipelineEvent{Type: pipeline.EventStageCompleted, NodeID: "step_2", Timestamp: time.Now()})
 	run.mu.RLock()
 	defer run.mu.RUnlock()
 	if len(run.CompletedNodes) != 2 {
@@ -44,34 +46,34 @@ func TestEventHandlerTracksCompletedNodes(t *testing.T) {
 	}
 }
 
-func TestEventHandlerTracksActivity(t *testing.T) {
+func TestPipelineEventHandlerTracksActivity(t *testing.T) {
 	run := &ActiveRun{
 		ID:          "test",
 		Status:      StatusRunning,
-		EventBuffer: make([]attractor.EngineEvent, 0, maxEventBuffer),
+		EventBuffer: make([]RunEvent, 0, maxEventBuffer),
 	}
-	handler := newEventHandler(run)
-	handler(attractor.EngineEvent{
-		Type: attractor.EventAgentToolCallStart,
-		Data: map[string]any{"tool_name": "write_file"},
+	handler := newPipelineEventHandler(run)
+	handler.HandlePipelineEvent(pipeline.PipelineEvent{
+		Type:      pipeline.EventPipelineCompleted,
+		Timestamp: time.Now(),
 	})
 	run.mu.RLock()
 	defer run.mu.RUnlock()
-	if run.CurrentActivity != "calling tool: write_file" {
+	if run.CurrentActivity != "pipeline completed" {
 		t.Errorf("CurrentActivity: got %q", run.CurrentActivity)
 	}
 }
 
-func TestEventHandlerBufferRotation(t *testing.T) {
+func TestPipelineEventHandlerBufferRotation(t *testing.T) {
 	run := &ActiveRun{
 		ID:          "test",
 		Status:      StatusRunning,
-		EventBuffer: make([]attractor.EngineEvent, 0, maxEventBuffer),
+		EventBuffer: make([]RunEvent, 0, maxEventBuffer),
 	}
-	handler := newEventHandler(run)
+	handler := newPipelineEventHandler(run)
 	for i := 0; i < maxEventBuffer+100; i++ {
-		handler(attractor.EngineEvent{
-			Type:      attractor.EventStageStarted,
+		handler.HandlePipelineEvent(pipeline.PipelineEvent{
+			Type:      pipeline.EventStageStarted,
 			NodeID:    "node",
 			Timestamp: time.Now(),
 		})
@@ -80,5 +82,27 @@ func TestEventHandlerBufferRotation(t *testing.T) {
 	defer run.mu.RUnlock()
 	if len(run.EventBuffer) != maxEventBuffer {
 		t.Errorf("buffer size: got %d, want %d", len(run.EventBuffer), maxEventBuffer)
+	}
+}
+
+func TestAgentEventHandlerAppendsEvents(t *testing.T) {
+	run := &ActiveRun{
+		ID:          "test",
+		Status:      StatusRunning,
+		EventBuffer: make([]RunEvent, 0, maxEventBuffer),
+	}
+	handler := newAgentEventHandler(run)
+	handler.HandleEvent(agent.Event{
+		Type:      "tool_call_start",
+		ToolName:  "write_file",
+		Timestamp: time.Now(),
+	})
+	run.mu.RLock()
+	defer run.mu.RUnlock()
+	if len(run.EventBuffer) != 1 {
+		t.Errorf("expected 1 event, got %d", len(run.EventBuffer))
+	}
+	if run.CurrentActivity != "calling tool: write_file" {
+		t.Errorf("CurrentActivity: got %q", run.CurrentActivity)
 	}
 }

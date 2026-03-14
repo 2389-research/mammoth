@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -19,7 +18,7 @@ type GetRunEventsInput struct {
 	Types []string `json:"types,omitempty" jsonschema:"event type strings to include"`
 }
 
-// EventEntry is a serializable representation of an engine event.
+// EventEntry is a serializable representation of a run event.
 type EventEntry struct {
 	Type      string         `json:"type"`
 	NodeID    string         `json:"node_id,omitempty"`
@@ -68,9 +67,9 @@ func (s *Server) handleGetRunEvents(_ context.Context, _ *mcpsdk.CallToolRequest
 	}
 
 	// Build type filter set.
-	typeFilter := make(map[attractor.EngineEventType]bool, len(input.Types))
+	typeFilter := make(map[string]bool, len(input.Types))
 	for _, t := range input.Types {
-		typeFilter[attractor.EngineEventType(t)] = true
+		typeFilter[t] = true
 	}
 
 	run.mu.RLock()
@@ -83,7 +82,7 @@ func (s *Server) handleGetRunEvents(_ context.Context, _ *mcpsdk.CallToolRequest
 			continue
 		}
 		events = append(events, EventEntry{
-			Type:      string(evt.Type),
+			Type:      evt.Type,
 			NodeID:    evt.NodeID,
 			Timestamp: evt.Timestamp.Format(time.RFC3339Nano),
 			Data:      evt.Data,

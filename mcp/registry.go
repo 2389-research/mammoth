@@ -5,8 +5,6 @@ package mcp
 import (
 	"sync"
 	"time"
-
-	"github.com/2389-research/mammoth/attractor"
 )
 
 // RunRegistry manages active pipeline runs in memory.
@@ -31,7 +29,7 @@ func (r *RunRegistry) Create(source string, config RunConfig) *ActiveRun {
 		Source:         source,
 		Config:         config,
 		CompletedNodes: make([]string, 0),
-		EventBuffer:    make([]attractor.EngineEvent, 0, maxEventBuffer),
+		EventBuffer:    make([]RunEvent, 0, maxEventBuffer),
 		CreatedAt:      time.Now(),
 		answerCh:       make(chan string, 1),
 	}

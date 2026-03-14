@@ -1,5 +1,5 @@
 // ABOUTME: get_run_logs MCP tool handler for human-readable pipeline log output.
-// ABOUTME: Converts engine events to formatted log lines with optional tail and node filtering.
+// ABOUTME: Converts run events to formatted log lines with optional tail and node filtering.
 package mcp
 
 import (
@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/2389-research/mammoth/attractor"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -77,8 +76,8 @@ func (s *Server) handleGetRunLogs(_ context.Context, _ *mcpsdk.CallToolRequest, 
 	}, output, nil
 }
 
-// formatEventAsLog renders an engine event as a human-readable log line.
-func formatEventAsLog(evt attractor.EngineEvent) string {
+// formatEventAsLog renders a run event as a human-readable log line.
+func formatEventAsLog(evt RunEvent) string {
 	ts := evt.Timestamp.Format("15:04:05.000")
 	if evt.NodeID != "" {
 		return fmt.Sprintf("[%s] %s %s", ts, evt.Type, evt.NodeID)

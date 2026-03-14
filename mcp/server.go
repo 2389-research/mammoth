@@ -1,4 +1,4 @@
-// ABOUTME: Server type for the mammoth MCP server, bridging MCP tools to the attractor engine.
+// ABOUTME: Server type for the mammoth MCP server, bridging MCP tools to the tracker pipeline engine.
 // ABOUTME: Holds references to the run registry, disk index, and data directory for pipeline execution.
 package mcp
 

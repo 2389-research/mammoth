@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -47,10 +46,10 @@ func TestGetRunEvents_AllEvents(t *testing.T) {
 	run := ms.registry.Create(simplePipeline, RunConfig{})
 	now := time.Now()
 	run.mu.Lock()
-	run.EventBuffer = []attractor.EngineEvent{
-		{Type: attractor.EventStageStarted, NodeID: "start", Timestamp: now.Add(-2 * time.Second)},
-		{Type: attractor.EventStageCompleted, NodeID: "start", Timestamp: now.Add(-1 * time.Second)},
-		{Type: attractor.EventStageStarted, NodeID: "build", Timestamp: now},
+	run.EventBuffer = []RunEvent{
+		{Type: "stage_started", NodeID: "start", Timestamp: now.Add(-2 * time.Second)},
+		{Type: "stage_completed", NodeID: "start", Timestamp: now.Add(-1 * time.Second)},
+		{Type: "stage_started", NodeID: "build", Timestamp: now},
 	}
 	run.mu.Unlock()
 
@@ -79,10 +78,10 @@ func TestGetRunEvents_TypeFilter(t *testing.T) {
 	run := ms.registry.Create(simplePipeline, RunConfig{})
 	now := time.Now()
 	run.mu.Lock()
-	run.EventBuffer = []attractor.EngineEvent{
-		{Type: attractor.EventStageStarted, NodeID: "start", Timestamp: now.Add(-2 * time.Second)},
-		{Type: attractor.EventStageCompleted, NodeID: "start", Timestamp: now.Add(-1 * time.Second)},
-		{Type: attractor.EventStageStarted, NodeID: "build", Timestamp: now},
+	run.EventBuffer = []RunEvent{
+		{Type: "stage_started", NodeID: "start", Timestamp: now.Add(-2 * time.Second)},
+		{Type: "stage_completed", NodeID: "start", Timestamp: now.Add(-1 * time.Second)},
+		{Type: "stage_started", NodeID: "build", Timestamp: now},
 	}
 	run.mu.Unlock()
 
@@ -90,7 +89,7 @@ func TestGetRunEvents_TypeFilter(t *testing.T) {
 		Name: "get_run_events",
 		Arguments: map[string]any{
 			"run_id": run.ID,
-			"types":  []any{"stage.started"},
+			"types":  []any{"stage_started"},
 		},
 	})
 	if err != nil {
@@ -103,7 +102,7 @@ func TestGetRunEvents_TypeFilter(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if len(output.Events) != 2 {
-		t.Errorf("expected 2 stage.started events, got %d", len(output.Events))
+		t.Errorf("expected 2 stage_started events, got %d", len(output.Events))
 	}
 }
 
@@ -114,10 +113,10 @@ func TestGetRunEvents_SinceFilter(t *testing.T) {
 	run := ms.registry.Create(simplePipeline, RunConfig{})
 	now := time.Now()
 	run.mu.Lock()
-	run.EventBuffer = []attractor.EngineEvent{
-		{Type: attractor.EventStageStarted, NodeID: "start", Timestamp: now.Add(-10 * time.Second)},
-		{Type: attractor.EventStageCompleted, NodeID: "start", Timestamp: now.Add(-5 * time.Second)},
-		{Type: attractor.EventStageStarted, NodeID: "build", Timestamp: now},
+	run.EventBuffer = []RunEvent{
+		{Type: "stage_started", NodeID: "start", Timestamp: now.Add(-10 * time.Second)},
+		{Type: "stage_completed", NodeID: "start", Timestamp: now.Add(-5 * time.Second)},
+		{Type: "stage_started", NodeID: "build", Timestamp: now},
 	}
 	run.mu.Unlock()
 

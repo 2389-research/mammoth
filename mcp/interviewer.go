@@ -1,4 +1,4 @@
-// ABOUTME: Channel-based interviewer that bridges MCP tool calls to attractor human gates.
+// ABOUTME: Channel-based interviewer that bridges MCP tool calls to tracker human gates.
 // ABOUTME: Blocks the pipeline goroutine until an answer arrives via the answer_question tool.
 package mcp
 
@@ -8,16 +8,19 @@ import (
 	"fmt"
 )
 
-// mcpInterviewer implements attractor.Interviewer by blocking on the run's
-// answer channel.
+// mcpInterviewer implements handlers.FreeformInterviewer by blocking on the
+// run's answer channel. It uses a stored context for cancellation so the
+// signature matches tracker's Interviewer interface (no context parameter).
 type mcpInterviewer struct {
 	run *ActiveRun
+	ctx context.Context
 }
 
 // Ask sets a pending question on the run, pauses the pipeline, and blocks
 // until an answer arrives on the answer channel or the context is cancelled.
-func (iv *mcpInterviewer) Ask(ctx context.Context, question string, options []string) (string, error) {
-	if err := ctx.Err(); err != nil {
+// This signature matches tracker's handlers.Interviewer interface.
+func (iv *mcpInterviewer) Ask(prompt string, choices []string, defaultChoice string) (string, error) {
+	if err := iv.ctx.Err(); err != nil {
 		return "", err
 	}
 
@@ -32,13 +35,13 @@ func (iv *mcpInterviewer) Ask(ctx context.Context, question string, options []st
 	iv.run.Status = StatusPaused
 	iv.run.PendingQuestion = &PendingQuestion{
 		ID:      qid,
-		Text:    question,
-		Options: options,
+		Text:    prompt,
+		Options: choices,
 		NodeID:  iv.run.CurrentNode,
 	}
 	iv.run.mu.Unlock()
 	select {
-	case <-ctx.Done():
+	case <-iv.ctx.Done():
 		// Clean up pending question and restore running state on cancellation
 		// to avoid leaving the run stuck as paused with a stale question.
 		iv.run.mu.Lock()
@@ -52,7 +55,7 @@ func (iv *mcpInterviewer) Ask(ctx context.Context, question string, options []st
 		case <-iv.run.answerCh:
 		default:
 		}
-		return "", ctx.Err()
+		return "", iv.ctx.Err()
 	case answer := <-iv.run.answerCh:
 		iv.run.mu.Lock()
 		iv.run.Status = StatusRunning
@@ -60,6 +63,12 @@ func (iv *mcpInterviewer) Ask(ctx context.Context, question string, options []st
 		iv.run.mu.Unlock()
 		return answer, nil
 	}
+}
+
+// AskFreeform presents a freeform prompt without fixed choices.
+// This satisfies the handlers.FreeformInterviewer interface.
+func (iv *mcpInterviewer) AskFreeform(prompt string) (string, error) {
+	return iv.Ask(prompt, nil, "")
 }
 
 func randomHex(n int) string {
