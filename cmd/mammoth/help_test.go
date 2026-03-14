@@ -59,7 +59,6 @@ func TestPrintHelpContainsAllFlags(t *testing.T) {
 
 	flags := []string{
 		"-retry",
-		"-checkpoint-dir",
 		"-artifact-dir",
 		"-data-dir",
 		"-tui",

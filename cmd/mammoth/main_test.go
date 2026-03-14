@@ -61,9 +61,6 @@ func TestParseFlagsDefaults(t *testing.T) {
 	if cfg.validateOnly {
 		t.Error("expected validateOnly=false by default")
 	}
-	if cfg.checkpointDir != "" {
-		t.Errorf("expected empty checkpointDir, got %q", cfg.checkpointDir)
-	}
 	if cfg.artifactDir != "." {
 		t.Errorf("expected artifactDir='.', got %q", cfg.artifactDir)
 	}
@@ -342,20 +339,6 @@ func TestRunPipelineWithVerbose(t *testing.T) {
 	exitCode := runPipeline(cfg)
 	if exitCode != 0 {
 		t.Errorf("expected exit code 0 with verbose mode, got %d", exitCode)
-	}
-}
-
-func TestRunPipelineWithCheckpointDir(t *testing.T) {
-	dotFile := writeTempDOT(t, validDOT)
-	tmpDir := t.TempDir()
-	cfg := config{
-		pipelineFile:  dotFile,
-		retryPolicy:   "none",
-		checkpointDir: tmpDir,
-	}
-	exitCode := runPipeline(cfg)
-	if exitCode != 0 {
-		t.Errorf("expected exit code 0 with checkpoint dir, got %d", exitCode)
 	}
 }
 

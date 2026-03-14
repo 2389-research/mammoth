@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -41,8 +42,7 @@ type config struct {
 	fixMode       bool
 	tuiMode       bool
 	fresh         bool
-	checkpointDir string
-	artifactDir   string
+	artifactDir string
 	dataDir       string
 	retryPolicy   string
 	verbose       bool
@@ -92,7 +92,6 @@ func parseFlags() config {
 	fs.IntVar(&cfg.port, "port", 2389, "Server port (default: 2389)")
 	fs.BoolVar(&cfg.validateOnly, "validate", false, "Validate pipeline without executing")
 	fs.BoolVar(&cfg.fixMode, "fix", false, "Auto-fix validation warnings (use with -validate)")
-	fs.StringVar(&cfg.checkpointDir, "checkpoint-dir", "", "Directory for checkpoint files")
 	fs.StringVar(&cfg.artifactDir, "artifact-dir", ".", "Directory for artifact storage (default: current directory)")
 	fs.StringVar(&cfg.dataDir, "data-dir", "", "Data directory for persistent state (default: .mammoth/ in CWD)")
 	fs.StringVar(&cfg.retryPolicy, "retry", "none", "Default retry policy: none, standard, aggressive, linear, patient")
@@ -337,17 +336,21 @@ func runPipelineResume(
 		workDir, _ = os.Getwd()
 	}
 
-	// Build event handlers
+	// Build event handlers. A deferred relay is included so TUI bridge
+	// handlers can be wired after the tea.Program is created.
+	relay := &deferredEventRelay{}
 	persistHandler := buildPersistenceHandler(store, resumeState.ID)
 	var verboseHandler pipeline.PipelineEventHandlerFunc
 	if cfg.verbose {
 		verboseHandler = verbosePipelineHandler
 	}
-	pipelineHandler := combinePipelineHandlers(persistHandler, verboseHandler)
-	var agentEvtHandler agent.EventHandler
+	pipelineHandler := combinePipelineHandlers(persistHandler, verboseHandler, relay.PipelineHandler())
+
+	var verboseAgentFn agent.EventHandlerFunc
 	if cfg.verbose {
-		agentEvtHandler = agent.EventHandlerFunc(verboseAgentHandler)
+		verboseAgentFn = verboseAgentHandler
 	}
+	agentEvtHandler := combineAgentHandlers(verboseAgentFn, relay.AgentHandler())
 
 	engine, _, err := buildPipelineEngine(source, workDir, llmClient, cpPath, cfg.artifactDir, pipelineHandler, agentEvtHandler)
 	if err != nil {
@@ -369,7 +372,7 @@ func runPipelineResume(
 	var runErr error
 
 	if isTerminal() {
-		result, runErr = runPipelineResumeWithStream(cfg, graph, engine, ctx, cpPath, resumeState)
+		result, runErr = runPipelineResumeWithStream(cfg, graph, engine, ctx, cpPath, resumeState, relay)
 	} else {
 		result, runErr = runPipelineResumeDirect(cfg, engine, ctx, cpPath)
 	}
@@ -412,6 +415,7 @@ func runPipelineResumeWithStream(
 	ctx context.Context,
 	cpPath string,
 	resumeState *runstate.RunState,
+	relay *deferredEventRelay,
 ) (*pipeline.EngineResult, error) {
 	// Load checkpoint to find which node we're resuming from
 	cp, err := pipeline.LoadCheckpoint(cpPath)
@@ -428,10 +432,10 @@ func runPipelineResumeWithStream(
 
 	p := tea.NewProgram(model)
 
+	// Wire the event bridge so engine events reach the TUI via the relay
+	// that was included in the engine's handler chain at construction time.
 	bridge := tui.NewEventBridge(p.Send)
-	// The bridge handlers forward pipeline and agent events to the TUI.
-	// Pipeline events are also persisted via the engine's event handler chain.
-	_ = bridge
+	relay.SetBridge(bridge)
 
 	if _, err := p.Run(); err != nil {
 		return nil, err
@@ -508,17 +512,21 @@ func runPipelineFresh(
 		workDir, _ = os.Getwd()
 	}
 
-	// Build event handlers
+	// Build event handlers. A deferred relay is included so TUI bridge
+	// handlers can be wired after the tea.Program is created.
+	relay := &deferredEventRelay{}
 	persistHandler := buildPersistenceHandler(store, runID)
 	var verboseHandler pipeline.PipelineEventHandlerFunc
 	if cfg.verbose {
 		verboseHandler = verbosePipelineHandler
 	}
-	pipelineHandler := combinePipelineHandlers(persistHandler, verboseHandler)
-	var agentEvtHandler agent.EventHandler
+	pipelineHandler := combinePipelineHandlers(persistHandler, verboseHandler, relay.PipelineHandler())
+
+	var verboseAgentFn agent.EventHandlerFunc
 	if cfg.verbose {
-		agentEvtHandler = agent.EventHandlerFunc(verboseAgentHandler)
+		verboseAgentFn = verboseAgentHandler
 	}
+	agentEvtHandler := combineAgentHandlers(verboseAgentFn, relay.AgentHandler())
 
 	engine, _, err := buildPipelineEngine(source, workDir, llmClient, autoCheckpointPath, cfg.artifactDir, pipelineHandler, agentEvtHandler)
 	if err != nil {
@@ -555,7 +563,7 @@ func runPipelineFresh(
 	var runErr error
 
 	if isTerminal() {
-		result, runErr = runPipelineWithStream(cfg, graph, engine, ctx, source)
+		result, runErr = runPipelineWithStream(cfg, graph, engine, ctx, source, relay)
 	} else {
 		result, runErr = runPipelineDirect(cfg, engine, ctx, source)
 	}
@@ -608,14 +616,16 @@ func runPipelineWithStream(
 	engine *pipeline.Engine,
 	ctx context.Context,
 	source string,
+	relay *deferredEventRelay,
 ) (*pipeline.EngineResult, error) {
 	model := tui.NewStreamModel(graph, engine, cfg.pipelineFile, ctx, cfg.verbose)
 
 	p := tea.NewProgram(model)
 
+	// Wire the event bridge so engine events reach the TUI via the relay
+	// that was included in the engine's handler chain at construction time.
 	bridge := tui.NewEventBridge(p.Send)
-	// The bridge forwards events to the TUI message loop.
-	_ = bridge
+	relay.SetBridge(bridge)
 
 	if _, err := p.Run(); err != nil {
 		return nil, err
@@ -718,7 +728,10 @@ func runPipelineWithTUI(cfg config) int {
 		workDir, _ = os.Getwd()
 	}
 
-	engine, _, err := buildPipelineEngine(string(source), workDir, llmClient, "", cfg.artifactDir, nil, nil)
+	// Create a deferred relay so bridge handlers can be wired after the
+	// tea.Program is created (which requires the model, which requires the engine).
+	relay := &deferredEventRelay{}
+	engine, _, err := buildPipelineEngine(string(source), workDir, llmClient, "", cfg.artifactDir, relay.PipelineHandler(), relay.AgentHandler())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
@@ -736,7 +749,7 @@ func runPipelineWithTUI(cfg config) int {
 
 	// Wire the event bridge so engine events reach the TUI.
 	bridge := tui.NewEventBridge(p.Send)
-	_ = bridge
+	relay.SetBridge(bridge)
 
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -814,10 +827,14 @@ func buildWebServer(scfg serveConfig) (*web.Server, error) {
 		ws = web.NewLocalWorkspace(cwd)
 	}
 
+	// Build tracker LLM client for pipeline execution in the web server.
+	llmClient, _ := buildTrackerLLMClient()
+
 	addr := fmt.Sprintf("127.0.0.1:%d", scfg.port)
 	srv, err := web.NewServer(web.ServerConfig{
 		Addr:      addr,
 		Workspace: ws,
+		LLMClient: llmClient,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create web server: %w", err)
@@ -1000,6 +1017,70 @@ func verboseAgentHandler(evt agent.Event) {
 	case agent.EventSteeringInjected:
 		fmt.Fprintf(os.Stderr, "[agent] steering: %v\n", evt.Text)
 	}
+}
+
+// deferredEventRelay provides pipeline and agent event handlers that forward
+// to underlying handlers set after construction. This breaks the circular
+// dependency between engine construction (needs handlers) and TUI bridge
+// creation (needs tea.Program which needs model which needs engine).
+type deferredEventRelay struct {
+	mu         sync.Mutex
+	pipelineFn pipeline.PipelineEventHandlerFunc
+	agentFn    agent.EventHandlerFunc
+}
+
+// PipelineHandler returns a handler that forwards events to the relay target.
+func (r *deferredEventRelay) PipelineHandler() pipeline.PipelineEventHandlerFunc {
+	return func(evt pipeline.PipelineEvent) {
+		r.mu.Lock()
+		fn := r.pipelineFn
+		r.mu.Unlock()
+		if fn != nil {
+			fn(evt)
+		}
+	}
+}
+
+// AgentHandler returns a handler that forwards events to the relay target.
+func (r *deferredEventRelay) AgentHandler() agent.EventHandlerFunc {
+	return func(evt agent.Event) {
+		r.mu.Lock()
+		fn := r.agentFn
+		r.mu.Unlock()
+		if fn != nil {
+			fn(evt)
+		}
+	}
+}
+
+// SetBridge wires the relay to forward events through the given TUI bridge.
+func (r *deferredEventRelay) SetBridge(bridge *tui.EventBridge) {
+	r.mu.Lock()
+	r.pipelineFn = bridge.PipelineHandler()
+	r.agentFn = bridge.AgentHandler()
+	r.mu.Unlock()
+}
+
+// combineAgentHandlers merges multiple agent event handlers into one.
+// Nil handlers are safely skipped.
+func combineAgentHandlers(fns ...agent.EventHandlerFunc) agent.EventHandler {
+	var active []agent.EventHandlerFunc
+	for _, f := range fns {
+		if f != nil {
+			active = append(active, f)
+		}
+	}
+	if len(active) == 0 {
+		return nil
+	}
+	if len(active) == 1 {
+		return active[0]
+	}
+	return agent.EventHandlerFunc(func(evt agent.Event) {
+		for _, f := range active {
+			f(evt)
+		}
+	})
 }
 
 // auditConfig holds configuration for the "mammoth audit" subcommand.

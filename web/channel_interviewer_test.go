@@ -3,6 +3,7 @@
 package web
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -17,7 +18,7 @@ func TestChannelInterviewer_AskAndRespond(t *testing.T) {
 		mu.Unlock()
 	}
 
-	iv := NewChannelInterviewer(broadcast)
+	iv := NewChannelInterviewer(context.Background(), broadcast)
 
 	var answer string
 	var askErr error
@@ -66,7 +67,7 @@ func TestChannelInterviewer_AskFreeformAndRespond(t *testing.T) {
 		mu.Unlock()
 	}
 
-	iv := NewChannelInterviewer(broadcast)
+	iv := NewChannelInterviewer(context.Background(), broadcast)
 
 	var answer string
 	var askErr error
@@ -104,7 +105,7 @@ func TestChannelInterviewer_AskFreeformAndRespond(t *testing.T) {
 }
 
 func TestChannelInterviewer_RespondUnknownGate(t *testing.T) {
-	iv := NewChannelInterviewer(func(BuildEvent) {})
+	iv := NewChannelInterviewer(context.Background(), func(BuildEvent) {})
 	err := iv.Respond("nonexistent", "answer")
 	if err == nil {
 		t.Fatal("expected error for unknown gate")
@@ -112,7 +113,7 @@ func TestChannelInterviewer_RespondUnknownGate(t *testing.T) {
 }
 
 func TestChannelInterviewer_ConcurrentGates(t *testing.T) {
-	iv := NewChannelInterviewer(func(BuildEvent) {})
+	iv := NewChannelInterviewer(context.Background(), func(BuildEvent) {})
 
 	var wg sync.WaitGroup
 	results := make([]string, 3)

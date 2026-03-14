@@ -95,15 +95,15 @@ func newAgentEventHandler(run *ActiveRun) agent.EventHandlerFunc {
 
 		// Update current activity for agent events.
 		switch evt.Type {
-		case "tool_call_start":
+		case agent.EventToolCallStart:
 			toolName := evt.ToolName
 			if toolName == "" {
 				toolName = "unknown"
 			}
 			run.CurrentActivity = fmt.Sprintf("calling tool: %s", toolName)
-		case "tool_call_end":
+		case agent.EventToolCallEnd:
 			run.CurrentActivity = "tool call completed"
-		case "text_delta":
+		case agent.EventTextDelta:
 			run.CurrentActivity = "LLM streaming text"
 		}
 	}

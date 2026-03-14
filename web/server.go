@@ -23,7 +23,9 @@ import (
 	"github.com/2389-research/mammoth/editor"
 	"github.com/2389-research/mammoth/runstate"
 	"github.com/2389-research/tracker/agent"
+	"github.com/2389-research/tracker/agent/exec"
 	"github.com/2389-research/tracker/pipeline"
+	"github.com/2389-research/tracker/pipeline/handlers"
 	"github.com/2389-research/mammoth/llm"
 	"github.com/2389-research/mammoth/spec/core"
 	"github.com/2389-research/mammoth/spec/server"
@@ -64,12 +66,17 @@ type Server struct {
 	// dotFixer repairs invalid DOT graphs using an LLM backend.
 	// It is injectable for tests.
 	dotFixer func(ctx context.Context, p *Project) (string, error)
+
+	// llmClient is the tracker LLM client for pipeline execution.
+	// If nil, codergen nodes will run without LLM support.
+	llmClient agent.Completer
 }
 
 // ServerConfig holds the configuration for the unified web server.
 type ServerConfig struct {
-	Addr      string    // listen address (default: "127.0.0.1:2389")
-	Workspace Workspace // workspace for path resolution
+	Addr      string           // listen address (default: "127.0.0.1:2389")
+	Workspace Workspace        // workspace for path resolution
+	LLMClient agent.Completer  // tracker LLM client for pipeline execution (optional)
 }
 
 // NewServer creates a new Server with the given configuration. It initializes
@@ -134,6 +141,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		editorStore:  editorStore,
 		editorByProj: make(map[string]string),
 		builds:       make(map[string]*BuildRun),
+		llmClient:    cfg.LLMClient,
 	}
 	s.dotFixer = s.fixDOTWithAgent
 
@@ -689,7 +697,7 @@ func (s *Server) startBuildExecution(projectID string, p *Project, runID string,
 	}
 
 	// Create the interviewer for human gates.
-	interviewer := newBuildInterviewer(broadcastEvent)
+	interviewer := newBuildInterviewer(ctx, broadcastEvent)
 	_ = interviewer // Will be used when tracker adds Interviewer support to handlers
 
 	// Pipeline event handler bridges tracker events to SSE.
@@ -753,7 +761,13 @@ func (s *Server) startBuildExecution(projectID string, p *Project, runID string,
 			pipeline.WithArtifactDir(artifactDir),
 		}
 
-		registry := pipeline.NewHandlerRegistry()
+		var registryOpts []handlers.RegistryOption
+		if s.llmClient != nil {
+			registryOpts = append(registryOpts, handlers.WithLLMClient(s.llmClient, artifactDir))
+			registryOpts = append(registryOpts, handlers.WithExecEnvironment(exec.NewLocalEnvironment(artifactDir)))
+			registryOpts = append(registryOpts, handlers.WithAgentEventHandler(agentHandler))
+		}
+		registry := handlers.NewDefaultRegistry(graph, registryOpts...)
 		engine := pipeline.NewEngine(graph, registry, opts...)
 
 		result, runErr := engine.Run(ctx)
