@@ -5,12 +5,12 @@
 - **THE NOTORIOUS H.A.R.P.** - The human boss (Doctor Biz / Harper)
 
 ## What Is This
-A Go implementation of the [StrongDM Attractor](https://github.com/strongdm/attractor) specification.
-Three layers, bottom-up:
+A DOT-based pipeline runner for LLM agent workflows. Uses `github.com/2389-research/tracker` as the pipeline execution engine.
 
 1. **`llm/`** - Unified LLM Client SDK (OpenAI Responses API, Anthropic Messages API, Gemini API)
-2. **`agent/`** - Coding Agent Loop (agentic loop, provider-aligned toolsets, subagents, steering)
-3. **`attractor/`** - DOT-based pipeline runner (DAG execution, node handlers, human-in-the-loop)
+2. **`agent/`** - Coding Agent Loop (mammoth's agent; retained for audit/spec agents, not used by pipeline execution)
+3. **`dot/`** - DOT DSL parser, serializer, AST, and validator (mammoth-owned; used by editor, validation, rendering)
+4. **Pipeline execution** - Powered by `tracker` library (DAG execution, node handlers, human-in-the-loop)
 
 Specs live in `_specs/` (cloned from upstream).
 
@@ -28,7 +28,7 @@ Specs live in `_specs/` (cloned from upstream).
 ```
 mammoth/
   _specs/             # NLSpec source documents
-  llm/                # Layer 1: Unified LLM Client
+  llm/                # Unified LLM Client SDK
     types.go          # Data model (Message, Request, Response, etc.)
     client.go         # Client, provider routing, middleware
     provider.go       # ProviderAdapter interface
@@ -41,7 +41,7 @@ mammoth/
     catalog.go        # Model catalog
     generate.go       # High-level generate/stream API
     sse/              # SSE parser
-  agent/              # Layer 2: Coding Agent Loop
+  agent/              # Mammoth's Coding Agent Loop (used by spec agents, audit)
     session.go        # Session, config, lifecycle, loop detection
     loop.go           # Core agentic loop
     profiles.go       # ProviderProfile interface + provider profiles
@@ -54,31 +54,14 @@ mammoth/
     subagents.go      # Subagent spawning
     fidelity.go       # Fidelity modes
     patch.go          # Patch application
-  attractor/          # Layer 3: Attractor Pipeline
-    engine.go         # Execution engine (5-phase lifecycle)
-    context.go        # Pipeline context and state
-    checkpoint.go     # Checkpoint save/resume
-    validate.go       # Pipeline validation
-    handlers.go       # Handler registry + base types
-    handlers_*.go     # Node handlers (codergen, start, exit, human, parallel, etc.)
-    interviewer.go    # Human-in-the-loop (Interviewer strategies)
-    stylesheet.go     # Model stylesheet
-    transforms.go     # AST transforms
-    conditions.go     # Condition expression language
-    edge_selection.go # Edge selection algorithm
-    fidelity.go       # Fidelity types and resolution
-    server.go         # HTTP server mode
-    subpipeline.go    # Sub-pipeline graph composition
-    watchdog.go       # Stall detection
-    backend.go        # CodergenBackend interface
-    backend_*.go      # Backend implementations (agent, claude_code)
-    compat.go         # Type aliases bridging to dot/ package
   dot/                # DOT DSL (parser, lexer, AST, serializer)
     ast.go            # Graph, Node, Edge types
     lexer.go          # Tokenizer
     parser.go         # DOT parser
     serializer.go     # Graph→DOT string
     validator/        # Lint rules (21 rules)
+  runstate/           # Pipeline run state persistence
+    store.go          # FSRunStateStore, RunState, RunEvent types
   spec/               # Spec builder (event-sourced)
     core/             # Domain model, commands, events, state
     agents/           # LLM swarm agents for spec generation
@@ -89,26 +72,30 @@ mammoth/
   web/                # Unified web layer
     server.go         # Main HTTP server
     project.go        # Project store and lifecycle
-    spec_adapter.go   # Spec builder integration
-    editor_adapter.go # Editor integration
+    build_event.go    # BuildEvent type and tracker event mappers
+    channel_interviewer.go  # Human gate interviewer for web/MCP
     dot_fixer.go      # LLM-powered DOT repair
-    build.go          # Pipeline build orchestration
+    build.go          # Pipeline build orchestration (SSE)
     transitions.go    # Phase state machine
   editor/             # DOT graph editor
     session.go        # Editor sessions with undo/redo
     store.go          # Session store with TTL
     handlers.go       # HTTP handlers
-    server.go         # Editor HTTP server
   render/             # Graph rendering
     render.go         # DOT→SVG/PNG via Graphviz
     cache.go          # Render cache with TTL
   tui/                # Terminal UI (Bubble Tea)
     app.go            # Main TUI application
+    bridge.go         # Tracker event bridge to Bubble Tea
     graph_panel.go    # Graph visualization
     log_panel.go      # Log output
     human_gate.go     # Interactive gate prompts
+  mcp/                # MCP server for pipeline execution
+    tool_run.go       # Pipeline execution via MCP
+    interviewer.go    # Human gate interviewer for MCP
   cmd/
     mammoth/          # CLI entrypoint
+    mammoth-mcp/      # MCP server binary
 ```
 
 ## Testing

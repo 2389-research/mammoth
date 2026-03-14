@@ -2,19 +2,17 @@
 
 A DOT-based pipeline runner for LLM agent workflows. Define a graph, run it, watch it think.
 
-Go implementation of the [StrongDM Attractor](https://github.com/strongdm/attractor) specification.
+Pipeline execution powered by [`github.com/2389-research/tracker`](https://github.com/2389-research/tracker).
 
 ## Architecture
-
-Mammoth is three layers, bottom-up:
 
 | Layer | Package | Description |
 |-------|---------|-------------|
 | **LLM SDK** | `llm/` | Unified client for OpenAI, Anthropic, and Gemini APIs |
-| **Agent Loop** | `agent/` | Agentic loop with provider profiles, tools, steering, and subagents |
-| **Pipeline Runner** | `attractor/` | DOT-based DAG execution, node handlers, human-in-the-loop gates |
+| **Pipeline Runner** | `tracker` (external) | DOT-based DAG execution, node handlers, human-in-the-loop gates |
+| **Run State** | `runstate/` | Pipeline run persistence, auto-resume, audit |
 
-Supporting packages: `dot/` (DOT parser/serializer), `spec/` (event-sourced spec builder), `web/` (unified web layer), `editor/` (DOT graph editor), `render/` (DOT→SVG/PNG), `tui/` (Bubble Tea terminal UI), `cmd/mammoth/` (CLI).
+Supporting packages: `dot/` (DOT parser/serializer/validator), `spec/` (event-sourced spec builder), `web/` (unified web layer), `editor/` (DOT graph editor), `render/` (DOT→SVG/PNG), `tui/` (Bubble Tea terminal UI), `mcp/` (MCP server), `cmd/mammoth/` (CLI).
 
 ## Install
 
@@ -71,8 +69,8 @@ mammoth -validate pipeline.dot
 # Run with the terminal UI
 mammoth run -tui pipeline.dot
 
-# Start the HTTP server
-mammoth -server -port 8080
+# Start the web UI
+mammoth serve --port 2389
 ```
 
 ## Testing
@@ -104,9 +102,9 @@ go tool cover -func=coverage.out
 
 Browse the full docs hub at [`docs/index.html`](docs/index.html).
 
-## Spec Parity
+## Pipeline Execution
 
-192/195 Attractor spec requirements implemented (3 partial, 0 missing). See the [parity matrix](docs/parity-matrix.md) for details.
+Pipeline execution is handled by the [tracker](https://github.com/2389-research/tracker) library. Mammoth provides the DOT parser/validator (`dot/`), web UI (`web/`), TUI (`tui/`), MCP server (`mcp/`), and CLI (`cmd/mammoth/`) that consume tracker's API.
 
 ## License
 
