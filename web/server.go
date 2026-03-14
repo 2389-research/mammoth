@@ -1,5 +1,5 @@
 // ABOUTME: Unified mammoth HTTP server providing the wizard flow for Spec Builder,
-// ABOUTME: DOT Editor, and Attractor Pipeline Runner behind a single chi router.
+// ABOUTME: DOT Editor, and Pipeline Runner behind a single chi router.
 package web
 
 import (
@@ -20,8 +20,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/2389-research/mammoth/attractor"
 	"github.com/2389-research/mammoth/editor"
+	"github.com/2389-research/mammoth/runstate"
+	"github.com/2389-research/tracker/agent"
+	"github.com/2389-research/tracker/pipeline"
 	"github.com/2389-research/mammoth/llm"
 	"github.com/2389-research/mammoth/spec/core"
 	"github.com/2389-research/mammoth/spec/server"
@@ -32,7 +34,7 @@ import (
 )
 
 // Server is the unified mammoth HTTP server that provides the wizard flow:
-// Spec Builder -> DOT Editor -> Attractor Pipeline Runner.
+// Spec Builder -> DOT Editor -> Pipeline Runner.
 type Server struct {
 	store     *ProjectStore
 	templates *TemplateEngine
@@ -557,8 +559,8 @@ func (s *Server) handleSpecContinueToEditor(w http.ResponseWriter, r *http.Reque
 	http.Redirect(w, r, projectEditorBasePath(projectID), http.StatusSeeOther)
 }
 
-// handleBuildStart validates the project DOT, creates an attractor engine,
-// starts it in a background goroutine, and redirects to the build view.
+// handleBuildStart validates the project DOT, launches the pipeline engine
+// in a background goroutine, and redirects to the build view.
 func (s *Server) handleBuildStart(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "projectID")
 	p, ok := s.store.Get(projectID)
@@ -591,7 +593,7 @@ func (s *Server) handleBuildStart(w http.ResponseWriter, r *http.Request) {
 	s.stopProjectSpecSwarm(p)
 
 	// Generate a run ID and set up run state.
-	runID, err := attractor.GenerateRunID()
+	runID, err := runstate.GenerateRunID()
 	if err != nil {
 		log.Printf("component=web.build action=generate_run_id_failed project_id=%s err=%v", projectID, err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -641,9 +643,9 @@ func (s *Server) maybeResumeBuild(projectID string, p *Project) {
 	s.startBuildExecution(projectID, p, p.RunID, true)
 }
 
-// startBuildExecution creates in-memory run tracking and launches the engine.
-// When resumeFromCheckpoint is true, it attempts ResumeFromCheckpoint using the
-// run's checkpoint file and falls back to a fresh Run when unavailable.
+// startBuildExecution creates in-memory run tracking and launches the tracker
+// pipeline engine. When resumeFromCheckpoint is true, checkpoint state is
+// loaded from the run's checkpoint directory automatically by the engine.
 func (s *Server) startBuildExecution(projectID string, p *Project, runID string, resumeFromCheckpoint bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	events := make(chan SSEEvent, 100)
@@ -669,59 +671,54 @@ func (s *Server) startBuildExecution(projectID string, p *Project, runID string,
 
 	artifactDir := s.workspace.ArtifactDir(projectID, runID)
 	checkpointDir := s.workspace.CheckpointDir(projectID, runID)
-	checkpointPath := filepath.Join(checkpointDir, "checkpoint.json")
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		log.Printf("component=web.build action=create_artifact_dir_failed project_id=%s run_id=%s err=%v", projectID, runID, err)
 	}
 	if err := os.MkdirAll(checkpointDir, 0o755); err != nil {
 		log.Printf("component=web.build action=create_checkpoint_dir_failed project_id=%s run_id=%s err=%v", projectID, runID, err)
 	}
-	progressLogDir := s.workspace.ProgressLogDir(projectID, runID)
-	var progressLogger *attractor.ProgressLogger
-	var progressErr error
-	if os.Getenv("MAMMOTH_DISABLE_PROGRESS_LOG") != "1" {
-		progressLogger, progressErr = attractor.NewProgressLogger(progressLogDir)
-		if progressErr != nil {
-			log.Printf("component=web.build action=init_progress_logger_failed project_id=%s run_id=%s err=%v", projectID, runID, progressErr)
+
+	// Create the broadcast function for events.
+	broadcastEvent := func(be BuildEvent) {
+		sseEvt := buildEventToSSE(be)
+		select {
+		case events <- sseEvt:
+		default:
+			log.Printf("component=web.build action=drop_sse_event project_id=%s run_id=%s reason=channel_full", projectID, runID)
 		}
 	}
-	handlers := attractor.DefaultHandlerRegistry()
-	configureBuildInterviewer(handlers)
-	engine := attractor.NewEngine(attractor.EngineConfig{
-		ArtifactDir:        artifactDir,
-		RunID:              runID,
-		AutoCheckpointPath: checkpointPath,
-		DefaultRetry:       attractor.RetryPolicyNone(),
-		Backend:            detectBackendFromEnv(false),
-		Handlers:           handlers,
-		EventHandler: func(evt attractor.EngineEvent) {
-			sseEvt := engineEventToSSE(evt)
 
-			s.buildsMu.Lock()
-			if evt.NodeID != "" {
-				state.CurrentNode = evt.NodeID
-			}
-			if evt.Type == attractor.EventStageCompleted {
-				state.CompletedNodes = append(state.CompletedNodes, evt.NodeID)
-			}
-			s.buildsMu.Unlock()
-			if progressLogger != nil {
-				progressLogger.HandleEvent(evt)
-			}
+	// Create the interviewer for human gates.
+	interviewer := newBuildInterviewer(broadcastEvent)
+	_ = interviewer // Will be used when tracker adds Interviewer support to handlers
 
-			select {
-			case events <- sseEvt:
-			default:
-				log.Printf("component=web.build action=drop_sse_event project_id=%s run_id=%s reason=channel_full", projectID, runID)
-			}
-		},
+	// Pipeline event handler bridges tracker events to SSE.
+	pipelineHandler := pipeline.PipelineEventHandlerFunc(func(evt pipeline.PipelineEvent) {
+		be := buildEventFromPipeline(evt)
+
+		s.buildsMu.Lock()
+		if evt.NodeID != "" {
+			state.CurrentNode = evt.NodeID
+		}
+		if evt.Type == pipeline.EventStageCompleted {
+			state.CompletedNodes = append(state.CompletedNodes, evt.NodeID)
+		}
+		s.buildsMu.Unlock()
+
+		broadcastEvent(be)
 	})
+
+	// Agent event handler bridges tracker agent events to SSE.
+	agentHandler := agent.EventHandlerFunc(func(evt agent.Event) {
+		be := buildEventFromAgent(evt)
+		if be.Type != "" {
+			broadcastEvent(be)
+		}
+	})
+	_ = agentHandler // Will be used when tracker adds AgentEvents to engine config
 
 	go func() {
 		defer close(events)
-		if progressLogger != nil {
-			defer progressLogger.Close()
-		}
 		defer func() {
 			if rec := recover(); rec != nil {
 				s.buildsMu.Lock()
@@ -735,22 +732,32 @@ func (s *Server) startBuildExecution(projectID string, p *Project, runID string,
 			}
 		}()
 
-		var runErr error
-		if resumeFromCheckpoint {
-			if _, err := os.Stat(checkpointPath); err == nil {
-				graph, parseErr := attractor.Parse(p.DOT)
-				if parseErr != nil {
-					runErr = fmt.Errorf("parse DOT for resume: %w", parseErr)
-				} else {
-					_, runErr = engine.ResumeFromCheckpoint(ctx, graph, checkpointPath)
-				}
-			} else {
-				log.Printf("component=web.build action=resume_checkpoint_missing project_id=%s run_id=%s fallback=fresh_run", projectID, runID)
-				_, runErr = engine.Run(ctx, p.DOT)
-			}
-		} else {
-			_, runErr = engine.Run(ctx, p.DOT)
+		// Parse the DOT source into a tracker pipeline graph.
+		graph, parseErr := pipeline.ParseDOT(p.DOT)
+		if parseErr != nil {
+			s.buildsMu.Lock()
+			completedAt := time.Now()
+			state.CompletedAt = &completedAt
+			state.Status = "failed"
+			state.Error = fmt.Sprintf("parse DOT: %v", parseErr)
+			s.buildsMu.Unlock()
+			s.persistBuildOutcome(projectID, state)
+			return
 		}
+
+		// Build engine options.
+		checkpointPath := filepath.Join(checkpointDir, "checkpoint.json")
+		opts := []pipeline.EngineOption{
+			pipeline.WithPipelineEventHandler(pipelineHandler),
+			pipeline.WithCheckpointPath(checkpointPath),
+			pipeline.WithArtifactDir(artifactDir),
+		}
+
+		registry := pipeline.NewHandlerRegistry()
+		engine := pipeline.NewEngine(graph, registry, opts...)
+
+		result, runErr := engine.Run(ctx)
+		_ = result // result available for future use
 
 		s.buildsMu.Lock()
 		completedAt := time.Now()

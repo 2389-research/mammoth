@@ -1,4 +1,4 @@
-// ABOUTME: Build run types and SSE event formatting for the attractor pipeline runner.
+// ABOUTME: Build run types and SSE event formatting for pipeline execution.
 // ABOUTME: Provides BuildRun for tracking active builds and RunState for pipeline lifecycle.
 package web
 
@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	"github.com/2389-research/mammoth/attractor"
 )
 
 // RunState tracks the lifecycle state of a pipeline run within the web layer.
@@ -154,14 +152,16 @@ func (e SSEEvent) Format() string {
 	return fmt.Sprintf("event: %s\ndata: %s\n\n", e.Event, e.Data)
 }
 
-// engineEventToSSE converts an attractor.EngineEvent into an SSEEvent suitable
-// for streaming to the browser.
-func engineEventToSSE(evt attractor.EngineEvent) SSEEvent {
+// buildEventToSSE converts a BuildEvent into an SSEEvent for streaming.
+func buildEventToSSE(evt BuildEvent) SSEEvent {
 	data := map[string]any{
 		"timestamp": evt.Timestamp.Format(time.RFC3339),
 	}
 	if evt.NodeID != "" {
 		data["node_id"] = evt.NodeID
+	}
+	if evt.Message != "" {
+		data["message"] = evt.Message
 	}
 	if evt.Data != nil {
 		for k, v := range evt.Data {
