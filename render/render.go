@@ -1,4 +1,4 @@
-// ABOUTME: Converts attractor Graph structures to DOT text and renders to SVG/PNG via graphviz.
+// ABOUTME: Converts DOT Graph structures to DOT text and renders to SVG/PNG via graphviz.
 // ABOUTME: Provides ToDOT, ToDOTWithStatus (with execution status color overlay), and Render functions.
 package render
 
@@ -10,8 +10,24 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/mammoth/dot"
 )
+
+// StageStatus represents the outcome of executing a node.
+type StageStatus string
+
+const (
+	StatusSuccess        StageStatus = "success"
+	StatusFail           StageStatus = "fail"
+	StatusPartialSuccess StageStatus = "partial_success"
+	StatusRetry          StageStatus = "retry"
+	StatusSkipped        StageStatus = "skipped"
+)
+
+// Outcome is the result of executing a node handler, used for status overlay rendering.
+type Outcome struct {
+	Status StageStatus
+}
 
 // Status color constants used for node fill colors in status overlay rendering.
 const (
@@ -21,9 +37,9 @@ const (
 	StatusColorPending = "#9E9E9E" // gray
 )
 
-// ToDOT serializes an attractor Graph back into valid DOT digraph text.
+// ToDOT serializes a Graph back into valid DOT digraph text.
 // Node order is deterministic (sorted by ID) for reproducible output.
-func ToDOT(g *attractor.Graph) string {
+func ToDOT(g *dot.Graph) string {
 	if g == nil {
 		return ""
 	}
@@ -69,13 +85,13 @@ func ToDOT(g *attractor.Graph) string {
 // ToDOTWithStatus serializes a Graph to DOT text with color overlays based on execution status.
 // Nodes with outcomes are colored: green for success/partial_success, red for fail,
 // yellow for retry (running), and gray for pending (no outcome or skipped).
-func ToDOTWithStatus(g *attractor.Graph, outcomes map[string]*attractor.Outcome) string {
+func ToDOTWithStatus(g *dot.Graph, outcomes map[string]*Outcome) string {
 	if g == nil {
 		return ""
 	}
 
 	if outcomes == nil {
-		outcomes = map[string]*attractor.Outcome{}
+		outcomes = map[string]*Outcome{}
 	}
 
 	var buf strings.Builder
@@ -120,7 +136,7 @@ func ToDOTWithStatus(g *attractor.Graph, outcomes map[string]*attractor.Outcome)
 // Render produces rendered output from a Graph in the specified format.
 // Supported formats: "dot" (returns DOT text), "svg", "png" (shell out to graphviz dot command).
 // Returns an error if the format is unsupported or graphviz is not installed for svg/png.
-func Render(ctx context.Context, g *attractor.Graph, format string) ([]byte, error) {
+func Render(ctx context.Context, g *dot.Graph, format string) ([]byte, error) {
 	if g == nil {
 		return nil, fmt.Errorf("cannot render nil graph")
 	}
@@ -166,7 +182,7 @@ func RenderDOTSource(ctx context.Context, dotText string, format string) ([]byte
 }
 
 // renderWithGraphviz pipes DOT text to the graphviz dot command and returns the output.
-func renderWithGraphviz(ctx context.Context, g *attractor.Graph, format string) ([]byte, error) {
+func renderWithGraphviz(ctx context.Context, g *dot.Graph, format string) ([]byte, error) {
 	if !graphvizAvailable() {
 		return nil, fmt.Errorf("graphviz dot command not found: install graphviz to render %s output", format)
 	}
@@ -196,18 +212,18 @@ func renderDOTSourceWithGraphviz(ctx context.Context, dotText string, format str
 }
 
 // statusAttrsForNode returns fill color and style attributes based on the node's execution outcome.
-func statusAttrsForNode(nodeID string, outcomes map[string]*attractor.Outcome) map[string]string {
+func statusAttrsForNode(nodeID string, outcomes map[string]*Outcome) map[string]string {
 	color := StatusColorPending
 
 	if outcome, ok := outcomes[nodeID]; ok {
 		switch outcome.Status {
-		case attractor.StatusSuccess, attractor.StatusPartialSuccess:
+		case StatusSuccess, StatusPartialSuccess:
 			color = StatusColorSuccess
-		case attractor.StatusFail:
+		case StatusFail:
 			color = StatusColorFailed
-		case attractor.StatusRetry:
+		case StatusRetry:
 			color = StatusColorRunning
-		case attractor.StatusSkipped:
+		case StatusSkipped:
 			color = StatusColorPending
 		default:
 			color = StatusColorPending
@@ -222,7 +238,7 @@ func statusAttrsForNode(nodeID string, outcomes map[string]*attractor.Outcome) m
 
 // writeNode writes a node declaration to the buffer, merging the node's own attributes
 // with any extra attributes (e.g. status coloring).
-func writeNode(buf *strings.Builder, node *attractor.Node, extraAttrs map[string]string) {
+func writeNode(buf *strings.Builder, node *dot.Node, extraAttrs map[string]string) {
 	merged := make(map[string]string)
 	for k, v := range node.Attrs {
 		merged[k] = v
@@ -240,7 +256,7 @@ func writeNode(buf *strings.Builder, node *attractor.Node, extraAttrs map[string
 }
 
 // writeEdge writes an edge declaration to the buffer.
-func writeEdge(buf *strings.Builder, edge *attractor.Edge) {
+func writeEdge(buf *strings.Builder, edge *dot.Edge) {
 	if len(edge.Attrs) == 0 {
 		fmt.Fprintf(buf, "  %s -> %s\n", quoteID(edge.From), quoteID(edge.To))
 		return
@@ -250,7 +266,7 @@ func writeEdge(buf *strings.Builder, edge *attractor.Edge) {
 }
 
 // writeSubgraph writes a subgraph block to the buffer.
-func writeSubgraph(buf *strings.Builder, sg *attractor.Subgraph) {
+func writeSubgraph(buf *strings.Builder, sg *dot.Subgraph) {
 	fmt.Fprintf(buf, "  subgraph %s {\n", sg.Name)
 
 	// Subgraph attributes

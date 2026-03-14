@@ -7,19 +7,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/2389-research/mammoth/attractor"
+	"github.com/2389-research/mammoth/dot"
 )
 
 // buildTestGraph constructs a simple graph for testing DOT serialization.
-func buildTestGraph() *attractor.Graph {
-	return &attractor.Graph{
+func buildTestGraph() *dot.Graph {
+	return &dot.Graph{
 		Name: "test_pipeline",
-		Nodes: map[string]*attractor.Node{
+		Nodes: map[string]*dot.Node{
 			"start": {ID: "start", Attrs: map[string]string{"shape": "Mdiamond"}},
 			"work":  {ID: "work", Attrs: map[string]string{"shape": "box", "label": "Do Work"}},
 			"done":  {ID: "done", Attrs: map[string]string{"shape": "Msquare"}},
 		},
-		Edges: []*attractor.Edge{
+		Edges: []*dot.Edge{
 			{From: "start", To: "work", Attrs: map[string]string{}},
 			{From: "work", To: "done", Attrs: map[string]string{"label": "complete"}},
 		},
@@ -30,14 +30,14 @@ func buildTestGraph() *attractor.Graph {
 }
 
 // buildMinimalGraph constructs a graph with no optional attributes.
-func buildMinimalGraph() *attractor.Graph {
-	return &attractor.Graph{
+func buildMinimalGraph() *dot.Graph {
+	return &dot.Graph{
 		Name: "minimal",
-		Nodes: map[string]*attractor.Node{
+		Nodes: map[string]*dot.Node{
 			"a": {ID: "a", Attrs: map[string]string{}},
 			"b": {ID: "b", Attrs: map[string]string{}},
 		},
-		Edges: []*attractor.Edge{
+		Edges: []*dot.Edge{
 			{From: "a", To: "b", Attrs: map[string]string{}},
 		},
 		Attrs:        map[string]string{},
@@ -139,9 +139,9 @@ func TestToDOT_NilGraph(t *testing.T) {
 }
 
 func TestToDOT_EmptyNodesGraph(t *testing.T) {
-	g := &attractor.Graph{
+	g := &dot.Graph{
 		Name:  "empty",
-		Nodes: map[string]*attractor.Node{},
+		Nodes: map[string]*dot.Node{},
 	}
 	dot := ToDOT(g)
 
@@ -164,12 +164,12 @@ func TestToDOT_DeterministicNodeOrder(t *testing.T) {
 
 func TestToDOT_RoundTrip(t *testing.T) {
 	g := buildTestGraph()
-	dot := ToDOT(g)
+	dotText := ToDOT(g)
 
-	// The output should be parseable by the attractor parser
-	parsed, err := attractor.Parse(dot)
+	// The output should be parseable by the dot parser
+	parsed, err := dot.Parse(dotText)
 	if err != nil {
-		t.Fatalf("failed to re-parse generated DOT: %v\nDOT:\n%s", err, dot)
+		t.Fatalf("failed to re-parse generated DOT: %v\nDOT:\n%s", err, dotText)
 	}
 
 	if parsed.Name != g.Name {
@@ -185,8 +185,8 @@ func TestToDOT_RoundTrip(t *testing.T) {
 
 func TestToDOTWithStatus_ColorsSuccessGreen(t *testing.T) {
 	g := buildTestGraph()
-	outcomes := map[string]*attractor.Outcome{
-		"work": {Status: attractor.StatusSuccess},
+	outcomes := map[string]*Outcome{
+		"work": {Status: StatusSuccess},
 	}
 	dot := ToDOTWithStatus(g, outcomes)
 
@@ -213,8 +213,8 @@ func TestToDOTWithStatus_ColorsSuccessGreen(t *testing.T) {
 
 func TestToDOTWithStatus_ColorsFailedRed(t *testing.T) {
 	g := buildTestGraph()
-	outcomes := map[string]*attractor.Outcome{
-		"work": {Status: attractor.StatusFail},
+	outcomes := map[string]*Outcome{
+		"work": {Status: StatusFail},
 	}
 	dot := ToDOTWithStatus(g, outcomes)
 
@@ -235,7 +235,7 @@ func TestToDOTWithStatus_ColorsFailedRed(t *testing.T) {
 func TestToDOTWithStatus_ColorsPendingGray(t *testing.T) {
 	g := buildTestGraph()
 	// Empty outcomes map means all nodes are pending
-	outcomes := map[string]*attractor.Outcome{}
+	outcomes := map[string]*Outcome{}
 	dot := ToDOTWithStatus(g, outcomes)
 
 	lines := strings.Split(dot, "\n")
@@ -254,8 +254,8 @@ func TestToDOTWithStatus_ColorsPendingGray(t *testing.T) {
 
 func TestToDOTWithStatus_ColorsRetryYellow(t *testing.T) {
 	g := buildTestGraph()
-	outcomes := map[string]*attractor.Outcome{
-		"work": {Status: attractor.StatusRetry},
+	outcomes := map[string]*Outcome{
+		"work": {Status: StatusRetry},
 	}
 	dot := ToDOTWithStatus(g, outcomes)
 
@@ -285,8 +285,8 @@ func TestToDOTWithStatus_NilOutcomes(t *testing.T) {
 
 func TestToDOTWithStatus_PreservesOriginalAttributes(t *testing.T) {
 	g := buildTestGraph()
-	outcomes := map[string]*attractor.Outcome{
-		"work": {Status: attractor.StatusSuccess},
+	outcomes := map[string]*Outcome{
+		"work": {Status: StatusSuccess},
 	}
 	dot := ToDOTWithStatus(g, outcomes)
 
@@ -391,10 +391,10 @@ func TestGraphvizAvailable_ReturnsBoolean(t *testing.T) {
 }
 
 func TestRender_EmptyGraphDOT(t *testing.T) {
-	g := &attractor.Graph{
+	g := &dot.Graph{
 		Name:  "empty",
-		Nodes: map[string]*attractor.Node{},
-		Edges: []*attractor.Edge{},
+		Nodes: map[string]*dot.Node{},
+		Edges: []*dot.Edge{},
 		Attrs: map[string]string{},
 	}
 	data, err := Render(context.Background(), g, "dot")
@@ -407,16 +407,16 @@ func TestRender_EmptyGraphDOT(t *testing.T) {
 }
 
 func TestToDOT_SubgraphHandling(t *testing.T) {
-	g := &attractor.Graph{
+	g := &dot.Graph{
 		Name: "with_subgraph",
-		Nodes: map[string]*attractor.Node{
+		Nodes: map[string]*dot.Node{
 			"a": {ID: "a", Attrs: map[string]string{}},
 			"b": {ID: "b", Attrs: map[string]string{}},
 		},
-		Edges: []*attractor.Edge{
+		Edges: []*dot.Edge{
 			{From: "a", To: "b", Attrs: map[string]string{}},
 		},
-		Subgraphs: []*attractor.Subgraph{
+		Subgraphs: []*dot.Subgraph{
 			{
 				Name:         "cluster_0",
 				NodeIDs:      []string{"a"},
@@ -467,8 +467,8 @@ func TestToDOT_NodeWithNoAttrs(t *testing.T) {
 
 func TestToDOTWithStatus_PartialSuccess(t *testing.T) {
 	g := buildTestGraph()
-	outcomes := map[string]*attractor.Outcome{
-		"work": {Status: attractor.StatusPartialSuccess},
+	outcomes := map[string]*Outcome{
+		"work": {Status: StatusPartialSuccess},
 	}
 	dot := ToDOTWithStatus(g, outcomes)
 
@@ -487,8 +487,8 @@ func TestToDOTWithStatus_PartialSuccess(t *testing.T) {
 
 func TestToDOTWithStatus_Skipped(t *testing.T) {
 	g := buildTestGraph()
-	outcomes := map[string]*attractor.Outcome{
-		"work": {Status: attractor.StatusSkipped},
+	outcomes := map[string]*Outcome{
+		"work": {Status: StatusSkipped},
 	}
 	dot := ToDOTWithStatus(g, outcomes)
 
