@@ -12,6 +12,7 @@ import (
 	"github.com/2389-research/mammoth/dot"
 	"github.com/2389-research/mammoth/dot/validator"
 	"github.com/2389-research/tracker/pipeline"
+	"github.com/2389-research/tracker/agent/exec"
 	"github.com/2389-research/tracker/pipeline/handlers"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -149,11 +150,16 @@ func (s *Server) executePipeline(run *ActiveRun) {
 	// Build the interviewer with the run's context for cancellation.
 	iv := &mcpInterviewer{run: run, ctx: ctx}
 
-	// Build the handler registry with the interviewer wired in.
-	registry := handlers.NewDefaultRegistry(graph,
+	// Build the handler registry with the interviewer and LLM client wired in.
+	registryOpts := []handlers.RegistryOption{
 		handlers.WithInterviewer(iv, graph),
 		handlers.WithAgentEventHandler(newAgentEventHandler(run)),
-	)
+	}
+	if s.llmClient != nil {
+		registryOpts = append(registryOpts, handlers.WithLLMClient(s.llmClient, run.ArtifactDir))
+		registryOpts = append(registryOpts, handlers.WithExecEnvironment(exec.NewLocalEnvironment(run.ArtifactDir)))
+	}
+	registry := handlers.NewDefaultRegistry(graph, registryOpts...)
 
 	// Build engine options.
 	checkpointPath := filepath.Join(run.CheckpointDir, "checkpoint.json")

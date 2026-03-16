@@ -2,24 +2,42 @@
 // ABOUTME: Holds references to the run registry, disk index, and data directory for pipeline execution.
 package mcp
 
-import mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+import (
+	"github.com/2389-research/tracker/agent"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+)
 
 // Server is the mammoth MCP server. It owns the run registry, disk index,
 // and data directory, and registers tool handlers on an MCP SDK server.
 type Server struct {
-	registry *RunRegistry
-	index    *RunIndex
-	dataDir  string
+	registry  *RunRegistry
+	index     *RunIndex
+	dataDir   string
+	llmClient agent.Completer
+}
+
+// ServerOption configures a Server.
+type ServerOption func(*Server)
+
+// WithLLMClient sets the LLM client for pipeline execution via MCP.
+func WithLLMClient(client agent.Completer) ServerOption {
+	return func(s *Server) {
+		s.llmClient = client
+	}
 }
 
 // NewServer creates a new mammoth MCP Server backed by the given data directory.
 // The directory is used to store run metadata, checkpoints, and artifacts.
-func NewServer(dataDir string) *Server {
-	return &Server{
+func NewServer(dataDir string, opts ...ServerOption) *Server {
+	s := &Server{
 		registry: NewRunRegistry(),
 		index:    NewRunIndex(dataDir),
 		dataDir:  dataDir,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // RegisterTools registers all mammoth pipeline tools on the given MCP SDK server.

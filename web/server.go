@@ -698,7 +698,6 @@ func (s *Server) startBuildExecution(projectID string, p *Project, runID string,
 
 	// Create the interviewer for human gates.
 	interviewer := newBuildInterviewer(ctx, broadcastEvent)
-	_ = interviewer // Will be used when tracker adds Interviewer support to handlers
 
 	// Pipeline event handler bridges tracker events to SSE.
 	pipelineHandler := pipeline.PipelineEventHandlerFunc(func(evt pipeline.PipelineEvent) {
@@ -723,8 +722,6 @@ func (s *Server) startBuildExecution(projectID string, p *Project, runID string,
 			broadcastEvent(be)
 		}
 	})
-	_ = agentHandler // Will be used when tracker adds AgentEvents to engine config
-
 	go func() {
 		defer close(events)
 		defer func() {
@@ -761,7 +758,9 @@ func (s *Server) startBuildExecution(projectID string, p *Project, runID string,
 			pipeline.WithArtifactDir(artifactDir),
 		}
 
-		var registryOpts []handlers.RegistryOption
+		registryOpts := []handlers.RegistryOption{
+			handlers.WithInterviewer(interviewer, graph),
+		}
 		if s.llmClient != nil {
 			registryOpts = append(registryOpts, handlers.WithLLMClient(s.llmClient, artifactDir))
 			registryOpts = append(registryOpts, handlers.WithExecEnvironment(exec.NewLocalEnvironment(artifactDir)))
@@ -897,7 +896,10 @@ func (s *Server) handleFinalTimeline(w http.ResponseWriter, r *http.Request) {
 		if err := json.Unmarshal([]byte(line), &evt); err != nil {
 			continue
 		}
-		switch evt.Type {
+		// Normalize event type: tracker uses underscore names (stage_started),
+		// older runs used dotted names (stage.started). Accept both.
+		evtType := normalizeTimelineEventType(evt.Type)
+		switch evtType {
 		case "stage.started":
 			step := finalTimelineStep{
 				NodeID:    evt.NodeID,
@@ -908,7 +910,7 @@ func (s *Server) handleFinalTimeline(w http.ResponseWriter, r *http.Request) {
 			steps = append(steps, step)
 			idx := len(steps) - 1
 			lastByNode[evt.NodeID] = idx
-			appendTimelineOperation(&steps[idx], evt.Timestamp, evt.Type, evt.NodeID, evt.Data)
+			appendTimelineOperation(&steps[idx], evt.Timestamp, evtType, evt.NodeID, evt.Data)
 		case "stage.completed":
 			idx, ok := lastByNode[evt.NodeID]
 			if !ok {
@@ -917,7 +919,7 @@ func (s *Server) handleFinalTimeline(w http.ResponseWriter, r *http.Request) {
 					Status:      "completed",
 					CompletedAt: evt.Timestamp,
 				})
-				appendTimelineOperation(&steps[len(steps)-1], evt.Timestamp, evt.Type, evt.NodeID, evt.Data)
+				appendTimelineOperation(&steps[len(steps)-1], evt.Timestamp, evtType, evt.NodeID, evt.Data)
 				continue
 			}
 			steps[idx].Status = "completed"
@@ -925,7 +927,7 @@ func (s *Server) handleFinalTimeline(w http.ResponseWriter, r *http.Request) {
 			if started, end := parseRFC3339(steps[idx].StartedAt), parseRFC3339(evt.Timestamp); !started.IsZero() && !end.IsZero() {
 				steps[idx].DurationMS = end.Sub(started).Milliseconds()
 			}
-			appendTimelineOperation(&steps[idx], evt.Timestamp, evt.Type, evt.NodeID, evt.Data)
+			appendTimelineOperation(&steps[idx], evt.Timestamp, evtType, evt.NodeID, evt.Data)
 			delete(lastByNode, evt.NodeID)
 		case "stage.failed":
 			idx, ok := lastByNode[evt.NodeID]
@@ -936,7 +938,7 @@ func (s *Server) handleFinalTimeline(w http.ResponseWriter, r *http.Request) {
 					CompletedAt: evt.Timestamp,
 					Error:       strFromMap(evt.Data, "reason", "error"),
 				})
-				appendTimelineOperation(&steps[len(steps)-1], evt.Timestamp, evt.Type, evt.NodeID, evt.Data)
+				appendTimelineOperation(&steps[len(steps)-1], evt.Timestamp, evtType, evt.NodeID, evt.Data)
 				continue
 			}
 			steps[idx].Status = "failed"
@@ -945,13 +947,13 @@ func (s *Server) handleFinalTimeline(w http.ResponseWriter, r *http.Request) {
 			if started, end := parseRFC3339(steps[idx].StartedAt), parseRFC3339(evt.Timestamp); !started.IsZero() && !end.IsZero() {
 				steps[idx].DurationMS = end.Sub(started).Milliseconds()
 			}
-			appendTimelineOperation(&steps[idx], evt.Timestamp, evt.Type, evt.NodeID, evt.Data)
+			appendTimelineOperation(&steps[idx], evt.Timestamp, evtType, evt.NodeID, evt.Data)
 			delete(lastByNode, evt.NodeID)
 		case "stage.retrying":
 			idx, ok := lastByNode[evt.NodeID]
 			if ok {
 				steps[idx].Status = "retrying"
-				appendTimelineOperation(&steps[idx], evt.Timestamp, evt.Type, evt.NodeID, evt.Data)
+				appendTimelineOperation(&steps[idx], evt.Timestamp, evtType, evt.NodeID, evt.Data)
 			}
 		default:
 			if idx, ok := lastByNode[evt.NodeID]; ok {
@@ -964,6 +966,22 @@ func (s *Server) handleFinalTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeSpecJSON(w, http.StatusOK, map[string]any{"steps": steps})
+}
+
+// timelineEventNormalize maps tracker underscore event names to the dotted
+// names used by the timeline switch cases. Accepts both formats.
+var timelineEventNormalize = map[string]string{
+	"stage_started":   "stage.started",
+	"stage_completed": "stage.completed",
+	"stage_failed":    "stage.failed",
+	"stage_retrying":  "stage.retrying",
+}
+
+func normalizeTimelineEventType(t string) string {
+	if n, ok := timelineEventNormalize[t]; ok {
+		return n
+	}
+	return t
 }
 
 func appendTimelineOperation(step *finalTimelineStep, ts, typ, nodeID string, data map[string]any) {
