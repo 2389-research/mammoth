@@ -149,8 +149,7 @@ func (s *Server) startGenerationBuild(projectID, specMarkdown string) string {
 		registry := handlers.NewDefaultRegistry(graph, registryOpts...)
 		engine := pipeline.NewEngine(graph, registry, opts...)
 
-		result, runErr := engine.Run(ctx)
-		_ = result
+		_, runErr := engine.Run(ctx)
 
 		s.buildsMu.Lock()
 		completedAt := time.Now()

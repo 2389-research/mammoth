@@ -23,29 +23,6 @@ type ArtifactsData struct {
 	DOTContent      string
 }
 
-// DiagramData is the view-model for the diagram tab partial.
-type DiagramData struct {
-	SpecID     string
-	DOTContent string
-	Steps      []DiagramStep
-}
-
-// DiagramStep is a per-node execution summary shown under the diagram graph.
-type DiagramStep struct {
-	Index    int
-	NodeID   string
-	Label    string
-	NodeType string
-	Prompt   string
-	Outgoing []DiagramStepEdge
-}
-
-// DiagramStepEdge represents one outgoing edge from a node in the step list.
-type DiagramStepEdge struct {
-	To    string
-	Label string
-}
-
 // Artifacts renders the artifacts tab with all three export formats.
 func Artifacts(state *server.AppState, renderer *TemplateRenderer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
