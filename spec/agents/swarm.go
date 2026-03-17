@@ -63,15 +63,15 @@ type SwarmOrchestrator struct {
 	mu sync.Mutex
 }
 
-// NewSwarmOrchestrator creates a new orchestrator with 4 default agents
-// (Manager, Brainstormer, Planner, DotGenerator).
+// NewSwarmOrchestrator creates a new orchestrator with 3 default agents
+// (Manager, Brainstormer, Planner).
 func NewSwarmOrchestrator(
 	specID ulid.ULID,
 	actor *core.SpecActorHandle,
 	client llm.Client,
 	model string,
 ) *SwarmOrchestrator {
-	roles := []AgentRole{RoleManager, RoleBrainstormer, RolePlanner, RoleDotGenerator}
+	roles := []AgentRole{RoleManager, RoleBrainstormer, RolePlanner}
 
 	agents := make([]*AgentRunner, len(roles))
 	eventChannels := make([]chan core.Event, len(roles))
@@ -136,7 +136,7 @@ func (s *SwarmOrchestrator) RecoverEmptySlots() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	defaultRoles := []AgentRole{RoleManager, RoleBrainstormer, RolePlanner, RoleDotGenerator}
+	defaultRoles := []AgentRole{RoleManager, RoleBrainstormer, RolePlanner}
 	for i := range s.Agents {
 		if s.Agents[i] == nil && i < len(defaultRoles) {
 			log.Printf("component=spec.swarm action=recover_slot slot=%d role=%s spec_id=%s", i, defaultRoles[i].Label(), s.SpecID)

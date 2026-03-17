@@ -40,25 +40,6 @@ const plannerSystemPrompt = "You are the planner agent. Your job is to organize 
 	"create task cards that break down ideas into actionable steps, and update the spec core with " +
 	"constraints and success criteria. Narrate your reasoning."
 
-// dotGeneratorSystemPrompt is the system prompt for the DotGenerator agent role.
-const dotGeneratorSystemPrompt = "You are the diagram analyst. Your job is to read the " +
-	"current spec state and analyze how the cards, lanes, and relationships form a coherent " +
-	"workflow. Do NOT create cards — the diagram is auto-generated from the card structure.\n\n" +
-	"Instead, use emit_narration to:\n" +
-	"1. Describe the overall flow from Ideas through Plan to Spec.\n" +
-	"2. Identify gaps: are there ideas without corresponding plan items? Plans without tasks?\n" +
-	"3. Suggest structural improvements: missing connections, orphaned cards, unclear dependencies.\n" +
-	"4. Note decision points (diamond gates) and human review gates (assumptions, open questions).\n" +
-	"5. Summarize the pipeline health: is there a clear path from start to done?\n\n" +
-	"The diagram is auto-generated from cards and conforms to the DOT Runner constrained DSL:\n" +
-	"- digraph with snake_case graph ID and graph [goal=... rankdir=LR]\n" +
-	"- start [shape=Mdiamond] and done [shape=Msquare] sentinels\n" +
-	"- Node shapes: box (ideas/plans/tasks), diamond (decisions), parallelogram (inspirations/vibes)\n" +
-	"- Edges: start -> Ideas -> Plan -> Spec -> done with condition attributes\n" +
-	"- Nodes include prompt= from card body and goal_gate=true for Spec-lane tasks\n" +
-	"- All attribute syntax uses key=value only (never key: value)\n\n" +
-	"Your narration helps the user understand the diagram and improve the spec structure."
-
 // criticSystemPrompt is the system prompt for the Critic agent role.
 const criticSystemPrompt = "You are the critic agent. Your job is to review the spec for " +
 	"gaps, inconsistencies, and potential issues. Read the current state, then create cards with " +
@@ -74,8 +55,6 @@ func SystemPromptForRole(role AgentRole) string {
 		return brainstormerSystemPrompt
 	case RolePlanner:
 		return plannerSystemPrompt
-	case RoleDotGenerator:
-		return dotGeneratorSystemPrompt
 	case RoleCritic:
 		return criticSystemPrompt
 	default:

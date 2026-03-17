@@ -51,7 +51,6 @@ func (s *Server) specRouter(r chi.Router) {
 	r.Get("/activity", specweb.Activity(state, renderer))
 	r.Get("/activity/transcript", specweb.ActivityTranscript(state, renderer))
 	r.Get("/chat-panel", specweb.ChatPanel(state, renderer))
-	r.Get("/diagram", specweb.Diagram(state, renderer))
 	r.Get("/artifacts", specweb.Artifacts(state, renderer))
 	r.Get("/ticker", specweb.Ticker(state, renderer))
 	r.Get("/provider-status", specweb.ProviderStatus(state, renderer))
@@ -66,8 +65,6 @@ func (s *Server) specRouter(r chi.Router) {
 	// Export
 	r.Get("/export/markdown", specweb.ExportMarkdown(state))
 	r.Get("/export/yaml", specweb.ExportYAML(state))
-	r.Get("/export/dot", specweb.ExportDOT(state))
-
 	// Agent management
 	r.Post("/agents/start", specweb.StartAgents(state, renderer))
 	r.Post("/agents/pause", specweb.PauseAgents(state, renderer))
@@ -293,29 +290,12 @@ func (s *Server) ensureSpecActor(projectID, specIDStr string) (string, error) {
 	return specIDStr, nil
 }
 
-// syncProjectFromSpec exports the project's current spec actor state to DOT and
-// updates the project for the editor phase.
+// syncProjectFromSpec ensures the project's spec actor is loaded and the project's
+// SpecID field is persisted. DOT generation is handled separately by the generation pipeline.
 func (s *Server) syncProjectFromSpec(projectID string, p *Project) error {
 	specIDStr, err := s.ensureSpecActor(projectID, p.SpecID)
 	if err != nil {
 		return fmt.Errorf("ensure spec actor: %w", err)
-	}
-
-	specID, err := ulid.Parse(specIDStr)
-	if err != nil {
-		return fmt.Errorf("parse spec ID: %w", err)
-	}
-	handle := s.specState.GetActor(specID)
-	if handle == nil {
-		return fmt.Errorf("spec actor not found")
-	}
-
-	var transitionErr error
-	handle.ReadState(func(st *core.SpecState) {
-		transitionErr = TransitionSpecToEditor(p, st)
-	})
-	if transitionErr != nil {
-		return transitionErr
 	}
 
 	if p.SpecID == "" {

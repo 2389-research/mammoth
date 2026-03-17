@@ -548,8 +548,9 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleSpecContinueToEditor exports the current spec state to DOT, stores it
-// on the project, and redirects to the project-scoped editor route.
+// handleSpecContinueToEditor transitions the project from spec to edit phase,
+// stops the spec swarm, and redirects to the project-scoped editor route.
+// DOT generation is handled separately by the meta-pipeline (/spec/generate-pipeline).
 func (s *Server) handleSpecContinueToEditor(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "projectID")
 	p, ok := s.store.Get(projectID)
@@ -560,7 +561,16 @@ func (s *Server) handleSpecContinueToEditor(w http.ResponseWriter, r *http.Reque
 
 	if err := s.syncProjectFromSpec(projectID, p); err != nil {
 		log.Printf("component=web.server action=spec_continue_failed project_id=%s err=%v", projectID, err)
-		http.Error(w, "failed to export spec to DOT", http.StatusBadRequest)
+		http.Error(w, "failed to sync spec", http.StatusBadRequest)
+		return
+	}
+
+	// Transition to edit phase. DOT may already be set by the generation pipeline,
+	// or the user can trigger generation from the editor.
+	p.Phase = PhaseEdit
+	if err := s.store.Update(p); err != nil {
+		log.Printf("component=web.server action=spec_continue_update_failed project_id=%s err=%v", projectID, err)
+		http.Error(w, "failed to update project", http.StatusInternalServerError)
 		return
 	}
 	s.stopProjectSpecSwarm(p)

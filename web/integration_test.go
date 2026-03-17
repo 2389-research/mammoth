@@ -12,8 +12,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/2389-research/mammoth/spec/core"
 )
 
 // noFollowClient returns an *http.Client that does not follow redirects,
@@ -88,7 +86,7 @@ func getProjectJSON(t *testing.T, client *http.Client, baseURL, projectID string
 // Steps:
 //  1. POST /projects to create a project (starts in spec phase)
 //  2. Verify the project is in the spec phase
-//  3. Transition spec to editor via TransitionSpecToEditor (simulating spec completion)
+//  3. Set valid DOT and transition to edit phase (simulating spec completion)
 //  4. Verify the project is in the edit phase with DOT populated
 //  5. POST /projects/{id}/build/start to start the build
 //  6. GET /projects/{id}/build to verify the build view renders
@@ -110,17 +108,14 @@ func TestIntegrationFlowA(t *testing.T) {
 		t.Fatalf("step 2: expected name %q, got %q", "flow-a-idea", p.Name)
 	}
 
-	// Step 3: Build a test spec state and transition to editor.
-	// We access the server store directly because the spec HTTP endpoints are stubs.
-	specState := makeTestSpecState()
+	// Step 3: Simulate spec completion by setting valid DOT and transitioning to edit phase.
+	// In production, the generation pipeline populates DOT from the spec state.
 	storeProject, ok := srv.store.Get(projectID)
 	if !ok {
 		t.Fatal("step 3: project not found in store")
 	}
-
-	if err := TransitionSpecToEditor(storeProject, specState); err != nil {
-		t.Fatalf("step 3: TransitionSpecToEditor: %v", err)
-	}
+	storeProject.DOT = validTestDOT
+	storeProject.Phase = PhaseEdit
 	if err := srv.store.Update(storeProject); err != nil {
 		t.Fatalf("step 3: store.Update: %v", err)
 	}
@@ -551,35 +546,4 @@ func TestIntegrationInvalidDOTStaysInEdit(t *testing.T) {
 	if buildExists {
 		t.Error("expected no build run for invalid DOT")
 	}
-}
-
-// makeTestSpecState creates a realistic SpecState with core metadata and a task
-// card in the Plan lane, suitable for exercising the spec-to-editor transition.
-func makeTestSpecState() *core.SpecState {
-	sc := core.NewSpecCore(
-		"Integration Test Pipeline",
-		"End-to-end integration test",
-		"Verify the full wizard flow from idea to build",
-	)
-	state := core.NewSpecState()
-	state.Core = &sc
-
-	now := time.Now().UTC()
-	task := core.Card{
-		CardID:    core.NewULID(),
-		CardType:  "task",
-		Title:     "Implement feature",
-		Lane:      "Plan",
-		Order:     1.0,
-		Refs:      []string{},
-		CreatedAt: now,
-		UpdatedAt: now,
-		CreatedBy: "test",
-		UpdatedBy: "test",
-	}
-	body := "Build the main feature with proper error handling"
-	task.Body = &body
-	state.Cards.Set(task.CardID, task)
-
-	return state
 }

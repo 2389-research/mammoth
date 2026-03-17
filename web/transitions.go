@@ -1,5 +1,5 @@
-// ABOUTME: Transition logic connecting the spec builder phase to the DOT editor and build phases.
-// ABOUTME: Exports DOT from spec state, validates it, and routes to the correct project phase.
+// ABOUTME: Transition logic connecting the DOT editor phase to the build phase.
+// ABOUTME: Validates DOT, runs lint diagnostics, and routes to the correct project phase.
 package web
 
 import (
@@ -8,45 +8,7 @@ import (
 
 	"github.com/2389-research/mammoth/dot"
 	"github.com/2389-research/mammoth/dot/validator"
-	"github.com/2389-research/mammoth/spec/core"
-	"github.com/2389-research/mammoth/spec/export"
 )
-
-// TransitionSpecToEditor generates DOT from a spec state and updates the project
-// for the editor phase. The DOT is exported, parsed for validation, and linted
-// for diagnostics. The project is always set to the edit phase on success.
-func TransitionSpecToEditor(project *Project, specState *core.SpecState) error {
-	dotStr, diags, err := exportAndValidate(specState)
-	if err != nil {
-		return fmt.Errorf("spec to editor: %w", err)
-	}
-
-	project.DOT = dotStr
-	project.Diagnostics = formatDiagnostics(diags)
-	project.Phase = PhaseEdit
-	return nil
-}
-
-// TransitionSpecToBuild is the "Build Now" shortcut that skips the editor.
-// If the DOT has no lint errors, it transitions straight to build phase.
-// If there are lint errors, it transitions to edit phase with diagnostics.
-func TransitionSpecToBuild(project *Project, specState *core.SpecState) error {
-	dotStr, diags, err := exportAndValidate(specState)
-	if err != nil {
-		return fmt.Errorf("spec to build: %w", err)
-	}
-
-	project.DOT = dotStr
-	project.Diagnostics = formatDiagnostics(diags)
-
-	if hasErrors(diags) {
-		project.Phase = PhaseEdit
-		return nil
-	}
-
-	project.Phase = PhaseBuild
-	return nil
-}
 
 // TransitionEditorToBuild validates the current DOT and transitions to build.
 // If the DOT has parse or lint errors, it stays in the edit phase and returns an error.
@@ -73,27 +35,6 @@ func TransitionEditorToBuild(project *Project) error {
 
 	project.Phase = PhaseBuild
 	return nil
-}
-
-// exportAndValidate generates DOT from the spec state, parses it back to validate
-// round-trip correctness, and runs the linter for diagnostics.
-func exportAndValidate(specState *core.SpecState) (string, []dot.Diagnostic, error) {
-	if specState == nil {
-		return "", nil, fmt.Errorf("export DOT: spec state is nil")
-	}
-
-	dotStr, err := export.ExportDOT(specState)
-	if err != nil {
-		return "", nil, fmt.Errorf("export DOT: %w", err)
-	}
-
-	g, parseErr := dot.Parse(dotStr)
-	if parseErr != nil {
-		return "", nil, fmt.Errorf("parse exported DOT: %w", parseErr)
-	}
-
-	diags := validator.Lint(g)
-	return dotStr, diags, nil
 }
 
 // hasErrors returns true if any diagnostic has severity "error".
