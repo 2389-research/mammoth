@@ -59,12 +59,30 @@ func (s *Server) startGenerationBuild(projectID, specMarkdown string) string {
 	workDir := s.workspace.ArtifactDir(projectID, runID)
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		log.Printf("component=web.generate action=create_workdir_failed project_id=%s run_id=%s err=%v", projectID, runID, err)
+		s.buildsMu.Lock()
+		completedAt := time.Now()
+		state.CompletedAt = &completedAt
+		state.Status = "failed"
+		state.Error = fmt.Sprintf("create working directory: %v", err)
+		s.buildsMu.Unlock()
+		close(events)
+		cancel()
+		return runID
 	}
 
 	// Write the spec markdown to the working directory for the meta-pipeline.
 	specPath := filepath.Join(workDir, "spec.md")
 	if err := os.WriteFile(specPath, []byte(specMarkdown), 0o644); err != nil {
 		log.Printf("component=web.generate action=write_spec_failed project_id=%s run_id=%s err=%v", projectID, runID, err)
+		s.buildsMu.Lock()
+		completedAt := time.Now()
+		state.CompletedAt = &completedAt
+		state.Status = "failed"
+		state.Error = fmt.Sprintf("write spec.md: %v", err)
+		s.buildsMu.Unlock()
+		close(events)
+		cancel()
+		return runID
 	}
 
 	// Create the broadcast function for events.
@@ -106,6 +124,7 @@ func (s *Server) startGenerationBuild(projectID, specMarkdown string) string {
 
 	go func() {
 		defer close(events)
+		defer cancel()
 		defer func() {
 			if rec := recover(); rec != nil {
 				s.buildsMu.Lock()
@@ -168,6 +187,7 @@ func (s *Server) startGenerationBuild(projectID, specMarkdown string) string {
 		s.persistBuildOutcome(projectID, state)
 
 		// On success, read the generated pipeline.dot and store it in the project.
+		// Re-read the project from the store to avoid overwriting concurrent changes.
 		if runErr == nil {
 			dotPath := filepath.Join(workDir, "pipeline.dot")
 			dotBytes, readErr := os.ReadFile(dotPath)
@@ -175,13 +195,13 @@ func (s *Server) startGenerationBuild(projectID, specMarkdown string) string {
 				log.Printf("component=web.generate action=read_pipeline_dot_failed project_id=%s run_id=%s err=%v", projectID, runID, readErr)
 				return
 			}
-			p, ok := s.store.Get(projectID)
+			fresh, ok := s.store.Get(projectID)
 			if !ok {
 				log.Printf("component=web.generate action=project_not_found project_id=%s run_id=%s", projectID, runID)
 				return
 			}
-			p.DOT = string(dotBytes)
-			if err := s.store.Update(p); err != nil {
+			fresh.DOT = string(dotBytes)
+			if err := s.store.Update(fresh); err != nil {
 				log.Printf("component=web.generate action=update_project_dot_failed project_id=%s run_id=%s err=%v", projectID, runID, err)
 			}
 		}
