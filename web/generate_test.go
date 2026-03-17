@@ -167,6 +167,53 @@ func TestHandleGeneratePipeline_NoSpec(t *testing.T) {
 	}
 }
 
+func TestGenerationPreservesDOTOnFailure(t *testing.T) {
+	srv := newTestServer(t)
+	p, err := srv.store.Create("test-preserve")
+	if err != nil {
+		t.Fatalf("unexpected error creating project: %v", err)
+	}
+	p.DOT = "digraph old { a -> b; }"
+	if err := srv.store.Update(p); err != nil {
+		t.Fatalf("unexpected error updating project: %v", err)
+	}
+
+	// Start generation with empty spec — will fail quickly without LLM.
+	runID := srv.startGenerationBuild(p.ID, "")
+	if runID == "" {
+		t.Fatal("expected run ID")
+	}
+
+	// Wait for build to complete via subscription.
+	srv.buildsMu.RLock()
+	run := srv.builds[p.ID]
+	srv.buildsMu.RUnlock()
+	if run != nil {
+		ch, unsub := run.Subscribe()
+		defer unsub()
+		timeout := time.After(10 * time.Second)
+		for done := false; !done; {
+			select {
+			case _, ok := <-ch:
+				if !ok {
+					done = true
+				}
+			case <-timeout:
+				t.Fatal("timed out waiting for build to complete")
+			}
+		}
+	}
+
+	// Verify old DOT is preserved (generation failed, so DOT should not change).
+	updated, ok := srv.store.Get(p.ID)
+	if !ok {
+		t.Fatal("project not found after generation")
+	}
+	if updated.DOT != "digraph old { a -> b; }" {
+		t.Errorf("expected old DOT preserved, got %q", updated.DOT)
+	}
+}
+
 func TestHandleGeneratePipeline_ProjectNotFound(t *testing.T) {
 	srv := newTestServer(t)
 
