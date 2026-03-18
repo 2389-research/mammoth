@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -525,12 +526,18 @@ func findNodeByParam(nodes map[string]*dot.Node, id string) (*dot.Node, bool) {
 			return node, true
 		}
 	}
-	// Case-insensitive fallback: d3-graphviz SVG titles may differ in case
+	// Case-insensitive fallback: d3-graphviz SVG titles may differ in case.
+	// Sort keys for deterministic results when multiple nodes match.
 	lower := strings.ToLower(strings.TrimSpace(id))
 	if lower != "" {
-		for key, node := range nodes {
+		keys := make([]string, 0, len(nodes))
+		for key := range nodes {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
 			if strings.ToLower(key) == lower {
-				return node, true
+				return nodes[key], true
 			}
 		}
 	}

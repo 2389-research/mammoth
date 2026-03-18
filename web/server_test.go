@@ -637,9 +637,8 @@ func TestServerSpecContinueToEditor(t *testing.T) {
 	if updated.Phase != PhaseEdit {
 		t.Fatalf("expected phase %q, got %q", PhaseEdit, updated.Phase)
 	}
-	if !strings.HasPrefix(updated.DOT, "digraph") {
-		t.Fatalf("expected generated DOT, got %q", updated.DOT)
-	}
+	// DOT generation is now handled by the meta-pipeline, not by spec continue.
+	// The project may or may not have DOT at this point.
 	if !cancelled {
 		t.Fatalf("expected spec swarm to be cancelled on continue")
 	}

@@ -217,7 +217,6 @@ func TestAgentRoleLabel(t *testing.T) {
 		{RoleManager, "manager"},
 		{RoleBrainstormer, "brainstormer"},
 		{RolePlanner, "planner"},
-		{RoleDotGenerator, "dot_generator"},
 		{RoleCritic, "critic"},
 	}
 

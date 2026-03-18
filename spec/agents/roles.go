@@ -1,5 +1,5 @@
 // ABOUTME: AgentRole type identifies the functional role an agent plays within the swarm.
-// ABOUTME: Five variants (Manager, Brainstormer, Planner, DotGenerator, Critic) with label methods.
+// ABOUTME: Four variants (Manager, Brainstormer, Planner, Critic) with label methods.
 package agents
 
 // AgentRole identifies the functional role an agent plays within the swarm.
@@ -9,7 +9,6 @@ const (
 	RoleManager AgentRole = iota
 	RoleBrainstormer
 	RolePlanner
-	RoleDotGenerator
 	RoleCritic
 )
 
@@ -22,8 +21,6 @@ func (r AgentRole) Label() string {
 		return "brainstormer"
 	case RolePlanner:
 		return "planner"
-	case RoleDotGenerator:
-		return "dot_generator"
 	case RoleCritic:
 		return "critic"
 	default:

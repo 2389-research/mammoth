@@ -694,35 +694,6 @@ func topologicalOrder(graph *dot.Graph) []string {
 	return order
 }
 
-// toInt converts an interface{} value to int, handling common numeric types and pointer variants.
-func toInt(v any) int {
-	switch n := v.(type) {
-	case int:
-		return n
-	case int64:
-		return int(n)
-	case float64:
-		return int(n)
-	case *int:
-		if n != nil {
-			return *n
-		}
-		return 0
-	case *int64:
-		if n != nil {
-			return int(*n)
-		}
-		return 0
-	case *float64:
-		if n != nil {
-			return int(*n)
-		}
-		return 0
-	default:
-		return 0
-	}
-}
-
 // shortModelName extracts a short display name from a full model identifier.
 // Claude models are shortened to their tier name (sonnet, opus, haiku).
 // Other models are returned as-is.

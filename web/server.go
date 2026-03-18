@@ -21,15 +21,15 @@ import (
 	"time"
 
 	"github.com/2389-research/mammoth/editor"
+	"github.com/2389-research/mammoth/llm"
 	"github.com/2389-research/mammoth/runstate"
+	"github.com/2389-research/mammoth/spec/core"
+	"github.com/2389-research/mammoth/spec/server"
+	specweb "github.com/2389-research/mammoth/spec/web"
 	"github.com/2389-research/tracker/agent"
 	"github.com/2389-research/tracker/agent/exec"
 	"github.com/2389-research/tracker/pipeline"
 	"github.com/2389-research/tracker/pipeline/handlers"
-	"github.com/2389-research/mammoth/llm"
-	"github.com/2389-research/mammoth/spec/core"
-	"github.com/2389-research/mammoth/spec/server"
-	specweb "github.com/2389-research/mammoth/spec/web"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/oklog/ulid/v2"
@@ -74,9 +74,9 @@ type Server struct {
 
 // ServerConfig holds the configuration for the unified web server.
 type ServerConfig struct {
-	Addr      string           // listen address (default: "127.0.0.1:2389")
-	Workspace Workspace        // workspace for path resolution
-	LLMClient agent.Completer  // tracker LLM client for pipeline execution (optional)
+	Addr      string          // listen address (default: "127.0.0.1:2389")
+	Workspace Workspace       // workspace for path resolution
+	LLMClient agent.Completer // tracker LLM client for pipeline execution (optional)
 }
 
 // NewServer creates a new Server with the given configuration. It initializes
@@ -209,6 +209,7 @@ func (s *Server) buildRouter() chi.Router {
 			// Spec builder phase (delegates to spec/web handlers via adapter middleware)
 			r.Route("/spec", s.specRouter)
 			r.Post("/spec/continue", s.handleSpecContinueToEditor)
+			r.Post("/spec/generate-pipeline", s.handleGeneratePipeline)
 
 			// DOT editor phase (delegates to editor handlers)
 			r.Route("/editor", s.editorRouter)
@@ -547,8 +548,9 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleSpecContinueToEditor exports the current spec state to DOT, stores it
-// on the project, and redirects to the project-scoped editor route.
+// handleSpecContinueToEditor transitions the project from spec to edit phase,
+// stops the spec swarm, and redirects to the project-scoped editor route.
+// DOT generation is handled separately by the meta-pipeline (/spec/generate-pipeline).
 func (s *Server) handleSpecContinueToEditor(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "projectID")
 	p, ok := s.store.Get(projectID)
@@ -559,7 +561,16 @@ func (s *Server) handleSpecContinueToEditor(w http.ResponseWriter, r *http.Reque
 
 	if err := s.syncProjectFromSpec(projectID, p); err != nil {
 		log.Printf("component=web.server action=spec_continue_failed project_id=%s err=%v", projectID, err)
-		http.Error(w, "failed to export spec to DOT", http.StatusBadRequest)
+		http.Error(w, "failed to sync spec", http.StatusBadRequest)
+		return
+	}
+
+	// Transition to edit phase. DOT may already be set by the generation pipeline,
+	// or the user can trigger generation from the editor.
+	p.Phase = PhaseEdit
+	if err := s.store.Update(p); err != nil {
+		log.Printf("component=web.server action=spec_continue_update_failed project_id=%s err=%v", projectID, err)
+		http.Error(w, "failed to update project", http.StatusInternalServerError)
 		return
 	}
 	s.stopProjectSpecSwarm(p)

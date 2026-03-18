@@ -55,7 +55,7 @@ type ServerOption func(*Server)
 // WithModelOptions sets the list of models available for selection in node edit forms.
 func WithModelOptions(models []ModelOption) ServerOption {
 	return func(s *Server) {
-		s.modelOptions = models
+		s.modelOptions = append([]ModelOption(nil), models...)
 	}
 }
 

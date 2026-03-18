@@ -99,7 +99,7 @@
 
             // Trigger reflow so the fade-in transition activates.
             void line.offsetWidth;
-            line.classList.add('cl-telemetry-line-visible');
+            line.classList.add('visible');
         }
 
         // Returns a random delay between 200ms and 600ms.
